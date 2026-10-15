@@ -681,6 +681,16 @@ class Player:
             self._start_current()
             self.save_state()
 
+    def play_from(self, index: int) -> None:
+        """Jump to a queue entry, used by the popup's track list."""
+        with self.lock:
+            if not self.queue:
+                return
+            if 0 <= index < len(self.queue):
+                self.index = index
+            self._start_current()
+            self.save_state()
+
     def previous(self) -> None:
         with self.lock:
             if self.position > 5:
@@ -1373,6 +1383,11 @@ class Backend:
 
     def cmd_next(self) -> dict[str, Any]:
         self.player.next()
+        return self.player.status()
+
+    def cmd_jump(self, index: int = 0) -> dict[str, Any]:
+        """Play the queue entry at `index`, so the popup's list is clickable."""
+        self.player.play_from(int(index))
         return self.player.status()
 
     def cmd_previous(self) -> dict[str, Any]:

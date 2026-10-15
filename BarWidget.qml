@@ -44,21 +44,58 @@ Panel {
   readonly property string notice: String(status.notice || "")
   readonly property string halted: String(status.halted || "")
 
+  // One line of state for the popup header. Signing in, an empty queue and a
+  // finished load are states, not errors: only a halt and a failed command are
+  // painted with the urgent colour.
+  readonly property string statusText: {
+    if (root.errorText !== "") return root.errorText
+    if (root.halted !== "") return root.halted
+    if (root.loading) return "Загрузка трека…"
+    if (root.notice !== "") return root.notice
+    if (!root.signedIn) return "нет входа"
+    if (!root.hasTrack) return "готов"
+    return root.busy !== "" ? "…" : ""
+  }
+  readonly property bool statusUrgent: root.errorText !== "" || root.halted !== ""
+
   readonly property color fg: bar && bar.barForeground !== undefined ? bar.barForeground : Color.foreground
   readonly property color dim: Qt.darker(root.fg, 1.5)
   readonly property color textColor: Color.popups ? Color.popups.text : Color.foreground
   readonly property color cardBg: bar && bar.background !== undefined ? bar.background : Color.background
 
+  readonly property int upcomingStart: Number(status.index === undefined ? -1 : status.index) + 1
+
   // The upcoming few tracks, taken from the queue the service already holds.
   readonly property var upcoming: {
     if (!queue || queue.length === 0) return []
-    var start = Number(status.index === undefined ? -1 : status.index) + 1
     var out = []
-    for (var i = start; i < queue.length && out.length < 5; i++) out.push(queue[i])
+    for (var i = root.upcomingStart; i < queue.length && out.length < 5; i++) out.push(queue[i])
     return out
   }
 
   // Refresh while a popup is open or music is playing; otherwise idle cheaply.
+  //
+  // One line of geometry also goes to the shell log, so a layout complaint can
+  // be checked with numbers instead of a screenshot. It fires once per session
+  // for the bar row and once per popup opening.
+  property bool _reportedBarLayout: false
+  onWidthChanged: reportBarLayout()
+
+  function reportBarLayout() {
+    if (root._reportedBarLayout || root.width <= 0) return
+    root._reportedBarLayout = true
+    console.log("[vk-music] bar layout", JSON.stringify({
+      width: root.width,
+      implicitWidth: root.implicitWidth,
+      implicitHeight: root.implicitHeight,
+      barSize: root.bar ? root.bar.barSize : -1,
+      artwork: artwork.width,
+      label: labelText.implicitWidth,
+      transport: transportZone.width,
+      labelSize: Style.font.bodySmall
+    }))
+  }
+
   Timer {
     interval: root.playing ? 1000 : 5000
     running: true
@@ -66,7 +103,10 @@ Panel {
     onTriggered: root.refresh()
   }
 
-  Component.onCompleted: refresh()
+  Component.onCompleted: {
+    refresh()
+    reportBarLayout()
+  }
 
   // ----------------------------------------------------------------- io ---
 
@@ -154,6 +194,10 @@ Panel {
     call([root.cli, "play", "search", root.query.trim(), String(index)], function() { root.refresh() })
   }
 
+  function playQueueAt(index) {
+    call([root.cli, "jump", String(index)], function() { root.refresh() })
+  }
+
   function togglePause() {
     call([root.cli, "pause"], function() { root.refresh() })
   }
@@ -188,8 +232,43 @@ Panel {
 
   // ---------------------------------------------------------------- bar ---
 
-  implicitWidth: barRow.implicitWidth
-  implicitHeight: barRow.implicitHeight
+  // The height is the bar's own row height, not the content's: a taller widget
+  // pushes its neighbours out of line, which is exactly what a padded Button
+  // inside the row used to do.
+  implicitWidth: barRow.implicitWidth + Style.space(12)
+  implicitHeight: bar ? bar.barSize : Style.bar.sizeHorizontal
+
+  // The label shown in the bar. Signing in, an empty queue and a stopped
+  // service are states of the widget, not errors: only a halt paints red.
+  readonly property string barLabel: {
+    if (root.halted !== "") return "остановлен"
+    if (!root.signedIn) return "vk music"
+    if (!root.hasTrack) return root.loading ? "загрузка…" : "vk music"
+    return root.trackValue("title") + (root.trackValue("artist", "") ? "  ·  " + root.trackValue("artist", "") : "")
+  }
+  readonly property color barLabelColor: root.halted !== "" ? Color.urgent
+    : (root.errorText !== "" ? root.dim : root.fg)
+
+  // This layer must stay UNDER the row: a MouseArea declared after its siblings
+  // covers them, and the transport zone would never see a click.
+  MouseArea {
+    id: barMouse
+    anchors.fill: parent
+    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+    hoverEnabled: true
+    cursorShape: Qt.PointingHandCursor
+    onEntered: if (root.bar) root.bar.showTooltip(root, root.errorText !== ""
+      ? ("vk music: " + root.errorText)
+      : (root.halted !== "" ? root.halted : (root.hasTrack
+        ? (root.trackValue("title") + (root.trackValue("artist", "") ? " — " + root.trackValue("artist", "") : ""))
+        : "vk music")))
+    onExited: if (root.bar) root.bar.hideTooltip(root)
+    onClicked: function(mouse) {
+      if (mouse.button === Qt.MiddleButton) root.skipNext()
+      else if (mouse.button === Qt.RightButton && root.hasTrack) root.togglePause()
+      else root.toggle()
+    }
+  }
 
   Row {
     id: barRow
@@ -202,13 +281,15 @@ Panel {
 
     BorderSurface {
       id: artwork
-      width: Style.space(22)
+      // 20 px matches the cover size the other bar players in this shell use.
+      width: Style.space(20)
       height: width
       radius: Style.spacing.labelGap
       visible: barRow.showArtwork
       anchors.verticalCenter: parent.verticalCenter
       color: Style.normalFillFor(root.fg, Color.accent)
       borderSpec: Border.controlSpec("normal", root.fg, Color.accent)
+      opacity: root.hasTrack ? 1.0 : 0.6
 
       Image {
         anchors.fill: parent
@@ -225,7 +306,7 @@ Panel {
         text: "󰝚"
         color: root.fg
         font.family: bar ? bar.fontFamily : Style.font.family
-        font.pixelSize: Style.font.bodySmall
+        font.pixelSize: Style.font.caption
       }
     }
 
@@ -240,44 +321,55 @@ Panel {
       Text {
         id: labelText
         textFormat: Text.PlainText
-        text: root.hasTrack
-          ? (root.trackValue("title") + (root.trackValue("artist", "") ? "  ·  " + root.trackValue("artist", "") : ""))
-          : (root.signedIn ? "VK Music" : "Войти в VK Music")
-        color: root.errorText !== "" ? Color.urgent : root.fg
+        text: root.barLabel
+        color: root.barLabelColor
         font.family: bar ? bar.fontFamily : Style.font.family
-        font.pixelSize: Style.font.body
+        font.pixelSize: Style.font.bodySmall
         anchors.verticalCenter: parent.verticalCenter
       }
     }
 
-    Button {
-      id: transportButton
-      iconText: root.loading ? "󰇚" : (root.playing ? "󰏤" : "󰐊")
-      foreground: root.fg
-      visible: root.hasTrack
+    // A small urgent dot is the whole error report in the bar; the text stays
+    // readable and the popup carries the reason.
+    Item {
+      width: Style.space(7)
+      height: width
       anchors.verticalCenter: parent.verticalCenter
-      horizontalPadding: Style.spacing.controlPaddingX
-      verticalPadding: Style.spacing.controlPaddingY
-      onClicked: root.togglePause()
-    }
-  }
+      visible: root.errorText !== "" || root.halted !== ""
 
-  MouseArea {
-    anchors.fill: parent
-    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-    hoverEnabled: true
-    cursorShape: Qt.PointingHandCursor
-    onEntered: if (root.bar) root.bar.showTooltip(root, root.hasTrack
-      ? (root.trackValue("title") + (root.trackValue("artist", "") ? " — " + root.trackValue("artist", "") : ""))
-      : "VK Music")
-    onExited: if (root.bar) root.bar.hideTooltip(root)
-    onClicked: function(mouse) {
-      if (mouse.button === Qt.MiddleButton) {
-        root.skipNext()
-      } else if (mouse.button === Qt.RightButton && root.hasTrack) {
-        root.togglePause()
-      } else {
-        root.toggle()
+      Rectangle {
+        anchors.fill: parent
+        radius: width / 2
+        color: Color.urgent
+      }
+
+      MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.open()
+      }
+    }
+
+    Item {
+      id: transportZone
+      width: Style.space(24)
+      height: root.implicitHeight
+      anchors.verticalCenter: parent.verticalCenter
+      visible: root.hasTrack
+
+      Text {
+        anchors.centerIn: parent
+        textFormat: Text.PlainText
+        text: root.loading ? "󰇚" : (root.playing ? "󰏤" : "󰐊")
+        color: root.fg
+        font.family: bar ? bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.togglePause()
       }
     }
   }
@@ -287,10 +379,31 @@ Panel {
       root.refresh()
       root.loadQueue()
       root.loadSources()
+      // The sizes only exist after the panel has been laid out, so the probe
+      // waits a beat instead of reading zeroes at the moment of opening.
+      layoutProbe.restart()
     }
   }
 
+  Timer {
+    id: layoutProbe
+    interval: 400
+    repeat: false
+    onTriggered: console.log("[vk-music] popup layout", JSON.stringify({
+      card: [panel.contentWidth, panel.contentHeight],
+      body: body.implicitHeight,
+      available: [panel.availableCardWidth, panel.availableCardHeight],
+      inset: panel.verticalContentInset,
+      blocks: body.children.length
+    }))
+  }
+
   // -------------------------------------------------------------- popup ---
+  //
+  // The card has a fixed height and the list area scrolls. Sizing the card from
+  // the column's implicit height looked right in theory, but that height only
+  // exists after a layout pass, so the popup opened collapsed and grew a frame
+  // later. A fixed card with one Flickable is boring and always correct.
 
   KeyboardPanel {
     id: panel
@@ -299,8 +412,8 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keys
-    contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(body.implicitHeight)
+    contentWidth: panel.fittedContentWidth(Style.space(400))
+    contentHeight: panel.fittedContentHeight(Style.space(460))
 
     PanelKeyCatcher {
       id: keys
@@ -314,43 +427,45 @@ Panel {
         else if (character === "p") root.skipPrevious()
       }
 
-      Column {
+      ColumnLayout {
         id: body
-        width: parent.width
+        anchors.fill: parent
         spacing: Style.spacing.controlGap
 
-        Row {
-          width: parent.width
+        // ------------------------------------------------------ header ---
+        RowLayout {
+          Layout.fillWidth: true
           spacing: Style.spacing.controlGap
 
           PanelSectionHeader {
             id: header
-            text: "VK Music"
+            text: "vk music"
             foreground: root.textColor
-            anchors.verticalCenter: parent.verticalCenter
+            Layout.alignment: Qt.AlignVCenter
           }
 
           Text {
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - header.width - parent.spacing
+            Layout.fillWidth: true
             textFormat: Text.PlainText
             elide: Text.ElideRight
-            text: root.errorText !== "" ? root.errorText
-              : (root.halted !== "" ? root.halted : (root.loading ? "Загрузка трека…" : root.notice))
-            color: root.errorText !== "" || root.halted !== "" ? Color.urgent : root.dim
+            verticalAlignment: Text.AlignVCenter
+            text: root.statusText
+            color: root.statusUrgent ? Color.urgent : root.dim
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
           }
         }
 
-        // Sign-in state, shown instead of the player when there is no session.
-        Column {
-          width: parent.width
+        PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
+
+        // ----------------------------------------------------- sign-in ---
+        ColumnLayout {
+          Layout.fillWidth: true
           spacing: Style.spacing.controlGap
           visible: !root.signedIn
 
           Text {
-            width: parent.width
+            Layout.fillWidth: true
             wrapMode: Text.WordWrap
             textFormat: Text.PlainText
             text: "Нужен вход в VK. Плагин возьмёт cookie p и remixsid из профиля браузера и обменяет их на токен — пароль не спрашивается."
@@ -366,13 +481,14 @@ Panel {
           }
         }
 
-        // Current track.
-        Row {
-          width: parent.width
+        // ----------------------------------------------------- player ---
+        RowLayout {
+          Layout.fillWidth: true
           spacing: Style.space(10)
           visible: root.signedIn
 
           BorderSurface {
+            Layout.alignment: Qt.AlignTop
             width: Style.space(64)
             height: Style.space(64)
             radius: Style.spacing.labelGap
@@ -398,15 +514,15 @@ Panel {
             }
           }
 
-          Column {
-            spacing: Style.space(3)
-            width: parent.width - Style.space(74)
+          ColumnLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(2)
 
             Text {
-              width: parent.width
+              Layout.fillWidth: true
               textFormat: Text.PlainText
               elide: Text.ElideRight
-              text: root.hasTrack ? root.trackValue("title", "Ничего не играет") : "Ничего не играет"
+              text: root.hasTrack ? root.trackValue("title") : "Ничего не играет"
               color: root.textColor
               font.family: Style.font.family
               font.pixelSize: Style.font.subtitle
@@ -414,7 +530,7 @@ Panel {
             }
 
             Text {
-              width: parent.width
+              Layout.fillWidth: true
               textFormat: Text.PlainText
               elide: Text.ElideRight
               visible: root.hasTrack
@@ -425,20 +541,21 @@ Panel {
             }
 
             Text {
-              width: parent.width
+              Layout.fillWidth: true
               textFormat: Text.PlainText
-              elide: Text.ElideRight
-              visible: root.hasTrack && root.trackValue("duration", 0) > 0
+              visible: root.hasTrack
               text: root.clock(root.position) + " / " + root.clock(root.duration)
               color: root.dim
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
             }
+
+            Item { Layout.fillHeight: true }
           }
         }
 
         PanelSlider {
-          width: parent.width
+          Layout.fillWidth: true
           visible: root.hasTrack && root.duration > 0
           minimum: 0
           maximum: Math.max(1, root.duration)
@@ -448,10 +565,12 @@ Panel {
           onReleased: function(value) { root.call([root.cli, "seek", String(Math.round(value))]) }
         }
 
-        Row {
-          anchors.horizontalCenter: parent.horizontalCenter
+        RowLayout {
+          Layout.fillWidth: true
           spacing: Style.space(6)
           visible: root.signedIn
+
+          Item { Layout.fillWidth: true }
 
           Button {
             iconText: "󰒮"
@@ -477,16 +596,22 @@ Panel {
             onClicked: root.skipNext()
           }
 
+          Item { Layout.fillWidth: true }
+
           Button {
-            text: "×" + root.volume
+            iconText: "󰕾"
+            text: String(root.volume)
             foreground: root.textColor
+            tooltipText: "Громкость, шаг 10"
             onClicked: root.call([root.cli, "volume", String(root.volume >= 100 ? 0 : root.volume + 10)])
           }
         }
 
-        // View switch.
-        Row {
-          width: parent.width
+        PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
+
+        // ------------------------------------------------------- views ---
+        RowLayout {
+          Layout.fillWidth: true
           spacing: Style.space(6)
           visible: root.signedIn
 
@@ -510,88 +635,18 @@ Panel {
             selected: root.view === "search"
             onClicked: root.view = "search"
           }
+
+          Item { Layout.fillWidth: true }
         }
 
-        // Queue view.
-        Column {
-          width: parent.width
-          spacing: Style.space(4)
-          visible: root.signedIn && root.view === "queue"
-
-          Row {
-            width: parent.width
-            spacing: Style.space(6)
-
-            Button {
-              text: "Моя музыка"
-              foreground: root.textColor
-              onClicked: root.playSection("all", "Моя музыка")
-            }
-
-            Repeater {
-              model: root.sources.filter(function(s) { return s.url.indexOf("section=updates") !== -1 })
-              delegate: Button {
-                text: modelData ? modelData.title : ""
-                foreground: root.textColor
-                onClicked: if (modelData) root.playSection(modelData.id, modelData.title)
-              }
-            }
-          }
-
-          PanelSectionHeader {
-            text: "Дальше в очереди"
-            foreground: root.dim
-            visible: root.upcoming.length > 0
-          }
-
-          Repeater {
-            model: root.upcoming
-            delegate: Text {
-              width: parent.width
-              textFormat: Text.PlainText
-              elide: Text.ElideRight
-              text: modelData ? ((index + 1) + ". " + modelData.artist + " — " + modelData.title) : ""
-              color: root.textColor
-              font.family: Style.font.family
-              font.pixelSize: Style.font.bodySmall
-            }
-          }
-        }
-
-        // Playlists view.
-        Column {
-          width: parent.width
-          spacing: Style.space(4)
-          visible: root.signedIn && root.view === "playlists"
-
-          Repeater {
-            model: root.playlists
-            delegate: Button {
-              width: parent.width
-              text: modelData ? (modelData.title + (modelData.count ? "  ·  " + modelData.count : "")) : ""
-              foreground: root.textColor
-              onClicked: if (modelData) root.playPlaylist(modelData)
-            }
-          }
-
-          Text {
-            visible: root.playlists.length === 0
-            text: "Плейлисты не найдены"
-            color: root.dim
-            font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
-          }
-        }
-
-        // Search view.
-        Column {
-          width: parent.width
-          spacing: Style.space(4)
+        RowLayout {
+          Layout.fillWidth: true
+          spacing: Style.space(6)
           visible: root.signedIn && root.view === "search"
 
           TextField {
             id: searchField
-            width: parent.width
+            Layout.fillWidth: true
             placeholderText: "Артист, трек, альбом"
             foreground: root.textColor
             accent: Color.accent
@@ -603,14 +658,115 @@ Panel {
             foreground: root.textColor
             onClicked: root.runSearch()
           }
+        }
 
-          Repeater {
-            model: root.results
-            delegate: Button {
+        Flickable {
+          id: listView
+          Layout.fillWidth: true
+          Layout.fillHeight: true
+          visible: root.signedIn
+          clip: true
+          contentWidth: width
+          contentHeight: listColumn.implicitHeight
+          boundsBehavior: Flickable.StopAtBounds
+
+          Column {
+            id: listColumn
+            width: listView.width
+            spacing: Style.space(4)
+
+            // Queue: the sources that fill it, then the next few tracks.
+            Column {
               width: parent.width
-              text: modelData ? (modelData.artist + " — " + modelData.title) : ""
-              foreground: root.textColor
-              onClicked: root.playSearchResult(index)
+              spacing: Style.space(4)
+              visible: root.view === "queue"
+
+              Row {
+                spacing: Style.space(6)
+
+                Button {
+                  text: "Моя музыка"
+                  foreground: root.textColor
+                  onClicked: root.playSection("all", "Моя музыка")
+                }
+
+                Repeater {
+                  model: root.sources.filter(function(s) { return s.url.indexOf("section=updates") !== -1 })
+                  delegate: Button {
+                    text: modelData ? modelData.title : ""
+                    foreground: root.textColor
+                    onClicked: if (modelData) root.playSection(modelData.id, modelData.title)
+                  }
+                }
+              }
+
+              PanelSectionHeader {
+                text: "Дальше в очереди"
+                foreground: root.dim
+                visible: root.upcoming.length > 0
+              }
+
+              Repeater {
+                model: root.upcoming
+                delegate: Button {
+                  width: listColumn.width
+                  text: modelData ? ((root.upcomingStart + index + 1) + ".  " + modelData.artist + " — " + modelData.title) : ""
+                  foreground: root.textColor
+                  onClicked: root.playQueueAt(root.upcomingStart + index)
+                }
+              }
+
+              Text {
+                visible: root.queue.length === 0
+                textFormat: Text.PlainText
+                text: "Очередь пуста. Начни с «Моя музыка»."
+                color: root.dim
+                font.family: Style.font.family
+                font.pixelSize: Style.font.bodySmall
+              }
+            }
+
+            // Playlists from the catalog.
+            Column {
+              width: parent.width
+              spacing: Style.space(4)
+              visible: root.view === "playlists"
+
+              Repeater {
+                model: root.playlists
+                delegate: Button {
+                  width: listColumn.width
+                  text: modelData ? (modelData.title + (modelData.count ? "  ·  " + modelData.count : "")) : ""
+                  foreground: root.textColor
+                  onClicked: if (modelData) root.playPlaylist(modelData)
+                }
+              }
+
+              Text {
+                visible: root.playlists.length === 0
+                textFormat: Text.PlainText
+                text: "Плейлисты не найдены"
+                color: root.dim
+                font.family: Style.font.family
+                font.pixelSize: Style.font.bodySmall
+              }
+            }
+
+            // Search results.
+            Column {
+              width: parent.width
+              spacing: Style.space(4)
+              visible: root.view === "search"
+
+              Repeater {
+                model: root.results
+                delegate: Button {
+                  width: listColumn.width
+                  text: modelData ? (modelData.artist + " — " + modelData.title) : ""
+                  foreground: root.textColor
+                  onClicked: root.playSearchResult(index)
+                }
+              }
             }
           }
         }
