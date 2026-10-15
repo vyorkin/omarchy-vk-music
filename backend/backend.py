@@ -397,6 +397,13 @@ class Player:
         self._ignore_pause_until = 0.0
         self.playing_from_cache = False
         self.liked_copies: dict[str, str] = {}
+        # Buffering progress, as the interface needs it: `percent` is None while
+        # the length is unknown (a stream that is not being cached), which is what
+        # tells the widget to draw an indeterminate indicator instead of a bar.
+        self.buffering = False
+        self.buffer_seconds = 0.0
+        self.buffer_total = 0
+        self.buffer_percent: int | None = None
         self._mpris: MprisBridge | None = None
         self._load_state()
 
@@ -694,21 +701,37 @@ class Player:
     def _start_download(self, track: Track, url: str) -> None:
         cancel = threading.Event()
         self._download_cancel = cancel
+        with self.lock:
+            self.buffering = True
+            self.buffer_seconds = 0.0
+            self.buffer_total = track.duration
+            self.buffer_percent = 0
+
+        def report(seconds: float) -> None:
+            if cancel.is_set():
+                return
+            percent = int(100 * seconds / track.duration) if track.duration > 0 else 0
+            percent = max(0, min(100, percent))
+            if percent >= (self.buffer_percent or 0):
+                self.buffer_seconds = seconds
+                self.buffer_percent = percent
 
         def worker() -> None:
             try:
-                path = self.cache.download(url, track.key)
+                path = self.cache.download(url, track.key, on_progress=report)
             except CacheError as exc:
                 log(f"cache failed for {track.key}: {exc}")
                 with self.lock:
                     if not cancel.is_set():
                         self.loading = False
+                        self.buffering = False
                         self._mark_unplayable(track, str(exc))
                 return
             with self.lock:
                 if cancel.is_set():
                     return
                 self.loading = False
+                self.buffering = False
                 self._play_file(path)
 
         self._download_thread = threading.Thread(target=worker, daemon=True)
@@ -716,6 +739,8 @@ class Player:
 
     def _play_file(self, path: Path) -> None:
         self._begin_load()
+        self.buffering = False
+        self.buffer_percent = 100
         try:
             self.mpv.ensure()
             self.mpv.command("loadfile", str(path), "replace")
@@ -729,6 +754,10 @@ class Player:
 
     def _play_url(self, url: str) -> None:
         self._begin_load()
+        # No cache means no length to compare against: the indicator stays
+        # indeterminate until mpv says the file is loaded.
+        self.buffering = True
+        self.buffer_percent = None
         try:
             self.mpv.ensure()
             self.mpv.command("loadfile", url, "replace")
@@ -747,6 +776,7 @@ class Player:
         self.position = 0
         self.paused = False
         self.loading = True
+        self.buffer_seconds = 0.0
         self._ignore_events_until = time.monotonic() + 1.0
 
     def _mark_unplayable(self, track: Track, reason: str) -> None:
@@ -823,6 +853,9 @@ class Player:
                 pass
             self.playing = False
             self.paused = False
+            self.loading = False
+            self.buffering = False
+            self.buffer_percent = None
             self.position = 0
             self._publish_mpris()
             self.save_state()
@@ -910,6 +943,7 @@ class Player:
         with self.lock:
             if name == "file-loaded":
                 self.loading = False
+                self.buffering = False
                 self.playing = True
                 self.paused = False
                 self.position = 0
@@ -982,6 +1016,12 @@ class Player:
                 "authenticated": self.authenticated,
                 "halted": self.halted_reason(),
                 "loading": self.loading,
+                "buffer": {
+                    "active": self.buffering,
+                    "percent": self.buffer_percent,
+                    "seconds": round(self.buffer_seconds, 1),
+                    "total": self.buffer_total,
+                },
                 "playing": self.playing,
                 "paused": self.paused,
                 "position": self.position,

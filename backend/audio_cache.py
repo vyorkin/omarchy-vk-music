@@ -95,7 +95,7 @@ class AudioCache:
 
     # -- writing -----------------------------------------------------------
 
-    def download(self, url: str, key: str) -> Path:
+    def download(self, url: str, key: str, on_progress=None) -> Path:
         """Fetch a whole track into the cache and return its path.
 
         Safe to call twice for the same track: the second caller waits for the
@@ -123,13 +123,19 @@ class AudioCache:
                 return cached
             raise CacheError("a parallel download did not produce the file")
         try:
-            return self._download_fresh(url, key)
+            return self._download_fresh(url, key, on_progress)
         finally:
             with self._lock:
                 self._inflight.pop(key, None)
             waiter.set()
 
-    def _download_fresh(self, url: str, key: str) -> Path:
+    def _download_fresh(self, url: str, key: str, on_progress=None) -> Path:
+        """Run ffmpeg and, when asked, report progress in audio seconds.
+
+        `-progress pipe:1` makes ffmpeg print `out_time_us=` lines, which is the
+        position inside the *audio*, not the download: for a track of a known
+        duration that is exactly the percentage the interface wants to show.
+        """
         final = self.tracks_dir / f"{_safe(key)}.mp3"
         tmp = final.with_suffix(final.suffix + TMP_SUFFIX)
         tmp.parent.mkdir(parents=True, exist_ok=True)
@@ -142,6 +148,9 @@ class AudioCache:
                 "-hide_banner",
                 "-loglevel",
                 "error",
+                "-progress",
+                "pipe:1",
+                "-nostats",
                 "-y",
                 "-i",
                 url,
@@ -151,17 +160,9 @@ class AudioCache:
                 "mp3",
                 str(tmp),
             ]
-            try:
-                completed = subprocess.run(
-                    command, capture_output=True, text=True, timeout=DOWNLOAD_TIMEOUT
-                )
-            except subprocess.TimeoutExpired as exc:
-                last_error = f"download timed out after {DOWNLOAD_TIMEOUT}s"
-                tmp.unlink(missing_ok=True)
-                raise CacheError(last_error) from exc
-            if completed.returncode == 0 and tmp.is_file() and tmp.stat().st_size > 0:
+            ok, last_error = self._run_ffmpeg(command, tmp, on_progress)
+            if ok:
                 break
-            last_error = (completed.stderr or "").strip()[-300:] or "ffmpeg failed"
             tmp.unlink(missing_ok=True)
         else:
             raise CacheError(f"could not download the track: {last_error}")
@@ -177,6 +178,58 @@ class AudioCache:
             self._save_index()
             self._evict_locked()
         return final
+
+    def _run_ffmpeg(self, command: list[str], tmp: Path, on_progress) -> tuple[bool, str]:
+        """Run one ffmpeg attempt, streaming progress out of its stdout.
+
+        stderr is drained on its own thread: with `-loglevel error` it is almost
+        always empty, but a chatty failure would fill its pipe buffer and block
+        ffmpeg forever while this thread waits on stdout.
+        """
+        try:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                errors="replace",
+            )
+        except OSError as exc:
+            return False, str(exc)
+
+        errors: list[str] = []
+
+        def drain() -> None:
+            assert process.stderr is not None
+            for line in process.stderr:
+                errors.append(line)
+
+        drainer = threading.Thread(target=drain, daemon=True)
+        drainer.start()
+
+        assert process.stdout is not None
+        try:
+            for line in process.stdout:
+                if on_progress is None:
+                    continue
+                key, _, value = line.strip().partition("=")
+                if key == "out_time_us":
+                    try:
+                        on_progress(int(value) / 1_000_000)
+                    except ValueError:
+                        continue
+            process.wait(timeout=DOWNLOAD_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=10)
+            drainer.join(timeout=1)
+            return False, f"download timed out after {DOWNLOAD_TIMEOUT}s"
+        finally:
+            drainer.join(timeout=1)
+
+        if process.returncode == 0 and tmp.is_file() and tmp.stat().st_size > 0:
+            return True, ""
+        return False, "".join(errors).strip()[-300:] or "ffmpeg failed"
 
     def remove(self, key: str) -> bool:
         with self._lock:

@@ -142,6 +142,31 @@ counterpart in `backend/`.
 The token store holds a live session and must never be committed. Revoking it
 means "завершить все сессии" in VK's security settings.
 
+## Buffering, as the interface shows it
+
+A track is fetched whole before it plays, which takes one to three seconds, so the
+wait needs an honest indicator rather than a spinner. ffmpeg is asked for
+`-progress pipe:1`, and the `out_time_us=` lines are the position inside the
+*audio*: against the track's known duration that is an exact percentage. Measured
+on a 235 s track: 0 → 12 → 29 → 43 → 65 → 87 → ready in 3.05 s.
+
+The indicator is a thin ring drawn on the cover that is already there — 2 px in
+the bar, 3 px in the popup — so nothing shifts, no second element appears in a
+30 px row, and the artwork stays recognisable while the arc grows. In the popup
+the cover also dims and the percentage takes its centre; in the bar the ring
+alone says it. When the length is unknown (the cache is off and the stream is
+not being downloaded) the ring spins instead of showing a made-up progress.
+
+Deliberate choices around it:
+
+* The play/pause glyph never turns into a downloader; it stays play/pause and
+  dims while the track is fetched.
+* The seek slider is disabled while buffering: a seek would move the track that
+  is still playing, not the one being fetched.
+* Buffering is polled four times a second so the arc grows in more than three
+  steps; a status call costs 2–4 ms over the socket, and the queue (a hundred
+  tracks of JSON) is only reloaded when the track actually changes.
+
 ## Playback and cache
 
 - One long-lived `mpv` with `--no-config --idle=yes --no-video

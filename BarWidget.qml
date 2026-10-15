@@ -46,15 +46,26 @@ Panel {
   readonly property var prefs: status.preferences || ({})
   readonly property bool liked: root.trackValue("is_liked", false) === true
 
+  // Buffering, as the ring needs it. `bufferProgress` is 0..1, or -1 when the
+  // length is unknown (a stream that is not being cached) — then the ring spins.
+  readonly property var buffer: status.buffer || ({})
+  readonly property bool buffering: root.buffer.active === true
+  readonly property bool bufferIndeterminate: root.buffer.percent === null
+    || root.buffer.percent === undefined
+  readonly property real bufferProgress: root.bufferIndeterminate
+    ? -1
+    : Math.max(0, Math.min(1, Number(root.buffer.percent || 0) / 100))
+
   // One line of state for the popup header. Signing in, an empty queue and a
   // finished load are states, not errors: only a halt and a failed command are
   // painted with the urgent colour.
   readonly property string statusText: {
     if (root.errorText !== "") return root.errorText
     if (root.halted !== "") return root.halted
-    if (root.loading) return "Загрузка трека…"
     if (root.notice !== "") return root.notice
     if (!root.signedIn) return "нет входа"
+    // Buffering is not text: the ring around the cover says it, in place, and
+    // without a word that would appear and vanish three times a second.
     if (!root.hasTrack) return "готов"
     return root.busy !== "" ? "…" : ""
   }
@@ -82,6 +93,7 @@ Panel {
   // for the bar row and once per popup opening.
   property bool _reportedBarLayout: false
   property string _loggedTrack: ""
+  property int _queueIndex: -2
   onWidthChanged: reportBarLayout()
 
   function reportBarLayout() {
@@ -99,8 +111,11 @@ Panel {
     }))
   }
 
+  // Poll fast enough that the ring grows in more than three steps: a download
+  // lasts about three seconds, and one status call costs a couple of
+  // milliseconds over the socket.
   Timer {
-    interval: root.playing ? 1000 : 5000
+    interval: root.buffering ? 250 : (root.playing ? 1000 : 5000)
     running: true
     repeat: true
     onTriggered: root.refresh()
@@ -316,6 +331,13 @@ Panel {
       if (Number(answer.data.volume || 0) > 0) {
         root.lastAudibleVolume = Number(answer.data.volume)
       }
+      // The queue is a hundred tracks: reload it when the track actually changes
+      // rather than on every status poll, which during buffering is four a
+      // second.
+      if (root.opened && Number(answer.data.index) !== root._queueIndex) {
+        root._queueIndex = Number(answer.data.index)
+        root.loadQueue()
+      }
       // One line per track so the widget's own view of the state can be checked
       // from the shell log instead of a screenshot.
       var key = String((answer.data.track || {}).key || "-")
@@ -325,13 +347,14 @@ Panel {
           signedIn: root.signedIn,
           playing: root.playing,
           loading: root.loading,
+          buffering: root.buffering,
+          percent: root.buffer.percent,
           title: root.hasTrack ? root.trackValue("title") : null,
           queue: answer.data.queueLength,
           error: root.errorText
         }))
       }
     })
-    if (root.opened) root.loadQueue()
   }
 
   function loadQueue() {
@@ -489,6 +512,18 @@ Panel {
         font.family: bar ? bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.caption
       }
+
+      // The ring rides on the artwork that is already there: no layout shift and
+      // no second element in a row that is 30 px tall.
+      ProgressRing {
+        anchors.fill: parent
+        anchors.margins: -Style.space(1)
+        visible: root.buffering
+        progress: Math.max(0, root.bufferProgress)
+        indeterminate: root.bufferIndeterminate
+        color: Color.accent
+        thickness: Math.max(1.5, Style.space(2))
+      }
     }
 
     Item {
@@ -541,8 +576,11 @@ Panel {
       Text {
         anchors.centerIn: parent
         textFormat: Text.PlainText
-        text: root.loading ? "󰇚" : (root.playing ? "󰏤" : "󰐊")
+        // The glyph never turns into a downloader: play stays play, dimmed while
+        // the track is being fetched.
+        text: root.playing ? "󰏤" : "󰐊"
         color: root.fg
+        opacity: root.loading ? 0.45 : 1.0
         font.family: bar ? bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.caption
       }
@@ -558,6 +596,7 @@ Panel {
   onOpenedChanged: {
     if (root.opened) {
       root.refresh()
+      root._queueIndex = -2
       root.loadQueue()
       root.loadSources()
       // The sizes only exist after the panel has been laid out, so the probe
@@ -695,6 +734,40 @@ Panel {
               font.family: Style.font.family
               font.pixelSize: Style.font.displayLarge
             }
+
+            // While the track is fetched the cover dims and the percentage takes
+            // the centre: one glance says how long the wait is.
+            Rectangle {
+              anchors.fill: parent
+              anchors.margins: Style.space(2)
+              radius: parent.radius
+              visible: root.buffering
+              color: Qt.rgba(0, 0, 0, 0.55)
+            }
+
+            Text {
+              anchors.centerIn: parent
+              visible: root.buffering && !root.bufferIndeterminate
+              textFormat: Text.PlainText
+              text: Math.round(Math.max(0, root.bufferProgress) * 100) + "%"
+              color: "white"
+              font.family: Style.font.family
+              font.pixelSize: Style.font.subtitle
+              font.bold: true
+            }
+
+            // The ring is the same component as in the bar, just larger: one
+            // indicator in both places, drawn on the artwork that is already
+            // there.
+            ProgressRing {
+              anchors.fill: parent
+              anchors.margins: -Style.space(2)
+              visible: root.buffering
+              progress: Math.max(0, root.bufferProgress)
+              indeterminate: root.bufferIndeterminate
+              color: Color.accent
+              thickness: Math.max(2, Style.space(3))
+            }
           }
 
           ColumnLayout {
@@ -739,6 +812,10 @@ Panel {
 
         PanelSlider {
           Layout.fillWidth: true
+          // Seeking means nothing until the file is on disk: the position would
+          // move the track that is still playing, not the one being fetched.
+          enabled: !root.buffering
+          opacity: root.buffering ? 0.5 : 1.0
           visible: root.hasTrack && root.duration > 0
           minimum: 0
           maximum: Math.max(1, root.duration)
@@ -774,10 +851,10 @@ Panel {
           }
 
           Button {
-            iconText: root.loading ? "󰇚" : (root.playing ? "󰏤" : "󰐊")
+            iconText: root.playing ? "󰏤" : "󰐊"
             foreground: root.textColor
             enabled: root.hasTrack || root.queue.length > 0
-            opacity: enabled ? 1.0 : 0.4
+            opacity: !enabled ? 0.4 : (root.loading ? 0.5 : 1.0)
             onClicked: root.togglePause()
           }
 
