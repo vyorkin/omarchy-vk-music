@@ -64,6 +64,7 @@ hours, and it can ask for a captcha and an SMS code.
 | Media keys | Through MPRIS, no configuration needed |
 | `Space` in the popup | Play / pause |
 | `N` / `P` in the popup | Next / previous |
+| Typing in Поиск | Suggestions after a pause, results after a longer one, `Enter` at once |
 
 ## Commands
 
@@ -72,7 +73,10 @@ Everything the widget does is available from a terminal:
 ```bash
 omarchy-vk-music status                 # the whole state as JSON
 omarchy-vk-music play section all       # queue "Моя музыка" and start
+omarchy-vk-music play search radiohead  # queue the search results
+omarchy-vk-music play keys 371745444_456389989 371745438_456389857 --index 1
 omarchy-vk-music search radiohead --play
+omarchy-vk-music suggestions radioh      # VK's own completion
 omarchy-vk-music next | previous | pause
 omarchy-vk-music seek 90 | volume 40 | volume +10
 omarchy-vk-music shuffle on | repeat all

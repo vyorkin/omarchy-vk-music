@@ -107,6 +107,19 @@ def parse_argv(argv: list[str]) -> dict:
             }
         elif kind == "queue":
             payload = {"command": "play_tracks", "tracks": json.load(sys.stdin)}
+        elif kind == "keys":
+            # Queue exactly these tracks, by their VK keys, without a second search.
+            title = ""
+            if "--title" in flags:
+                index = argv.index("--title")
+                title = argv[index + 1] if index + 1 < len(argv) else ""
+                args = args[: args.index("--title")]
+            if not args:
+                raise SystemExit("play keys <key> [<key>...] [--title <title>]")
+            payload = {"command": "play_keys", "keys": args, "index": 0, "title": title}
+            if "--index" in flags:
+                index = argv.index("--index")
+                payload["index"] = int(argv[index + 1]) if index + 1 < len(argv) else 0
         else:
             raise SystemExit(f"unknown play target: {kind}")
         return payload

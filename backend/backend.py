@@ -1522,6 +1522,33 @@ class Backend:
         )
         return self.player.status()
 
+    def cmd_play_keys(
+        self, keys: Sequence[str], index: int = 0, title: str = ""
+    ) -> dict[str, Any]:
+        """Queue exactly the tracks whose keys are named.
+
+        The widget shows search results and therefore already knows their keys,
+        which makes a second search unnecessary: one `audio.getById` answers
+        instead, and the queue is the list the user was looking at rather than
+        whatever a repeated search happens to return. VK resolves the URLs at
+        play time from these same keys, so storing them costs nothing.
+        """
+        wanted = [str(key) for key in keys if str(key).strip()]
+        if not wanted:
+            raise VkApiError(0, "no track keys given", method="play_keys")
+        client = self.player.client
+        if client is None:
+            raise VkApiError(0, "not signed in", method="play_keys")
+        tracks = self.player.api(lambda: client.audio_get_by_keys(wanted[:100]))
+        if not tracks:
+            raise VkApiError(0, "VK returned nothing for those keys", method="play_keys")
+        self.player.play(
+            list(tracks),
+            index=index,
+            source={"kind": "search", "id": "", "title": title or "Поиск"},
+        )
+        return self.player.status()
+
     def cmd_play_playlist(
         self, ownerId: int, playlistId: int, accessKey: str = "", title: str = ""
     ) -> dict[str, Any]:

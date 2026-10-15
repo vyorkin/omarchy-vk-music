@@ -24,10 +24,36 @@ Panel {
   property var playlists: []
   property var sources: []
   property var results: []
+  property var suggestions: []
+  // typing | searching | results — what the list under the field is showing.
+  property string searchState: "typing"
+  // Guards against a slow reply for an older query overwriting newer results.
+  property int _searchSeq: 0
+  property string _searchedQuery: ""
   property string view: "queue" // queue | playlists | search
   property string query: ""
   property string busy: ""
   property string errorText: ""
+
+  readonly property int _queryLength: root.query.trim().length
+  readonly property bool resultsShowing: root.searchState === "results" && root._queryLength >= 2
+  readonly property var resultsShown: root.resultsShowing ? root.results : []
+  // Suggestions stand in for the results while the query is still being typed,
+  // and come back when a search found nothing: they are the useful thing left.
+  readonly property var suggestionsShown: root._queryLength < 2 ? [] : (root.resultsShowing
+    ? (root.results.length === 0 ? root.suggestions : [])
+    : root.suggestions)
+  readonly property string searchHeader: root._queryLength < 2 ? ""
+    : (root.searchState === "searching" ? "Ищу…"
+      : (root.resultsShowing
+        ? (root.results.length > 0
+          ? "Найдено " + root.results.length
+          : (root.suggestionsShown.length > 0 ? "Ничего не найдено. Похожее:" : "Ничего не найдено"))
+        : "Подсказки"))
+  // The heading is worth its line only when there is something under it: while
+  // the query is still short nothing is shown at all.
+  readonly property bool searchHeaderVisible: root.searchHeader !== ""
+    && (root.searchState !== "typing" || root.suggestionsShown.length > 0)
 
   readonly property string pluginDir: decodeURIComponent(
     String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "").replace(/\/$/, ""))
@@ -261,6 +287,24 @@ Panel {
     }
   }
 
+  // Search-as-you-type: the cheap suggestions call after a short pause, the
+  // search itself after a longer one. Both are restarted by the next keystroke,
+  // so a typed query costs a handful of calls and never a burst — and the search
+  // also runs immediately on Enter or on a tap of a suggestion.
+  Timer {
+    id: suggestTimer
+    interval: 250
+    repeat: false
+    onTriggered: root.loadSuggestions()
+  }
+
+  Timer {
+    id: searchTimer
+    interval: 700
+    repeat: false
+    onTriggered: root.runSearch(false)
+  }
+
   function setVolume(value, live) {
     var clamped = Math.max(0, Math.min(100, value))
     root.volumeTarget = clamped
@@ -396,12 +440,60 @@ Panel {
     })
   }
 
-  function runSearch() {
+  // Suggestions are the cheap call — VK's own player asks for them as you type —
+  // so they come first. The search itself waits for a pause, and every keystroke
+  // cancels both, so a typed query costs a handful of calls and never a burst.
+  function loadSuggestions() {
     var text = root.query.trim()
-    if (text === "") return
-    call([root.cli, "search", text], function(answer) {
-      if (answer && answer.ok) root.results = answer.data.tracks || []
+    if (text.length < 2) {
+      root.suggestions = []
+      return
+    }
+    root.call([root.cli, "suggestions", text], function(answer) {
+      // The user may have typed on while this was in flight.
+      if (answer && answer.ok && root.query.trim() === text) root.suggestions = answer.data || []
     })
+  }
+
+  function runSearch(force) {
+    var text = root.query.trim()
+    if (text.length < 2) {
+      root.results = []
+      root.searchState = "typing"
+      return
+    }
+    // Typing a letter and deleting it again should not cost a second search, and
+    // neither should the debounce firing while the same search is still in
+    // flight. A search that failed leaves the state at "typing", so it can be
+    // retried by typing again.
+    if (!force && text === root._searchedQuery && root.searchState !== "typing") return
+    root._searchedQuery = text
+    root._searchSeq = root._searchSeq + 1
+    var seq = root._searchSeq
+    root.searchState = "searching"
+    root.call([root.cli, "search", text], function(answer) {
+      if (seq !== root._searchSeq) return
+      if (answer && answer.ok) {
+        root.results = answer.data.tracks || []
+        root.searchState = "results"
+      } else {
+        root.searchState = "typing"
+      }
+    })
+  }
+
+  function searchSuggestion(text) {
+    if (!text) return
+    root.query = text
+    root.runSearch(true)
+  }
+
+  function clearSearch() {
+    root.query = ""
+    root.results = []
+    root.suggestions = []
+    root.searchState = "typing"
+    root._searchedQuery = ""
   }
 
   // Any command that can start a track opens a short watch window: the widget
@@ -425,7 +517,18 @@ Panel {
   }
 
   function playSearchResult(index) {
-    call([root.cli, "play", "search", root.query.trim(), String(index)], function() { root.watchForTrack() })
+    // Hand the backend the keys of the results the user is looking at: one
+    // `audio.getById` instead of a repeated search, and the queue is exactly
+    // this list rather than whatever the same query returns the second time.
+    var keys = []
+    for (var i = 0; i < root.results.length; i++) {
+      if (root.results[i] && root.results[i].key) keys.push(String(root.results[i].key))
+    }
+    if (keys.length === 0) return
+    var args = [root.cli, "play", "keys"].concat(keys)
+    args.push("--index", String(index))
+    args.push("--title", "Поиск: " + root.query.trim())
+    root.call(args, function() { root.watchForTrack() })
   }
 
   function playQueueAt(index) {
@@ -632,23 +735,30 @@ Panel {
       root._queueIndex = -2
       root.loadQueue()
       root.loadSources()
-      // The sizes only exist after the panel has been laid out, so the probe
-      // waits a beat instead of reading zeroes at the moment of opening.
-      layoutProbe.restart()
+      afterOpen.restart()
     }
   }
 
-  Timer {
-    id: layoutProbe
-    interval: 400
-    repeat: false
-    onTriggered: console.log("[vk-music] popup layout", JSON.stringify({
+  // After the panel is mapped, not at the moment it opens: the sizes only exist
+  // once it has been laid out, and the keyboard focus only takes on a mapped
+  // item. Opening the search view hands the keyboard straight to the field, so
+  // typing works without a click.
+  function afterOpen() {
+    console.log("[vk-music] popup layout", JSON.stringify({
       card: [panel.contentWidth, panel.contentHeight],
       body: body.implicitHeight,
       available: [panel.availableCardWidth, panel.availableCardHeight],
       inset: panel.verticalContentInset,
       blocks: body.children.length
     }))
+    if (root.view === "search") searchField.forceActiveFocus()
+  }
+
+  Timer {
+    id: afterOpen
+    interval: 400
+    repeat: false
+    onTriggered: root.afterOpen()
   }
 
   // -------------------------------------------------------------- popup ---
@@ -969,7 +1079,10 @@ Panel {
             text: "Поиск"
             foreground: root.textColor
             selected: root.view === "search"
-            onClicked: root.view = "search"
+            onClicked: {
+              root.view = "search"
+              searchField.forceActiveFocus()
+            }
           }
 
           Button {
@@ -994,13 +1107,28 @@ Panel {
             placeholderText: "Артист, трек, альбом"
             foreground: root.textColor
             accent: Color.accent
-            onAccepted: root.runSearch()
+            // Two-way in one direction only: the field follows the query, and a
+            // keystroke writes it back. The stored query is what the commands
+            // use, which is why the missing half of this pair left searching
+            // silently doing nothing.
+            text: root.query
+            onTextChanged: {
+              if (text !== root.query) root.query = text
+              suggestTimer.restart()
+              searchTimer.restart()
+            }
+            onAccepted: root.runSearch(true)
           }
 
           Button {
-            text: "Найти"
+            iconText: "󰅖"
             foreground: root.textColor
-            onClicked: root.runSearch()
+            visible: root.query.length > 0
+            tooltipText: "Очистить"
+            onClicked: {
+              root.clearSearch()
+              searchField.forceActiveFocus()
+            }
           }
         }
 
@@ -1096,14 +1224,41 @@ Panel {
               }
             }
 
-            // Search results.
+            // Search: suggestions while typing, results once a search has run.
             Column {
               width: parent.width
               spacing: Style.space(4)
               visible: root.view === "search"
 
+              Text {
+                visible: root._queryLength < 2
+                width: parent.width
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+                text: "Начни печатать — подсказки ВК появятся сами, поиск пойдёт после паузы"
+                color: root.dim
+                font.family: Style.font.family
+                font.pixelSize: Style.font.bodySmall
+              }
+
+              PanelSectionHeader {
+                text: root.searchHeader
+                foreground: root.dim
+                visible: root.searchHeaderVisible
+              }
+
               Repeater {
-                model: root.results
+                model: root.suggestionsShown
+                delegate: Button {
+                  width: listColumn.width
+                  text: modelData ? String(modelData) : ""
+                  foreground: root.textColor
+                  onClicked: if (modelData) root.searchSuggestion(String(modelData))
+                }
+              }
+
+              Repeater {
+                model: root.resultsShown
                 delegate: Button {
                   width: listColumn.width
                   text: modelData ? (modelData.artist + " — " + modelData.title) : ""

@@ -71,7 +71,7 @@ case "$command_name" in
   home) send "$C_HOME" ;;
   next) send "$C_NEXT" ;;
   previous) send "$C_PREVIOUS" ;;
-  pause|play|toggle) send "$C_PAUSE" ;;
+  pause|toggle) send "$C_PAUSE" ;;
   stop) send "$C_STOP" ;;
   logout) send "$C_LOGOUT" ;;
   suggestions)
@@ -134,6 +134,13 @@ case "$command_name" in
     ;;
   play)
     target="${1:-}"
+    if [ -z "$target" ]; then
+      # A bare `play` is the transport toggle, which is what the old alias in the
+      # command table meant — and what made every `play section|search|keys`
+      # unreachable, because that alias matched first.
+      send "$C_PAUSE"
+      exit 0
+    fi
     [ $# -gt 0 ] && shift
     case "$target" in
       section)
@@ -181,6 +188,28 @@ case "$command_name" in
         # Reads a JSON array of tracks from stdin.
         tracks=$(cat)
         send "$(printf '%s' "$tracks" | jq -c '{command:"play_tracks", tracks:.}')"
+        ;;
+      keys)
+        # Queue exactly these tracks, by their VK keys, without a second search.
+        title=""
+        index=0
+        keys=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            --title) shift; title="${1:-}" ;;
+            --index) shift; index="$(number "${1:-0}")" ;;
+            *) keys="$keys $1" ;;
+          esac
+          [ $# -gt 0 ] && shift
+        done
+        keys="${keys# }"
+        if [ -z "$keys" ]; then
+          printf 'использование: play keys <ключ> [<ключ>...] [--title <название>]\n' >&2
+          exit 2
+        fi
+        keys_json="$(printf '%s' "$keys" | tr ' ' '\n' | jq -R . | jq -sc .)"
+        send "$(jq -nc --argjson keys "$keys_json" --argjson index "$index" --arg title "$title" \
+          '{command:"play_keys", keys:$keys, index:$index, title:$title}')"
         ;;
       *)
         printf 'неизвестный источник: %s\n' "${target:-нет}" >&2

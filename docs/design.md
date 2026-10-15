@@ -197,6 +197,33 @@ Deliberate choices around it:
   theme's background and foreground contrast by construction, dark theme or
   light.
 
+## Search, as the interface shows it
+
+The field searches as you type, in two stages, because the two calls cost very
+different amounts:
+
+* 250 ms after the last keystroke, `audio.getSearchSuggestions` — the same call
+  VK's own player makes while typing, so asking for it is unremarkable. Its
+  answers fill the list under the field under the heading **Подсказки**, and each
+  one is a ready-made query: tapping it searches for that string.
+* 700 ms after the last keystroke, `audio.search`, whose results replace the
+  suggestions under the heading **Найдено N**. `Enter` asks for them at once
+  instead of waiting.
+
+Every keystroke restarts both timers, so a typed query costs a handful of calls
+and never a burst; asking for the same query twice is skipped, and a slow reply
+for an older query is dropped rather than painted over newer results (a sequence
+number per search). Nothing is searched below two characters.
+
+When a search finds nothing the suggestions come back under **Ничего не найдено.
+Похожее:** — they are the useful thing left on screen.
+
+Tapping a result queues *those* results: the widget sends their VK keys
+(`play keys … --index N`) rather than the query, so the backend needs one
+`audio.getById` instead of a second search, and the queue is exactly the list the
+user was looking at rather than whatever the same query returns a few seconds
+later.
+
 ## Playback and cache
 
 - One long-lived `mpv` with `--no-config --idle=yes --no-video
@@ -243,7 +270,7 @@ automatically.
    one plays, and two downloads of the same file are deduplicated.
 4. **Auth UI** — sign-in page for both paths, warning states from error 5/9/14.
    The web path works from the popup; the mobile path exists on the CLI only.
-5. **Polish** — ~~likes~~, ~~settings page~~ done; search-as-you-type remains.
+5. ~~**Polish** — likes, settings page, search-as-you-type.~~ done
 6. **Later** — lyrics via LRCLIB, radio sections, playlist editing.
 
 ## What is built and verified
@@ -262,6 +289,8 @@ automatically.
 | Bar widget and queue popup | loads clean in the shell; polling confirmed |
 | Likes and unlikes | `audio.add` / `audio.delete` round trip verified against the account |
 | Settings in the popup | cache, prefetch, restore, and what the bar row shows |
+| Search as you type | suggestions at 250 ms, results at 700 ms or on `Enter`; stale replies dropped |
+| Playing a search result | queues the keys of the results on screen, one `audio.getById`, no second search |
 
 The queue and the position survive a restart, but playback does **not** resume
 by itself at login: the bar shows the track that was playing, paused, and one
@@ -288,6 +317,17 @@ click continues it.
   command per interaction step, so a drag paid Python's startup twenty times a
   second; `bin/omarchy-vk-music` is a shell script on a Unix socket now, with the
   Python client kept for the interactive login and as a fallback.
+* **Half of a two-way QML binding.** `text: root.query` alone makes the field
+  *show* the query; without the `onTextChanged: root.query = text` half it never
+  *sets* it. Every command reads `root.query`, so searching did nothing at all,
+  silently, since the popup was written — the button was wired, the text simply
+  never arrived.
+* **A `case` alias that shadows a verb.** The CLI's command table listed
+  `pause|play|toggle)`, and `play` matches that first, so `play section all`,
+  `play search …` and `play keys …` were all unreachable and sent *pause*
+  instead. A bare `play` is now handled inside the `play` branch, which is what
+  the alias meant. Worth a look for this pattern whenever a shell `case` grows a
+  verb that is also a word in an earlier pattern.
 * **A pixel-style minimum on a share.** `Math.max(1, progress)` looks like the
   neighbouring `Math.max(1, thickness)` and means something else entirely: every
   percentage painted the whole buffering frame. Only a rendered image showed it.
