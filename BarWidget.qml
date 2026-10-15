@@ -79,6 +79,7 @@ Panel {
   // be checked with numbers instead of a screenshot. It fires once per session
   // for the bar row and once per popup opening.
   property bool _reportedBarLayout: false
+  property string _loggedTrack: ""
   onWidthChanged: reportBarLayout()
 
   function reportBarLayout() {
@@ -112,30 +113,41 @@ Panel {
 
   // One fresh Process per command: a reused object can miss its exit event and
   // then keep reporting "running", which would wedge every later action.
+  //
+  // The answer is parsed in the collector's own `onStreamFinished`, because
+  // `text` is a property of the collector and not of the Process. Reading it
+  // from `onExited` yields undefined, which is how every command silently
+  // became "команда не выполнена" while the service was in fact working.
   Component {
     id: commandComponent
     Process {
       property var onDone
       stderr: StdioCollector { id: commandError; waitForEnd: true }
-      stdout: StdioCollector { waitForEnd: true }
-      onExited: function(code) {
-        var answer = null
-        try {
-          answer = JSON.parse(text)
-        } catch (parseError) {
-          answer = null
+      stdout: StdioCollector {
+        id: commandOutput
+        waitForEnd: true
+        onStreamFinished: {
+          var raw = String(text || "").trim()
+          var answer = null
+          try {
+            answer = raw === "" ? null : JSON.parse(raw)
+          } catch (parseError) {
+            answer = null
+          }
+          root.busy = ""
+          if (answer && answer.ok) {
+            root.errorText = ""
+          } else if (answer && answer.error) {
+            root.errorText = String(answer.error.message || answer.error.code || "ошибка")
+          } else if (raw !== "") {
+            root.errorText = raw
+          } else {
+            root.errorText = String(commandError.text || "").trim() || "команда не выполнена"
+          }
+          if (onDone) onDone(answer)
         }
-        root.busy = ""
-        if (code === 0 && answer && answer.ok) {
-          root.errorText = ""
-        } else if (answer && answer.error) {
-          root.errorText = String(answer.error.message || answer.error.code)
-        } else {
-          root.errorText = String(commandError.text || "").trim() || "команда не выполнена"
-        }
-        if (onDone) onDone(answer)
-        destroy()
       }
+      onExited: function(code) { destroy() }
     }
   }
 
@@ -148,9 +160,24 @@ Panel {
 
   function refresh() {
     call([root.cli, "status"], function(answer) {
-      if (answer && answer.ok) root.status = answer.data
-      if (root.opened) root.loadQueue()
+      if (!answer || !answer.ok) return
+      root.status = answer.data
+      // One line per track so the widget's own view of the state can be checked
+      // from the shell log instead of a screenshot.
+      var key = String((answer.data.track || {}).key || "-")
+      if (root._loggedTrack !== key) {
+        root._loggedTrack = key
+        console.log("[vk-music] widget state", JSON.stringify({
+          signedIn: root.signedIn,
+          playing: root.playing,
+          loading: root.loading,
+          title: root.hasTrack ? root.trackValue("title") : null,
+          queue: answer.data.queueLength,
+          error: root.errorText
+        }))
+      }
     })
+    if (root.opened) root.loadQueue()
   }
 
   function loadQueue() {
@@ -413,7 +440,9 @@ Panel {
     open: root.opened
     focusTarget: keys
     contentWidth: panel.fittedContentWidth(Style.space(400))
-    contentHeight: panel.fittedContentHeight(Style.space(460))
+    // Fixed height, but not one height for everything: a signed-out card holding
+    // two lines of text and one button would otherwise be mostly empty space.
+    contentHeight: panel.fittedContentHeight(root.signedIn ? Style.space(460) : Style.space(200))
 
     PanelKeyCatcher {
       id: keys

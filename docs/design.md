@@ -207,3 +207,21 @@ automatically.
 The queue and the position survive a restart, but playback does **not** resume
 by itself at login: the bar shows the track that was playing, paused, and one
 click continues it.
+
+### Pitfalls found the hard way
+
+* **`StdioCollector.text`, not the `Process`.** Reading `text` from a `Process`'s
+  `onExited` yields `undefined`, because `text` belongs to the collector. Every
+  command then looked like a failure while the service was working fine. Parse in
+  the collector's own `onStreamFinished`, and keep `destroy()` in `onExited`.
+* **Sizing a popup from `implicitHeight`.** That value only exists after a layout
+  pass, so the card opened collapsed and grew a frame later. A fixed card with a
+  `Flickable` list is boring and always correct.
+* **A `MouseArea` declared after its siblings covers them.** The bar row's
+  transport button never received a click until the interaction layer moved under
+  the row.
+* **`requests` puts the whole URL in its exception message**, and the URL carries
+  `access_token`. Errors go through `safe_error_text()` before they are stored,
+  logged or shown.
+* **`dbus-next` rejects `-> None`** on `@method()`: with PEP 563 the annotation is
+  the string `"None"`, which parses to a constant that is not a string.
