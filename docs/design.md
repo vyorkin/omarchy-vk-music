@@ -180,10 +180,30 @@ automatically.
 
 ## Roadmap
 
-1. **Skeleton** — manifest, widget that loads, daemon that answers `status`,
-   `install.sh`, systemd unit, CLI.
-2. **Playback** — sections and queues, mpv control, MPRIS, restore state.
-3. **Cache** — HLS download, LRU, preload of the next track.
+1. ~~**Skeleton** — manifest, widget that loads, daemon that answers `status`,
+   `install.sh`, systemd unit, CLI.~~ done
+2. ~~**Playback** — sections and queues, mpv control, MPRIS, restore state.~~ done
+3. ~~**Cache** — HLS download, LRU, preload of the next track.~~ download and
+   LRU done; preloading the next track is not.
 4. **Auth UI** — sign-in page for both paths, warning states from error 5/9/14.
+   The web path works from the popup; the mobile path exists on the CLI only.
 5. **Polish** — search-as-you-type, likes, settings page.
 6. **Later** — lyrics via LRCLIB, radio sections, playlist editing.
+
+## What is built and verified
+
+| Piece | State |
+| --- | --- |
+| Web sign-in from browser cookies | works; the token refreshes itself from the stored cookies |
+| Queue from **Моя музыка** (`section=all`), 100 tracks per page | works |
+| Search and playlists (read-only) | works |
+| Download-then-play through mpv | works; a cached track starts in about a second |
+| MPRIS (`org.mpris.MediaPlayer2.omarchy_vk_music`) | works; `PlayPause` and `Next` were driven over the bus |
+| Auto-advance on track end | works |
+| Disk cache with a 256 MiB LRU cap | works |
+| Pacing and halting | in place; no halt has been triggered in normal use |
+| Bar widget and queue popup | loads clean in the shell; polling confirmed |
+
+The queue and the position survive a restart, but playback does **not** resume
+by itself at login: the bar shows the track that was playing, paused, and one
+click continues it.
