@@ -749,7 +749,9 @@ Panel {
       body: body.implicitHeight,
       available: [panel.availableCardWidth, panel.availableCardHeight],
       inset: panel.verticalContentInset,
-      blocks: body.children.length
+      blocks: body.children.length,
+      list: [listView.height, listColumn.implicitHeight],
+      shown: [root.suggestionsShown.length, root.resultsShown.length]
     }))
     if (root.view === "search") searchField.forceActiveFocus()
   }
@@ -918,6 +920,10 @@ Panel {
 
           ColumnLayout {
             Layout.fillWidth: true
+            // Top-aligned, not stretched: filling this column vertically made the
+            // whole row swallow the height the list below needs, and the list —
+            // the only thing here with `Layout.fillHeight` — was left 2 px tall.
+            Layout.alignment: Qt.AlignTop
             spacing: Style.space(2)
 
             Text {
@@ -951,8 +957,6 @@ Panel {
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
             }
-
-            Item { Layout.fillHeight: true }
           }
         }
 
@@ -1182,6 +1186,7 @@ Panel {
                 model: root.upcoming
                 delegate: Button {
                   width: listColumn.width
+                  leftAlign: true
                   text: modelData ? ((root.upcomingStart + index + 1) + ".  " + modelData.artist + " — " + modelData.title) : ""
                   foreground: root.textColor
                   onClicked: root.playQueueAt(root.upcomingStart + index)
@@ -1208,6 +1213,7 @@ Panel {
                 model: root.playlists
                 delegate: Button {
                   width: listColumn.width
+                  leftAlign: true
                   text: modelData ? (modelData.title + (modelData.count ? "  ·  " + modelData.count : "")) : ""
                   foreground: root.textColor
                   onClicked: if (modelData) root.playPlaylist(modelData)
@@ -1251,6 +1257,7 @@ Panel {
                 model: root.suggestionsShown
                 delegate: Button {
                   width: listColumn.width
+                  leftAlign: true
                   text: modelData ? String(modelData) : ""
                   foreground: root.textColor
                   onClicked: if (modelData) root.searchSuggestion(String(modelData))
@@ -1261,6 +1268,7 @@ Panel {
                 model: root.resultsShown
                 delegate: Button {
                   width: listColumn.width
+                  leftAlign: true
                   text: modelData ? (modelData.artist + " — " + modelData.title) : ""
                   foreground: root.textColor
                   onClicked: root.playSearchResult(index)

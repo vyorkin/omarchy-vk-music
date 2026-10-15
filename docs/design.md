@@ -322,6 +322,17 @@ click continues it.
   *sets* it. Every command reads `root.query`, so searching did nothing at all,
   silently, since the popup was written — the button was wired, the text simply
   never arrived.
+* **A nested `Layout.fillHeight` in the wrong place, and a list that reports
+  nothing when it has no height.** The popup's list was **2 px** tall, so the
+  queue, the playlists, the search results and the whole settings page were never
+  visible — the list is the one element meant to grow, and the height went
+  elsewhere: a `Item { Layout.fillHeight: true }` inside the column of texts in
+  the player row made that row report an implicit height of 64 and take 215. The
+  data had been arriving correctly the whole time. Two habits came out of it:
+  the popup diagnostic prints the list's own height (`list: [height,
+  implicitHeight]`), and layout arithmetic is not evidence — "the card is 460, the
+  body 307, so the list has about 150" was wrong about what Qt does with that
+  150, and only the measured height settled it.
 * **A `case` alias that shadows a verb.** The CLI's command table listed
   `pause|play|toggle)`, and `play` matches that first, so `play section all`,
   `play search …` and `play keys …` were all unreachable and sent *pause*
