@@ -374,6 +374,8 @@ class Player:
         self._download_thread: threading.Thread | None = None
         self._download_cancel = threading.Event()
         self._ignore_events_until = 0.0
+        self._ignore_pause_until = 0.0
+        self.playing_from_cache = False
         self._mpris: MprisBridge | None = None
         self._load_state()
 
@@ -630,6 +632,7 @@ class Player:
             self.error = f"mpv: {safe_error_text(exc)}"
             self.loading = False
             self.playing = False
+        self.playing_from_cache = True
         self._publish_mpris()
 
     def _play_url(self, url: str) -> None:
@@ -642,6 +645,9 @@ class Player:
             self.error = f"mpv: {safe_error_text(exc)}"
             self.loading = False
             self.playing = False
+        # Seeking a remote HLS stream means refetching and decrypting segments,
+        # so the widget only seeks freely while the track is a local file.
+        self.playing_from_cache = False
         self._publish_mpris()
 
     def _begin_load(self) -> None:
@@ -735,8 +741,11 @@ class Player:
                 self.mpv.ensure()
                 self.mpv.command("set_property", "time-pos", position)
             except (MpvError, OSError) as exc:
-                self.error = f"mpv: {exc}"
+                self.error = f"mpv: {safe_error_text(exc)}"
             self.position = position
+            # mpv briefly reports `pause` while it re-seeks; without this window
+            # the bar icon blinks on every drag of the slider.
+            self._ignore_pause_until = time.monotonic() + 0.5
             self._publish_mpris(seeked=True)
 
     def set_volume(self, volume: int) -> None:
@@ -808,7 +817,7 @@ class Player:
             elif name == "duration" and isinstance(data, (int, float)):
                 self.duration = int(data)
             elif name == "pause" and isinstance(data, bool):
-                if self.loading and data:
+                if data and (self.loading or time.monotonic() < self._ignore_pause_until):
                     return
                 self.paused = data
                 self._publish_mpris()
@@ -866,6 +875,7 @@ class Player:
                 "index": self.index,
                 "queueLength": len(self.queue),
                 "unplayable": sorted(self.unplayable),
+                "streaming": not self.playing_from_cache,
                 "track": track_to_state(track) if track else None,
                 "next": track_to_state(self.queue[self.index + 1])
                 if 0 <= self.index + 1 < len(self.queue)

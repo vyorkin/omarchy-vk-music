@@ -225,3 +225,8 @@ click continues it.
   logged or shown.
 * **`dbus-next` rejects `-> None`** on `@method()`: with PEP 563 the annotation is
   the string `"None"`, which parses to a constant that is not a string.
+* **`PanelSlider` resets `liveValue` to `value` on release.** With `value` bound to
+  a position that arrives once per poll, the knob jumped back to the stale position
+  and forward again a second later. Seeking now holds the target locally and
+  interpolates the position between polls; a drift of 15 ms in the backend was
+  never the problem.

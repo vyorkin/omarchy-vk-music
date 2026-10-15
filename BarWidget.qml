@@ -158,10 +158,86 @@ Panel {
     process.running = true
   }
 
+  readonly property bool streaming: status.streaming === true
+
+  // Position display. The backend reports a position once per poll; between
+  // polls the widget interpolates, and right after a seek it holds the target
+  // until the backend confirms it. Without this the knob snapped back to the
+  // stale reported position on release and jumped forward a second later, which
+  // is what made seeking feel broken.
+  property real reportedPosition: 0
+  property double reportedAt: 0
+  property real seekTarget: -1
+  property double seekTargetAt: 0
+  property real pendingSeek: -1
+  property int tick: 0
+
+  readonly property real displayPosition: {
+    root.tick // reactive dependency: the ticker below advances it
+    var now = Date.now()
+    if (root.seekTarget >= 0 && now - root.seekTargetAt < 2500) return root.seekTarget
+    if (!root.playing || root.paused) return root.reportedPosition
+    var upper = root.duration > 0 ? root.duration : root.reportedPosition + 3600
+    return Math.min(upper, root.reportedPosition + (now - root.reportedAt) / 1000)
+  }
+
+  // Advances the interpolated position while music plays.
+  Timer {
+    interval: 250
+    running: root.playing && !root.paused
+    repeat: true
+    onTriggered: root.tick++
+  }
+
+  // A drag asks the backend to follow the hand, but not on every mouse move:
+  // one seek per 250 ms is enough to hear the position and cheap for a local
+  // file. A remote stream is left alone until the drag ends.
+  Timer {
+    id: liveSeek
+    interval: 250
+    repeat: false
+    onTriggered: {
+      if (root.pendingSeek < 0) return
+      var target = root.pendingSeek
+      root.pendingSeek = -1
+      root.call([root.cli, "seek", String(Math.round(target))])
+    }
+  }
+
+  function seekTo(target) {
+    var upper = root.duration > 0 ? root.duration : target
+    var clamped = Math.max(0, Math.min(upper, target))
+    root.seekTarget = clamped
+    root.seekTargetAt = Date.now()
+    root.reportedPosition = clamped
+    root.reportedAt = Date.now()
+    root.tick++
+    return clamped
+  }
+
+  function seekLive(target) {
+    var clamped = seekTo(target)
+    if (root.streaming) return
+    root.pendingSeek = clamped
+    liveSeek.restart()
+  }
+
+  function seekFinal(target) {
+    var clamped = seekTo(target)
+    root.pendingSeek = -1
+    liveSeek.stop()
+    root.call([root.cli, "seek", String(Math.round(clamped))])
+  }
+
   function refresh() {
     call([root.cli, "status"], function(answer) {
       if (!answer || !answer.ok) return
       root.status = answer.data
+      root.reportedPosition = Number(answer.data.position || 0)
+      root.reportedAt = Date.now()
+      if (root.seekTarget >= 0 && Math.abs(root.reportedPosition - root.seekTarget) < 2) {
+        root.seekTarget = -1
+      }
       // One line per track so the widget's own view of the state can be checked
       // from the shell log instead of a screenshot.
       var key = String((answer.data.track || {}).key || "-")
@@ -573,7 +649,7 @@ Panel {
               Layout.fillWidth: true
               textFormat: Text.PlainText
               visible: root.hasTrack
-              text: root.clock(root.position) + " / " + root.clock(root.duration)
+              text: root.clock(root.displayPosition) + " / " + root.clock(root.duration)
               color: root.dim
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
@@ -588,10 +664,11 @@ Panel {
           visible: root.hasTrack && root.duration > 0
           minimum: 0
           maximum: Math.max(1, root.duration)
-          value: root.position
+          value: root.displayPosition
           integer: true
           bar: root.bar
-          onReleased: function(value) { root.call([root.cli, "seek", String(Math.round(value))]) }
+          onMoved: function(value) { root.seekLive(value) }
+          onReleased: function(value) { root.seekFinal(value) }
         }
 
         RowLayout {
