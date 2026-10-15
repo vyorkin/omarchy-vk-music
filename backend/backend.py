@@ -748,16 +748,17 @@ class Player:
             self._ignore_pause_until = time.monotonic() + 0.5
             self._publish_mpris(seeked=True)
 
-    def set_volume(self, volume: int) -> None:
+    def set_volume(self, volume: int, *, persist: bool = True) -> None:
         with self.lock:
             self.volume = max(0, min(100, int(volume)))
             try:
                 self.mpv.ensure()
                 self.mpv.command("set_property", "volume", self.volume)
             except (MpvError, OSError) as exc:
-                self.error = f"mpv: {exc}"
+                self.error = f"mpv: {safe_error_text(exc)}"
             self._publish_mpris()
-            self.save_state()
+            if persist:
+                self.save_state()
 
     def set_shuffle(self, enabled: bool) -> None:
         with self.lock:
@@ -1416,10 +1417,18 @@ class Backend:
         self.player.seek(int(float(value)))
         return self.player.status()
 
-    def cmd_volume(self, value: int | float | None = None, delta: int | None = None) -> dict[str, Any]:
+    def cmd_volume(
+        self, value: int | float | None = None, delta: int | None = None, live: bool = False
+    ) -> dict[str, Any]:
+        """Set or nudge the volume.
+
+        `live` marks a step from a slider drag: mpv is told straight away, but
+        the playback state is not written to disk until the drag ends, because
+        a drag can produce twenty of these per second.
+        """
         current = self.player.volume
         target = int(current + delta) if delta is not None else int(value or 0)
-        self.player.set_volume(target)
+        self.player.set_volume(target, persist=not live)
         return self.player.status()
 
     def cmd_shuffle(self, enabled: bool | None = None) -> dict[str, Any]:

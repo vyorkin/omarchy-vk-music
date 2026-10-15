@@ -1,234 +1,231 @@
-#!/usr/bin/env python3
-"""Command-line client for the local VK Music service.
+#!/bin/sh
+# Command-line client for the local VK Music service.
+#
+# This is a POSIX shell script on purpose. The widget runs these commands while
+# the user drags a slider, and starting Python cost about 15 ms per command
+# against about 0.4 ms for `nc -U` on a Unix socket; at 20 volume steps per
+# second that difference is the responsiveness.
+#
+# The Python client next to this file stays as the fallback: it handles the
+# commands this script does not build (the interactive password login) and does
+# the same job when neither `nc` nor `socat` is installed.
+set -eu
 
-Every command is a thin request over the Unix socket and prints one line of
-JSON, so QML can call this script and parse the answer. Nothing here talks to
-VK directly, and no command prints the access token or the session cookies.
+self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+sock="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy-vk-music.sock"
+python_client="$self_dir/omarchy-vk-music.py"
 
-    omarchy-vk-music status
-    omarchy-vk-music home
-    omarchy-vk-music play section all
-    omarchy-vk-music search radiohead --play
-    omarchy-vk-music next
-    omarchy-vk-music auth web
-"""
+transport=""
+if command -v nc >/dev/null 2>&1; then
+  transport="nc"
+elif command -v socat >/dev/null 2>&1; then
+  transport="socat"
+fi
 
-from __future__ import annotations
+fallback_to_python() {
+  [ -x "$python_client" ] || python_client="$self_dir/omarchy-vk-music"
+  exec python3 "$python_client" "$@"
+}
 
-import json
-import os
-import socket
-import sys
-from pathlib import Path
+backend_down() {
+  printf '%s\n' '{"ok": false, "error": {"code": "backend_down", "message": "Сервис VK Music не запущен: systemctl --user start omarchy-vk-music"}}'
+  exit 1
+}
 
-MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-SOCKET_PATH = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / (
-    "omarchy-vk-music.sock"
-)
+send() {
+  [ -S "$sock" ] || backend_down
+  case "$transport" in
+    nc) printf '%s\n' "$1" | nc -U "$sock" ;;
+    socat) printf '%s\n' "$1" | socat - "UNIX-CONNECT:$sock" ;;
+    *) fallback_to_python "$@" ;;
+  esac
+}
 
+# Small constants so the command table below stays readable.
+C_STATUS='{"command":"status"}'
+C_SESSION='{"command":"session"}'
+C_QUEUE='{"command":"queue"}'
+C_SECTIONS='{"command":"sections"}'
+C_HOME='{"command":"home"}'
+C_NEXT='{"command":"next"}'
+C_PREVIOUS='{"command":"previous"}'
+C_PAUSE='{"command":"pause"}'
+C_STOP='{"command":"stop"}'
+C_LOGOUT='{"command":"logout"}'
 
-def request(payload: dict) -> dict:
-    if not SOCKET_PATH.exists():
-        return {
-            "ok": False,
-            "error": {
-                "code": "backend_down",
-                "message": "Сервис VK Music не запущен: systemctl --user start omarchy-vk-music",
-            },
-        }
-    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    connection.settimeout(120)
-    try:
-        connection.connect(str(SOCKET_PATH))
-        connection.sendall(json.dumps(payload, ensure_ascii=False).encode() + b"\n")
-        buffer = b""
-        while b"\n" not in buffer and len(buffer) < MAX_RESPONSE_BYTES:
-            chunk = connection.recv(65536)
-            if not chunk:
-                break
-            buffer += chunk
-    except OSError as exc:
-        return {"ok": False, "error": {"code": "ipc_error", "message": str(exc)}}
-    finally:
-        connection.close()
-    line, _, _ = buffer.partition(b"\n")
-    try:
-        return json.loads(line or b"{}")
-    except json.JSONDecodeError:
-        return {"ok": False, "error": {"code": "bad_response", "message": "сервис ответил не JSON"}}
+number() {
+  case "$1" in
+    ''|*[!0-9-]*) printf 'нужно число, получено: %s\n' "$1" >&2; exit 2 ;;
+  esac
+  printf '%s' "$1"
+}
 
+command_name="${1:-status}"
+[ $# -gt 0 ] && shift
 
-def parse_argv(argv: list[str]) -> dict:
-    """Map a command line onto the service protocol.
-
-    Kept as an explicit switch rather than argparse: the protocol is small, and
-    several commands take a free-form query that must not be split or escaped.
-    """
-    if not argv:
-        return {"command": "status"}
-    head, rest = argv[0], argv[1:]
-    flags = {item for item in rest if item.startswith("--")}
-    words = [item for item in rest if not item.startswith("--")]
-    play_after = "--play" in flags
-
-    if head == "play":
-        if not words:
-            return {"command": "pause"}
-        kind, args = words[0], words[1:]
-        if kind == "section":
-            payload = {"command": "play_section", "id": args[0] if args else "all"}
-            if len(args) > 1 and args[1].isdigit():
-                payload["index"] = int(args[1])
-            if "--title" in flags:
-                index = argv.index("--title")
-                payload["title"] = argv[index + 1] if index + 1 < len(argv) else ""
-        elif kind == "search":
-            digits = [a for a in args if a.isdigit()]
-            query = " ".join(a for a in args if a not in digits)
-            payload = {"command": "play_search", "query": query}
-            if digits:
-                payload["index"] = int(digits[-1])
-        elif kind == "playlist":
-            if len(args) < 2:
-                raise SystemExit("play playlist <owner_id> <playlist_id> [access_key] [title]")
-            payload = {
-                "command": "play_playlist",
-                "ownerId": int(args[0]),
-                "playlistId": int(args[1]),
-                "accessKey": args[2] if len(args) > 2 else "",
-                "title": " ".join(args[3:]),
-            }
-        elif kind == "queue":
-            payload = {"command": "play_tracks", "tracks": json.load(sys.stdin)}
-        else:
-            raise SystemExit(f"unknown play target: {kind}")
-        return payload
-
-    simple = {
-        "status": "status",
-        "sections": "sections",
-        "home": "home",
-        "next": "next",
-        "previous": "previous",
-        "pause": "pause",
-        "stop": "stop",
-        "queue": "queue",
-        "session": "session",
-        "logout": "logout",
-    }
-    if head in simple:
-        return {"command": simple[head]}
-    if head == "jump":
-        return {"command": "jump", "index": int(words[0]) if words else 0}
-    if head == "section":
-        payload = {"command": "section", "id": words[0] if words else "all"}
-        if len(words) > 1:
-            payload["startFrom"] = words[1]
-        return payload
-    if head == "search":
-        query = " ".join(words)
-        payload = {"command": "search", "query": query}
-        return {"command": "play_search", "query": query} if play_after else payload
-    if head == "suggestions":
-        return {"command": "suggestions", "query": " ".join(words)}
-    if head == "seek":
-        return {"command": "seek", "value": float(words[0]) if words else 0}
-    if head == "volume":
-        if not words:
-            return {"command": "status"}
-        token = words[0]
-        if token.startswith(("+", "-")):
-            return {"command": "volume", "delta": int(token)}
-        return {"command": "volume", "value": int(float(token))}
-    if head == "shuffle":
-        if not words:
-            return {"command": "shuffle"}
-        return {"command": "shuffle", "enabled": words[0] in ("on", "true", "1", "yes")}
-    if head == "repeat":
-        return {"command": "repeat", "mode": words[0] if words else "off"}
-    if head == "like":
-        return {"command": "like", "key": words[0] if words else "", "liked": True}
-    if head == "unlike":
-        return {"command": "like", "key": words[0] if words else "", "liked": False}
-    if head == "lyrics":
-        return {"command": "lyrics", "key": words[0] if words else ""}
-    if head == "cache":
-        return {"command": "cache", "action": words[0] if words else "stats"}
-    if head == "prefs":
-        settings = {}
-        for word in words:
-            key, _, value = word.partition("=")
-            if not _:
-                continue
-            settings[key] = _coerce(value)
-        return {"command": "preferences", "set": settings} if settings else {"command": "preferences"}
-    if head == "auth":
-        action = words[0] if words else "status"
-        if action == "web":
-            if "--cookies" in flags:
-                index = argv.index("--cookies")
-                value = argv[index + 1] if index + 1 < len(argv) else ""
-                return {"command": "auth_web", "cookies": value, "fromBrowser": False}
-            if "--no-browser" in flags:
-                return {"command": "auth_web", "cookies": _read_pasted_cookies(), "fromBrowser": False}
-            return {"command": "auth_web", "fromBrowser": True}
-        if action == "mobile":
-            login = words[1] if len(words) > 1 else input("VK login: ").strip()
-            import getpass
-
-            password = getpass.getpass("VK password: ")
-            client = "kate" if "--kate" in flags else "vk-android"
-            return {
-                "command": "auth_mobile_start",
-                "login": login,
-                "password": password,
-                "client": client,
-            }
-        if action == "step":
-            payload: dict = {"command": "auth_mobile_step"}
-            if "--code" in flags:
-                index = argv.index("--code")
-                payload["code"] = argv[index + 1] if index + 1 < len(argv) else ""
-            if "--success-token" in flags:
-                index = argv.index("--success-token")
-                payload["successToken"] = argv[index + 1] if index + 1 < len(argv) else ""
-            return payload
-        return {"command": "session"}
-    raise SystemExit(f"unknown command: {head}")
-
-
-def _coerce(value: str):
-    if value in ("true", "on", "yes"):
-        return True
-    if value in ("false", "off", "no"):
-        return False
-    try:
-        return int(value)
-    except ValueError:
-        return value
-
-
-def _read_pasted_cookies() -> str:
-    print("Paste `p=<value>; remixsid=<value>` (DevTools → Storage → Cookies):", file=sys.stderr)
-    return sys.stdin.readline().strip()
-
-
-def main() -> int:
-    pretty = "--pretty" in sys.argv
-    argv = [item for item in sys.argv[1:] if item != "--pretty"]
-    try:
-        payload = parse_argv(argv)
-    except SystemExit as exc:
-        print(exc, file=sys.stderr)
-        return 2
-
-    response = request(payload)
-    if pretty:
-        print(json.dumps(response, ensure_ascii=False, indent=2))
-    else:
-        print(json.dumps(response, ensure_ascii=False))
-    return 0 if response.get("ok") else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+case "$command_name" in
+  status) send "$C_STATUS" ;;
+  session) send "$C_SESSION" ;;
+  queue) send "$C_QUEUE" ;;
+  sections) send "$C_SECTIONS" ;;
+  home) send "$C_HOME" ;;
+  next) send "$C_NEXT" ;;
+  previous) send "$C_PREVIOUS" ;;
+  pause|play|toggle) send "$C_PAUSE" ;;
+  stop) send "$C_STOP" ;;
+  logout) send "$C_LOGOUT" ;;
+  suggestions)
+    send "$(jq -nc --arg query "$*" '{command:"suggestions", query:$query}')"
+    ;;
+  search)
+    send "$(jq -nc --arg query "$*" '{command:"search", query:$query}')"
+    ;;
+  section)
+    id="${1:-all}"
+    if [ $# -gt 1 ]; then
+      send "$(jq -nc --arg id "$id" --arg startFrom "$2" '{command:"section", id:$id, startFrom:$startFrom}')"
+    else
+      send "$(jq -nc --arg id "$id" '{command:"section", id:$id}')"
+    fi
+    ;;
+  jump)
+    send "$(jq -nc --argjson index "$(number "${1:-0}")" '{command:"jump", index:$index}')"
+    ;;
+  seek)
+    send "$(jq -nc --argjson value "$(number "${1:-0}")" '{command:"seek", value:$value}')"
+    ;;
+  volume)
+    value="${1:-}"
+    live=false
+    shift || true
+    for flag in "$@"; do
+      [ "$flag" = "--live" ] && live=true
+    done
+    case "$value" in
+      +*|-*)
+        send "$(jq -nc --argjson delta "$(number "$value")" --argjson live "$live" '{command:"volume", delta:$delta, live:$live}')"
+        ;;
+      *)
+        send "$(jq -nc --argjson value "$(number "$value")" --argjson live "$live" '{command:"volume", value:$value, live:$live}')"
+        ;;
+    esac
+    ;;
+  shuffle)
+    case "${1:-toggle}" in
+      on|true|1|yes) send '{"command":"shuffle","enabled":true}' ;;
+      off|false|0|no) send '{"command":"shuffle","enabled":false}' ;;
+      *) send '{"command":"shuffle"}' ;;
+    esac
+    ;;
+  repeat)
+    send "$(jq -nc --arg mode "${1:-off}" '{command:"repeat", mode:$mode}')"
+    ;;
+  like|unlike)
+    liked=false
+    [ "$command_name" = like ] && liked=true
+    send "$(jq -nc --arg key "${1:-}" --argjson liked "$liked" \
+      '{command:"like", key:$key, liked:$liked}')"
+    ;;
+  lyrics)
+    send "$(jq -nc --arg key "${1:-}" '{command:"lyrics", key:$key}')"
+    ;;
+  cache)
+    send "$(jq -nc --arg action "${1:-stats}" '{command:"cache", action:$action}')"
+    ;;
+  play)
+    target="${1:-}"
+    [ $# -gt 0 ] && shift
+    case "$target" in
+      section)
+        id="${1:-all}"
+        index=0
+        title=""
+        [ $# -gt 0 ] && shift
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            --title) shift; title="${1:-}" ;;
+            *[!0-9]*) ;;
+            *) index="$1" ;;
+          esac
+          shift
+        done
+        send "$(jq -nc --arg id "$id" --argjson index "$index" --arg title "$title" \
+          '{command:"play_section", id:$id, index:$index, title:$title}')"
+        ;;
+      search)
+        index=""
+        query=""
+        for word in "$@"; do
+          case "$word" in
+            *[!0-9]*) query="$query $word" ;;
+            *) index="$word" ;;
+          esac
+        done
+        query="${query# }"
+        if [ -n "$index" ]; then
+          send "$(jq -nc --arg query "$query" --argjson index "$index" '{command:"play_search", query:$query, index:$index}')"
+        else
+          send "$(jq -nc --arg query "$query" '{command:"play_search", query:$query}')"
+        fi
+        ;;
+      playlist)
+        owner="$(number "${1:-0}")"
+        playlist="$(number "${2:-0}")"
+        access_key="${3:-}"
+        title="${4:-}"
+        send "$(jq -nc --argjson ownerId "$owner" --argjson playlistId "$playlist" \
+          --arg accessKey "$access_key" --arg title "$title" \
+          '{command:"play_playlist", ownerId:$ownerId, playlistId:$playlistId, accessKey:$accessKey, title:$title}')"
+        ;;
+      queue)
+        # Reads a JSON array of tracks from stdin.
+        tracks=$(cat)
+        send "$(printf '%s' "$tracks" | jq -c '{command:"play_tracks", tracks:.}')"
+        ;;
+      *)
+        printf 'неизвестный источник: %s\n' "${target:-нет}" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  auth)
+    action="${1:-status}"
+    [ $# -gt 0 ] && shift
+    case "$action" in
+      web)
+        cookies=""
+        from_browser=true
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            --cookies) shift; cookies="${1:-}"; from_browser=false ;;
+            --no-browser) from_browser=false ;;
+          esac
+          shift
+        done
+        if [ -z "$cookies" ] && [ "$from_browser" = false ]; then
+          read -r cookies || true
+        fi
+        if [ -n "$cookies" ]; then
+          send "$(jq -nc --arg cookies "$cookies" '{command:"auth_web", cookies:$cookies, fromBrowser:false}')"
+        else
+          send '{"command":"auth_web","fromBrowser":true}'
+        fi
+        ;;
+      status)
+        send "$C_SESSION"
+        ;;
+      *)
+        # The password path prompts for a password, which belongs in the Python
+        # client: it reads it with getpass and never puts it in argv.
+        fallback_to_python auth "$action" "$@"
+        ;;
+    esac
+    ;;
+  prefs)
+    fallback_to_python prefs "$@"
+    ;;
+  *)
+    printf 'неизвестная команда: %s\n' "$command_name" >&2
+    exit 2
+    ;;
+esac

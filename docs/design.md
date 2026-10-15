@@ -225,6 +225,10 @@ click continues it.
   logged or shown.
 * **`dbus-next` rejects `-> None`** on `@method()`: with PEP 563 the annotation is
   the string `"None"`, which parses to a constant that is not a string.
+* **A Python CLI is 15 ms, an `nc -U` write is 0.4 ms.** The widget runs one
+  command per interaction step, so a drag paid Python's startup twenty times a
+  second; `bin/omarchy-vk-music` is a shell script on a Unix socket now, with the
+  Python client kept for the interactive login and as a fallback.
 * **`PanelSlider` resets `liveValue` to `value` on release.** With `value` bound to
   a position that arrives once per poll, the knob jumped back to the stale position
   and forward again a second later. Seeking now holds the target locally and

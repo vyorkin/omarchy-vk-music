@@ -48,7 +48,7 @@ if [[ "$(realpath "$ROOT")" != "$(realpath "$PLUGIN_DIR")" ]]; then
   install -m 644 "$ROOT/manifest.json" "$ROOT/requirements.txt" "$PLUGIN_DIR/"
   install -m 644 "$ROOT/backend/vk_api.py" "$ROOT/backend/vk_auth.py" \
     "$ROOT/backend/audio_cache.py" "$ROOT/backend/backend.py" "$PLUGIN_DIR/backend/"
-  install -m 755 "$ROOT/bin/omarchy-vk-music" "$PLUGIN_DIR/bin/omarchy-vk-music"
+  install -m 755 "$ROOT/bin/omarchy-vk-music" "$ROOT/bin/omarchy-vk-music.py" "$PLUGIN_DIR/bin/"
   install -m 644 "$ROOT/systemd/omarchy-vk-music.service" "$PLUGIN_DIR/systemd/"
   install -m 755 "$ROOT/install.sh" "$ROOT/bootstrap.sh" "$ROOT/uninstall.sh" "$PLUGIN_DIR/"
   for file in "$ROOT"/*.qml "$ROOT"/*.js; do
@@ -60,7 +60,7 @@ fi
 install -m 755 "$PLUGIN_DIR/backend/backend.py" "$APP_DIR/backend.py"
 install -m 644 "$PLUGIN_DIR/backend/vk_api.py" "$PLUGIN_DIR/backend/vk_auth.py" \
   "$PLUGIN_DIR/backend/audio_cache.py" "$APP_DIR/"
-install -m 755 "$PLUGIN_DIR/bin/omarchy-vk-music" "$HOME/.local/bin/omarchy-vk-music"
+install -m 755 "$PLUGIN_DIR/bin/omarchy-vk-music" "$PLUGIN_DIR/bin/omarchy-vk-music.py" "$HOME/.local/bin/"
 install -m 644 "$PLUGIN_DIR/systemd/omarchy-vk-music.service" \
   "$UNIT_DIR/omarchy-vk-music.service"
 

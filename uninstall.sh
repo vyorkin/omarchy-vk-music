@@ -17,7 +17,7 @@ systemctl --user disable --now omarchy-vk-music.service >/dev/null 2>&1 || true
 rm -f "$UNIT"
 systemctl --user daemon-reload || true
 rm -rf "$APP_DIR"
-rm -f "$HOME/.local/bin/omarchy-vk-music"
+rm -f "$HOME/.local/bin/omarchy-vk-music" "$HOME/.local/bin/omarchy-vk-music.py"
 rm -rf "$CACHE_HOME/omarchy-vk-music"
 
 if [[ "${1:-}" == "--purge" ]]; then

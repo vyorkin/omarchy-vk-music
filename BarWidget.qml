@@ -189,12 +189,9 @@ Panel {
     onTriggered: root.tick++
   }
 
-  // A drag asks the backend to follow the hand, but not on every mouse move:
-  // one seek per 250 ms is enough to hear the position and cheap for a local
-  // file. A remote stream is left alone until the drag ends.
   Timer {
     id: liveSeek
-    interval: 250
+    interval: 150
     repeat: false
     onTriggered: {
       if (root.pendingSeek < 0) return
@@ -216,15 +213,19 @@ Panel {
     return root.volume
   }
 
+  // A drag asks the backend to follow the hand. The transport is a Unix socket
+  // write (about 0.4 ms), so this throttle is only here to keep the mpv commands
+  // and the MPRIS updates from flooding: 50 ms is under the threshold where a
+  // change feels detached from the hand.
   Timer {
     id: liveVolume
-    interval: 200
+    interval: 50
     repeat: false
     onTriggered: {
       if (root.pendingVolume < 0) return
       var target = root.pendingVolume
       root.pendingVolume = -1
-      root.call([root.cli, "volume", String(Math.round(target))])
+      root.call([root.cli, "volume", String(Math.round(target)), "--live"])
     }
   }
 
