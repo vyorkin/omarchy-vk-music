@@ -75,6 +75,12 @@ Panel {
   readonly property color dim: Qt.darker(root.fg, 1.5)
   readonly property color textColor: Color.popups ? Color.popups.text : Color.foreground
   readonly property color cardBg: bar && bar.background !== undefined ? bar.background : Color.background
+  // The surface the popup sits on. Used for the scrim under the percentage: the
+  // theme's own panel colour is dark in a dark theme and light in a light one,
+  // so the label never has to fight the album art.
+  readonly property color panelBackground: Color.popups && Color.popups.background !== undefined
+    ? Color.popups.background
+    : Color.background
 
   readonly property int upcomingStart: Number(status.index === undefined ? -1 : status.index) + 1
 
@@ -92,6 +98,7 @@ Panel {
   // be checked with numbers instead of a screenshot. It fires once per session
   // for the bar row and once per popup opening.
   property bool _reportedBarLayout: false
+  property bool _watching: false
   property string _loggedTrack: ""
   property int _queueIndex: -2
   onWidthChanged: reportBarLayout()
@@ -115,10 +122,18 @@ Panel {
   // lasts about three seconds, and one status call costs a couple of
   // milliseconds over the socket.
   Timer {
-    interval: root.buffering ? 250 : (root.playing ? 1000 : 5000)
+    id: pollTimer
+    interval: (root.buffering || root._watching) ? 250 : (root.playing ? 1000 : 5000)
     running: true
     repeat: true
     onTriggered: root.refresh()
+  }
+
+  Timer {
+    id: watchTimer
+    interval: 5000
+    repeat: false
+    onTriggered: root._watching = false
   }
 
   Component.onCompleted: {
@@ -343,6 +358,12 @@ Panel {
       var key = String((answer.data.track || {}).key || "-")
       if (root._loggedTrack !== key) {
         root._loggedTrack = key
+        // A track can also change without this widget asking — the media keys go
+        // through MPRIS — so a change is worth watching closely for a moment.
+        if (root._loggedTrack !== "") {
+          root._watching = true
+          watchTimer.restart()
+        }
         console.log("[vk-music] widget state", JSON.stringify({
           signedIn: root.signedIn,
           playing: root.playing,
@@ -383,23 +404,32 @@ Panel {
     })
   }
 
+  // Any command that can start a track opens a short watch window: the widget
+  // then polls four times a second instead of once, because a download lasts
+  // about three seconds and the first poll at one second would land near its end.
+  function watchForTrack() {
+    root._watching = true
+    watchTimer.restart()
+    root.refresh()
+  }
+
   function playSection(id, title) {
-    call([root.cli, "play", "section", id, "0", "--title", title], function() { root.refresh() })
+    call([root.cli, "play", "section", id, "0", "--title", title], function() { root.watchForTrack() })
   }
 
   function playPlaylist(playlist) {
     call([
       root.cli, "play", "playlist", String(playlist.owner_id), String(playlist.playlist_id),
       String(playlist.access_key || ""), String(playlist.title || "")
-    ], function() { root.refresh() })
+    ], function() { root.watchForTrack() })
   }
 
   function playSearchResult(index) {
-    call([root.cli, "play", "search", root.query.trim(), String(index)], function() { root.refresh() })
+    call([root.cli, "play", "search", root.query.trim(), String(index)], function() { root.watchForTrack() })
   }
 
   function playQueueAt(index) {
-    call([root.cli, "jump", String(index)], function() { root.refresh() })
+    call([root.cli, "jump", String(index)], function() { root.watchForTrack() })
   }
 
   function togglePause() {
@@ -407,11 +437,11 @@ Panel {
   }
 
   function skipNext() {
-    call([root.cli, "next"], function() { root.refresh() })
+    call([root.cli, "next"], function() { root.watchForTrack() })
   }
 
   function skipPrevious() {
-    call([root.cli, "previous"], function() { root.refresh() })
+    call([root.cli, "previous"], function() { root.watchForTrack() })
   }
 
   function signIn() {
@@ -740,14 +770,15 @@ Panel {
               font.pixelSize: Style.font.displayLarge
             }
 
-            // While the track is fetched the cover dims and the percentage takes
-            // the centre: one glance says how long the wait is.
+            // The percentage gets its own surface. Over album art a fixed white on
+            // black reads badly on a bright cover and worse on a dark one; the
+            // scrim is the theme's panel colour, and the label is the panel
+            // foreground, which contrasts with it by construction.
             Rectangle {
               anchors.fill: parent
-              anchors.margins: Style.space(2)
               radius: parent.radius
               visible: root.buffering
-              color: Qt.rgba(0, 0, 0, 0.55)
+              color: Util.alpha(root.panelBackground, 0.82)
             }
 
             Text {
@@ -755,7 +786,7 @@ Panel {
               visible: root.buffering && !root.bufferIndeterminate
               textFormat: Text.PlainText
               text: Math.round(Math.max(0, root.bufferProgress) * 100) + "%"
-              color: "white"
+              color: root.textColor
               font.family: Style.font.family
               font.pixelSize: Style.font.subtitle
               font.bold: true

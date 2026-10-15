@@ -711,7 +711,10 @@ class Player:
             if cancel.is_set():
                 return
             percent = int(100 * seconds / track.duration) if track.duration > 0 else 0
-            percent = max(0, min(100, percent))
+            # ffmpeg reaches the end of the audio well before it finishes writing
+            # the file, so a running download never reports 100: otherwise the
+            # frame sits visibly full for the last stretch of every track.
+            percent = max(0, min(99, percent))
             if percent >= (self.buffer_percent or 0):
                 self.buffer_seconds = seconds
                 self.buffer_percent = percent

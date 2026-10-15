@@ -173,9 +173,20 @@ Deliberate choices around it:
   dims while the track is fetched.
 * The seek slider is disabled while buffering: a seek would move the track that
   is still playing, not the one being fetched.
-* Buffering is polled four times a second so the arc grows in more than three
+* Buffering is polled four times a second so the frame grows in more than three
   steps; a status call costs 2–4 ms over the socket, and the queue (a hundred
-  tracks of JSON) is only reloaded when the track actually changes.
+  tracks of JSON) is only reloaded when the track actually changes. The fast
+  interval is armed by the widget's own commands and by any observed track
+  change, so a jump from a media key is not missed either.
+* A running download never reports 100 %: ffmpeg reaches the end of the audio
+  well before it finishes writing the file, and a frame that sits visibly full
+  for the last stretch of every track reads as a stuck indicator. 100 % belongs
+  to the moment the file is in place, when the frame disappears anyway.
+* The percentage in the popup sits on the theme's own panel colour at 82 %
+  opacity with the panel foreground over it, rather than on black with white
+  text: over album art a fixed pair is unreadable on some covers, while the
+  theme's background and foreground contrast by construction, dark theme or
+  light.
 
 ## Playback and cache
 
