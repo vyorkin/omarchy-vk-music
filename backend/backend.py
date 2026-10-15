@@ -385,6 +385,10 @@ class Player:
         self.unplayable: set[str] = set()
         self.source: dict[str, str] = {"kind": "", "id": "", "title": ""}
         self._download_thread: threading.Thread | None = None
+        # Where the time went for the track being started: filled as the start
+        # proceeds and printed once per start. A "playback takes a few seconds"
+        # report cannot otherwise be told apart from a slow download.
+        self._trace: dict[str, float] = {}
         self._download_cancel = threading.Event()
         self._prefetch_thread: threading.Thread | None = None
         self._prefetch_key = ""
@@ -599,6 +603,7 @@ class Player:
 
     def _start_current(self) -> None:
         self._cancel_prefetch()
+        self._trace = {"start": time.monotonic()}
         track = self.current_track()
         if track is None:
             self.playing = False
@@ -620,6 +625,7 @@ class Player:
             self.playing = False
             self._publish_mpris()
             return
+        self._trace["resolved"] = time.monotonic()
         if not url:
             self._mark_unplayable(track, "нет ссылки на поток")
             return
@@ -699,7 +705,12 @@ class Player:
             log(f"prefetched {track.label} ({path.stat().st_size // 1024} KiB)")
 
     def _start_download(self, track: Track, url: str) -> None:
+        # The previous download has to be told to stand down, not just replaced:
+        # the worker checks its own event when the file is ready, and an orphaned
+        # event never fires, so a slow download used to finish and play itself
+        # over the track the user had chosen in the meantime.
         cancel = threading.Event()
+        self._download_cancel.set()
         self._download_cancel = cancel
         with self.lock:
             self.buffering = True
@@ -722,6 +733,7 @@ class Player:
         def worker() -> None:
             try:
                 path = self.cache.download(url, track.key, on_progress=report)
+                self._trace["downloaded"] = time.monotonic()
             except CacheError as exc:
                 log(f"cache failed for {track.key}: {exc}")
                 with self.lock:
@@ -748,6 +760,11 @@ class Player:
             self.mpv.ensure()
             self.mpv.command("loadfile", str(path), "replace")
             self.mpv.command("set_property", "volume", self.volume)
+            # mpv keeps its `pause` property across `loadfile`, so a track started
+            # while the player was paused loaded paused and stayed silent, while
+            # this side believed it was playing and only the second press of play
+            # made a sound. Starting a track means playing it.
+            self.mpv.command("set_property", "pause", False)
         except (MpvError, OSError) as exc:
             self.error = f"mpv: {safe_error_text(exc)}"
             self.loading = False
@@ -765,6 +782,7 @@ class Player:
             self.mpv.ensure()
             self.mpv.command("loadfile", url, "replace")
             self.mpv.command("set_property", "volume", self.volume)
+            self.mpv.command("set_property", "pause", False)
         except (MpvError, OSError) as exc:
             self.error = f"mpv: {safe_error_text(exc)}"
             self.loading = False
@@ -834,6 +852,11 @@ class Player:
 
     def toggle_pause(self) -> None:
         with self.lock:
+            if self.loading:
+                # Nothing is playing yet, and starting the track again here would
+                # throw away the download in progress: a press of play during the
+                # wait is not an instruction to fetch the file a second time.
+                return
             if not self.playing:
                 if self.current_track():
                     self._start_current()
@@ -945,6 +968,8 @@ class Player:
         """
         with self.lock:
             if name == "file-loaded":
+                self._trace["loaded"] = time.monotonic()
+                self._log_start_trace()
                 self.loading = False
                 self.buffering = False
                 self.playing = True
@@ -986,6 +1011,24 @@ class Player:
     def attach_mpris(self) -> None:
         self._mpris = MprisBridge(self)
         self._mpris.start()
+
+    def _log_start_trace(self) -> None:
+        """Print where the time of one track start went, in one line."""
+        trace = self._trace
+        self._trace = {}
+        start = trace.get("start")
+        if start is None:
+            return
+        parts = []
+        for name, label in (("resolved", "resolve"), ("downloaded", "download")):
+            at = trace.get(name)
+            if at is not None:
+                parts.append(f"{label} {at - start:.2f} s")
+        loaded = trace.get("loaded")
+        if loaded is not None:
+            parts.append(f"total {loaded - start:.2f} s")
+        if parts:
+            log("track start: " + ", ".join(parts))
 
     def _publish_mpris(self, seeked: bool = False) -> None:
         if self._mpris:
@@ -1203,8 +1246,11 @@ class MprisBridge:
                 return None
 
             @dbus_signal()
-            def Seeked(self, position: "x") -> "x":  # type: ignore[empty-body]
-                ...
+            def Seeked(self, position: "x") -> "x":
+                # dbus-next builds a signal's body from this return value, so a
+                # bare `...` made every emit raise SignatureBodyMismatchError and
+                # no consumer ever saw a Seeked.
+                return position
 
             @dbus_property(access=PropertyAccess.READ)
             def PlaybackStatus(self) -> "s":

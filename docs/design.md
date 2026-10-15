@@ -224,6 +224,20 @@ Tapping a result queues *those* results: the widget sends their VK keys
 user was looking at rather than whatever the same query returns a few seconds
 later.
 
+## Starting a track, and where its time goes
+
+One line goes to the journal per track start:
+
+```
+track start: resolve 0.10 s, download 2.88 s, total 2.93 s
+```
+
+It exists because "playback takes a few seconds" is otherwise unanswerable: a
+click from the widget costs an `audio.getById` for the list, a URL resolution,
+the download itself and mpv's load, and only the split says which one is to
+blame. In practice the download dominates, and now that starting a track clears
+mpv's pause, the sound follows the download by about 0.2 s.
+
 ## Playback and cache
 
 - One long-lived `mpv` with `--no-config --idle=yes --no-video
@@ -322,6 +336,25 @@ click continues it.
   *sets* it. Every command reads `root.query`, so searching did nothing at all,
   silently, since the popup was written — the button was wired, the text simply
   never arrived.
+* **mpv keeps its `pause` across `loadfile`.** A track started while the player
+  was paused loaded paused and stayed silent, while this side believed it was
+  playing: the sound appeared only when play was pressed again, and the state
+  was inverted from then on. Starting a track now clears `pause` explicitly
+  after the `loadfile`, which is the only thing that makes "a click starts a
+  track" true.
+* **A download that outlives its track.** The cancel event was replaced instead
+  of set, so a slow download kept going after the user had chosen another track
+  and, on finishing, played itself over it. The old event is set before the new
+  one is installed.
+* **Play during the download used to throw the download away.** `toggle_pause`
+  treated "not playing yet" as "start this track again", so a press while
+  fetching the file restarted the fetch — which reads as playback arriving a few
+  seconds late. A press while loading is now a no-op.
+* **A dbus signal needs a return value.** `@dbus_signal() def Seeked(...): ...`
+  builds the signal body from the function's return value in dbus-next, so a bare
+  `...` made every emit raise `SignatureBodyMismatchError` and no consumer ever
+  saw a `Seeked`. It returns the position now, and the bus shows `Seeked` with
+  the expected microseconds.
 * **A nested `Layout.fillHeight` in the wrong place, and a list that reports
   nothing when it has no height.** The popup's list was **2 px** tall, so the
   queue, the playlists, the search results and the whole settings page were never
