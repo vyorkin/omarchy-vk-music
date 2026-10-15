@@ -188,7 +188,7 @@ automatically.
    one plays, and two downloads of the same file are deduplicated.
 4. **Auth UI** — sign-in page for both paths, warning states from error 5/9/14.
    The web path works from the popup; the mobile path exists on the CLI only.
-5. **Polish** — search-as-you-type, likes, settings page.
+5. **Polish** — ~~likes~~, ~~settings page~~ done; search-as-you-type remains.
 6. **Later** — lyrics via LRCLIB, radio sections, playlist editing.
 
 ## What is built and verified
@@ -205,6 +205,8 @@ automatically.
 | Prefetch of the next track | works: switching to a prefetched track starts in 0.4 s instead of 1–3 s |
 | Pacing and halting | in place; no halt has been triggered in normal use |
 | Bar widget and queue popup | loads clean in the shell; polling confirmed |
+| Likes and unlikes | `audio.add` / `audio.delete` round trip verified against the account |
+| Settings in the popup | cache, prefetch, restore, and what the bar row shows |
 
 The queue and the position survive a restart, but playback does **not** resume
 by itself at login: the bar shows the track that was playing, paused, and one

@@ -20,7 +20,7 @@ import sys
 import threading
 import time
 import traceback
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -75,6 +75,11 @@ DEFAULT_PREFERENCES: dict[str, Any] = {
     "cacheLimitMb": 256,
     "restoreOnStart": True,
     "defaultSource": "section:all",
+    # What the bar row shows. These live here rather than in shell.json so the
+    # popup can change them; a shell.json entry still wins when present.
+    "showArtwork": True,
+    "showText": True,
+    "labelWidth": 180,
     # Downloading the next queue track while the current one plays: the same
     # file would be fetched when its turn comes, so it costs no extra traffic,
     # only a track of lead time.
@@ -391,6 +396,7 @@ class Player:
         self._ignore_events_until = 0.0
         self._ignore_pause_until = 0.0
         self.playing_from_cache = False
+        self.liked_copies: dict[str, str] = {}
         self._mpris: MprisBridge | None = None
         self._load_state()
 
@@ -411,6 +417,9 @@ class Player:
         self.source = stored.get("source") or self.source
         restored = [track_from_state(item) for item in stored.get("queue") or []]
         self.queue = restored
+        self.liked_copies = {
+            str(key): str(value) for key, value in (stored.get("likedCopies") or {}).items()
+        }
         self.index = int(stored.get("index", -1))
         self.position = int(stored.get("position", 0) or 0)
         # The queue and the position are restored so the bar shows what was
@@ -430,6 +439,7 @@ class Player:
                 "repeat": self.repeat,
                 "source": self.source,
                 "queue": [track_to_state(track) for track in self.queue],
+                "likedCopies": self.liked_copies,
                 "index": self.index,
                 "position": self.position,
             }
@@ -852,6 +862,31 @@ class Player:
         with self.lock:
             self.repeat = mode if mode in ("off", "all", "one") else "off"
             self.save_state()
+
+    def set_liked(self, key: str, liked: bool) -> None:
+        """Reflect a like in the queue, so the widget needs no second request."""
+        with self.lock:
+            self.queue = [
+                replace(track, is_liked=liked) if track.key == key else track
+                for track in self.queue
+            ]
+
+    def remember_like_copy(self, key: str, copy_key: str) -> None:
+        """Remember which ids VK gave the track in the user's own list.
+
+        Liking a track from someone else's playlist creates a copy with new ids,
+        and removing it later needs those ids, not the original ones.
+        """
+        with self.lock:
+            if copy_key:
+                self.liked_copies[key] = copy_key
+            else:
+                self.liked_copies.pop(key, None)
+            self.save_state()
+
+    def derive_like_target(self, key: str) -> str:
+        with self.lock:
+            return self.liked_copies.get(key, key)
 
     def set_preferences(self, values: Mapping[str, Any]) -> None:
         with self.lock:
@@ -1545,18 +1580,39 @@ class Backend:
         return self.player.cache.stats()
 
     def cmd_like(self, key: str = "", liked: bool = True) -> dict[str, Any]:
+        """Like or unlike a track.
+
+        In VK music "liked" and "in my music" are the same list: `audio.add`
+        copies the track into the user's own audio and `audio.delete` removes it.
+        A track taken from someone else's playlist gets new ids on the way in,
+        and those are what a later removal needs.
+        """
         if not key:
             raise VkApiError(0, "track key is required", method="like")
-        owner_id, _, audio_id = key.partition("_")
         if liked:
+            owner_id, _, audio_id = key.partition("_")
             result = self.player.api(
                 lambda: self.player.client.add(int(owner_id), int(audio_id))  # type: ignore[union-attr]
             )
-            return {"liked": True, "result": result}
-        result = self.player.api(
-            lambda: self.player.client.delete(int(owner_id), int(audio_id))  # type: ignore[union-attr]
-        )
-        return {"liked": False, "result": result}
+            copy_key = ""
+            for item in result:
+                if not isinstance(item, Mapping):
+                    continue
+                new_owner = item.get("new_owner_id", item.get("owner_id"))
+                new_audio = item.get("new_audio_id", item.get("id"))
+                if new_owner is not None and new_audio is not None:
+                    copy_key = f"{int(new_owner)}_{int(new_audio)}"
+                    break
+            self.player.remember_like_copy(key, copy_key if copy_key != key else "")
+        else:
+            target = self.player.derive_like_target(key)
+            owner_id, _, audio_id = target.partition("_")
+            self.player.api(
+                lambda: self.player.client.delete(int(owner_id), int(audio_id))  # type: ignore[union-attr]
+            )
+            self.player.remember_like_copy(key, "")
+        self.player.set_liked(key, liked)
+        return {"liked": liked, "key": key, "status": self.player.status()}
 
     def cmd_lyrics(self, key: str = "") -> dict[str, Any]:
         if not key:

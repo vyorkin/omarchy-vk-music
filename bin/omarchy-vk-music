@@ -222,7 +222,17 @@ case "$command_name" in
     esac
     ;;
   prefs)
-    fallback_to_python prefs "$@"
+    settings="{}"
+    for pair in "$@"; do
+      key="${pair%%=*}"
+      value="${pair#*=}"
+      [ "$key" = "$pair" ] && continue
+      settings=$(printf '%s' "$settings" | jq -c --arg key "$key" --arg value "$value" \
+        '.[$key] = (if ($value|test("^(true|false)$")) then ($value == "true")
+                    elif ($value|test("^-?[0-9]+$")) then ($value|tonumber)
+                    else $value end)')
+    done
+    send "$(jq -nc --argjson set "$settings" '{command:"preferences", set:$set}')"
     ;;
   *)
     printf 'неизвестная команда: %s\n' "$command_name" >&2

@@ -43,6 +43,8 @@ Panel {
   readonly property int volume: status.volume === undefined ? 70 : Number(status.volume)
   readonly property string notice: String(status.notice || "")
   readonly property string halted: String(status.halted || "")
+  readonly property var prefs: status.preferences || ({})
+  readonly property bool liked: root.trackValue("is_liked", false) === true
 
   // One line of state for the popup header. Signing in, an empty queue and a
   // finished load are states, not errors: only a halt and a failed command are
@@ -248,6 +250,32 @@ Panel {
     root.setVolume(root.displayVolume > 0 ? 0 : root.lastAudibleVolume, false)
   }
 
+  // Settings live in the backend so the popup can change them; a shell.json
+  // entry for the same name still wins, which is how the bar options stay
+  // overridable by hand.
+  function setPreference(name, value) {
+    root.call([root.cli, "prefs", name + "=" + String(value)], function(answer) {
+      if (answer && answer.ok) root.refresh()
+    })
+  }
+
+  function toggleLike() {
+    if (!root.hasTrack) return
+    var key = root.trackValue("key", "")
+    if (key === "") return
+    root.call([root.cli, root.liked ? "unlike" : "like", key], function(answer) {
+      // The answer carries the refreshed status, so the heart flips in one round
+      // trip instead of waiting for the next poll.
+      if (answer && answer.ok && answer.data && answer.data.status) {
+        root.status = answer.data.status
+      }
+    })
+  }
+
+  function megabytes(bytes) {
+    return Math.round(Number(bytes || 0) / 1048576) + " МБ"
+  }
+
   function seekTo(target) {
     var upper = root.duration > 0 ? root.duration : target
     var clamped = Math.max(0, Math.min(upper, target))
@@ -428,9 +456,9 @@ Panel {
     anchors.centerIn: parent
     spacing: Style.space(6)
 
-    readonly property bool showArtwork: root.setting("showArtwork", true)
-    readonly property bool showText: root.setting("showText", true)
-    readonly property int labelWidth: Number(root.setting("labelWidth", 180))
+    readonly property bool showArtwork: root.setting("showArtwork", root.prefs.showArtwork !== false)
+    readonly property bool showText: root.setting("showText", root.prefs.showText !== false)
+    readonly property int labelWidth: Number(root.setting("labelWidth", Number(root.prefs.labelWidth) || 180))
 
     BorderSurface {
       id: artwork
@@ -726,6 +754,15 @@ Panel {
           spacing: Style.space(6)
           visible: root.signedIn
 
+          Button {
+            iconText: root.liked ? "󰋕" : "󰋑"
+            foreground: root.liked ? Color.urgent : root.textColor
+            enabled: root.hasTrack
+            opacity: enabled ? 1.0 : 0.4
+            tooltipText: root.liked ? "Убрать из моей музыки" : "В мою музыку"
+            onClicked: root.toggleLike()
+          }
+
           Item { Layout.fillWidth: true }
 
           Button {
@@ -820,6 +857,14 @@ Panel {
             foreground: root.textColor
             selected: root.view === "search"
             onClicked: root.view = "search"
+          }
+
+          Button {
+            iconText: "󰒓"
+            foreground: root.textColor
+            selected: root.view === "settings"
+            tooltipText: "Настройки"
+            onClicked: root.view = "settings"
           }
 
           Item { Layout.fillWidth: true }
@@ -951,6 +996,231 @@ Panel {
                   text: modelData ? (modelData.artist + " — " + modelData.title) : ""
                   foreground: root.textColor
                   onClicked: root.playSearchResult(index)
+                }
+              }
+            }
+
+            // Settings. Everything here is a backend preference: the widget only
+            // sends the new value and re-reads the status.
+            Column {
+              width: parent.width
+              spacing: Style.spacing.controlGap
+              visible: root.view === "settings"
+
+              PanelSectionHeader { text: "Кеш"; foreground: root.dim }
+
+              Row {
+                width: parent.width
+                spacing: Style.space(8)
+
+                Text {
+                  width: parent.width - cacheSwitch.width - Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  wrapMode: Text.WordWrap
+                  text: "Хранить треки на диске · " + root.megabytes(root.status.cache ? root.status.cache.bytes : 0)
+                    + " из " + root.megabytes(root.status.cache ? root.status.cache.limit_bytes : 0)
+                    + (root.status.cache && root.status.cache.files ? " · файлов " + root.status.cache.files : "")
+                  color: root.textColor
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.bodySmall
+                }
+
+                ToggleSwitch {
+                  id: cacheSwitch
+                  anchors.verticalCenter: parent.verticalCenter
+                  checked: root.prefs.cacheEnabled !== false
+                  onToggled: root.setPreference("cacheEnabled", !root.prefs.cacheEnabled)
+                }
+              }
+
+              Row {
+                width: parent.width
+                spacing: Style.space(8)
+                visible: root.prefs.cacheEnabled !== false
+
+                Text {
+                  text: "Лимит кеша"
+                  anchors.verticalCenter: parent.verticalCenter
+                  color: root.dim
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+
+                PanelSlider {
+                  width: parent.width - 150
+                  anchors.verticalCenter: parent.verticalCenter
+                  minimum: 64
+                  maximum: 1024
+                  step: 64
+                  integer: true
+                  value: Number(root.prefs.cacheLimitMb) || 256
+                  bar: root.bar
+                  onReleased: function(value) { root.setPreference("cacheLimitMb", Math.round(value)) }
+                }
+
+                Text {
+                  text: (Number(root.prefs.cacheLimitMb) || 256) + " МБ"
+                  anchors.verticalCenter: parent.verticalCenter
+                  color: root.dim
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              Row {
+                width: parent.width
+                spacing: Style.space(8)
+                visible: root.prefs.cacheEnabled !== false
+
+                Text {
+                  width: parent.width - clearButton.width - Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  wrapMode: Text.WordWrap
+                  text: "Освободить место прямо сейчас"
+                  color: root.dim
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+
+                Button {
+                  id: clearButton
+                  text: "Очистить кеш"
+                  foreground: root.textColor
+                  onClicked: root.call([root.cli, "cache", "clear"], function() { root.refresh() })
+                }
+              }
+
+              PanelSeparator { width: parent.width; foreground: root.textColor }
+
+              PanelSectionHeader { text: "Воспроизведение"; foreground: root.dim }
+
+              Row {
+                width: parent.width
+                spacing: Style.space(8)
+
+                Text {
+                  width: parent.width - prefetchSwitch.width - Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  wrapMode: Text.WordWrap
+                  text: "Скачивать следующий трек заранее — переключение без паузы"
+                  color: root.textColor
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.bodySmall
+                }
+
+                ToggleSwitch {
+                  id: prefetchSwitch
+                  anchors.verticalCenter: parent.verticalCenter
+                  checked: root.prefs.prefetchEnabled !== false
+                  enabled: root.prefs.cacheEnabled !== false
+                  opacity: enabled ? 1.0 : 0.4
+                  onToggled: root.setPreference("prefetchEnabled", !root.prefs.prefetchEnabled)
+                }
+              }
+
+              Row {
+                width: parent.width
+                spacing: Style.space(8)
+
+                Text {
+                  width: parent.width - restoreSwitch.width - Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  wrapMode: Text.WordWrap
+                  text: "Помнить очередь и позицию после перезапуска"
+                  color: root.textColor
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.bodySmall
+                }
+
+                ToggleSwitch {
+                  id: restoreSwitch
+                  anchors.verticalCenter: parent.verticalCenter
+                  checked: root.prefs.restoreOnStart !== false
+                  onToggled: root.setPreference("restoreOnStart", !root.prefs.restoreOnStart)
+                }
+              }
+
+              PanelSeparator { width: parent.width; foreground: root.textColor }
+
+              PanelSectionHeader { text: "Строка в баре"; foreground: root.dim }
+
+              Row {
+                width: parent.width
+                spacing: Style.space(8)
+
+                Text {
+                  width: parent.width - artworkSwitch.width - Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: "Обложка трека"
+                  color: root.textColor
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.bodySmall
+                }
+
+                ToggleSwitch {
+                  id: artworkSwitch
+                  anchors.verticalCenter: parent.verticalCenter
+                  checked: root.prefs.showArtwork !== false
+                  onToggled: root.setPreference("showArtwork", !root.prefs.showArtwork)
+                }
+              }
+
+              Row {
+                width: parent.width
+                spacing: Style.space(8)
+
+                Text {
+                  width: parent.width - textSwitch.width - Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: "Название и исполнитель"
+                  color: root.textColor
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.bodySmall
+                }
+
+                ToggleSwitch {
+                  id: textSwitch
+                  anchors.verticalCenter: parent.verticalCenter
+                  checked: root.prefs.showText !== false
+                  onToggled: root.setPreference("showText", !root.prefs.showText)
+                }
+              }
+
+              Row {
+                width: parent.width
+                spacing: Style.space(8)
+                visible: root.prefs.showText !== false
+
+                Text {
+                  text: "Ширина подписи"
+                  anchors.verticalCenter: parent.verticalCenter
+                  color: root.dim
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+
+                PanelSlider {
+                  width: parent.width - 150
+                  anchors.verticalCenter: parent.verticalCenter
+                  minimum: 80
+                  maximum: 400
+                  step: 20
+                  integer: true
+                  value: Number(root.prefs.labelWidth) || 180
+                  bar: root.bar
+                  onReleased: function(value) { root.setPreference("labelWidth", Math.round(value)) }
+                }
+
+                Text {
+                  text: (Number(root.prefs.labelWidth) || 180) + " px"
+                  anchors.verticalCenter: parent.verticalCenter
+                  color: root.dim
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
                 }
               }
             }
