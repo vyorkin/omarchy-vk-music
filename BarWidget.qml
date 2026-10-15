@@ -492,7 +492,9 @@ Panel {
       visible: barRow.showArtwork
       anchors.verticalCenter: parent.verticalCenter
       color: Style.normalFillFor(root.fg, Color.accent)
-      borderSpec: Border.controlSpec("normal", root.fg, Color.accent)
+      borderSpec: root.buffering
+        ? Border.none()
+        : Border.controlSpec("normal", root.fg, Color.accent)
       opacity: root.hasTrack ? 1.0 : 0.6
 
       Image {
@@ -514,14 +516,15 @@ Panel {
       }
 
       // The ring rides on the artwork that is already there: no layout shift and
-      // no second element in a row that is 30 px tall.
-      ProgressRing {
+      // no second element in a row that is 30 px tall. While it is filling, the
+      // artwork's own border steps aside so only one outline is visible.
+      ProgressFrame {
         anchors.fill: parent
-        anchors.margins: -Style.space(1)
         visible: root.buffering
         progress: Math.max(0, root.bufferProgress)
         indeterminate: root.bufferIndeterminate
         color: Color.accent
+        cornerRadius: Style.spacing.labelGap
         thickness: Math.max(1.5, Style.space(2))
       }
     }
@@ -715,7 +718,9 @@ Panel {
             height: Style.space(64)
             radius: Style.spacing.labelGap
             color: Style.normalFillFor(root.textColor, Color.accent)
-            borderSpec: Border.controlSpec("normal", root.textColor, Color.accent)
+            borderSpec: root.buffering
+              ? Border.none()
+              : Border.controlSpec("normal", root.textColor, Color.accent)
 
             Image {
               anchors.fill: parent
@@ -756,16 +761,16 @@ Panel {
               font.bold: true
             }
 
-            // The ring is the same component as in the bar, just larger: one
-            // indicator in both places, drawn on the artwork that is already
-            // there.
-            ProgressRing {
+            // The frame is the same component as in the bar, just larger: one
+            // indicator in both places, drawn on the border the artwork already
+            // has.
+            ProgressFrame {
               anchors.fill: parent
-              anchors.margins: -Style.space(2)
               visible: root.buffering
               progress: Math.max(0, root.bufferProgress)
               indeterminate: root.bufferIndeterminate
               color: Color.accent
+              cornerRadius: Style.spacing.labelGap
               thickness: Math.max(2, Style.space(3))
             }
           }

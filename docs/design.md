@@ -150,12 +150,22 @@ wait needs an honest indicator rather than a spinner. ffmpeg is asked for
 *audio*: against the track's known duration that is an exact percentage. Measured
 on a 235 s track: 0 → 12 → 29 → 43 → 65 → 87 → ready in 3.05 s.
 
-The indicator is a thin ring drawn on the cover that is already there — 2 px in
-the bar, 3 px in the popup — so nothing shifts, no second element appears in a
-30 px row, and the artwork stays recognisable while the arc grows. In the popup
-the cover also dims and the percentage takes its centre; in the bar the ring
-alone says it. When the length is unknown (the cache is off and the stream is
-not being downloaded) the ring spins instead of showing a made-up progress.
+The indicator is the cover's own border, filling clockwise from the middle of
+the top edge: 2 px in the bar, 3 px in the popup. Not a ring — a ring ignores the
+shape the cover already has. The whole frame is drawn faintly first and the
+loaded part on top, so the outline that is left reads as "how much is still
+missing". Nothing shifts, no second element appears in a 30 px row, and the
+artwork stays recognisable while the frame fills. In the popup the cover also
+dims and the percentage takes its centre; in the bar the frame alone says it.
+When the length is unknown (the cache is off and the stream is not being
+downloaded) a short piece travels around the frame instead of a made-up
+progress.
+
+The frame walks a rounded rectangle as an ordered ring of straight edges and
+arcs, and that arithmetic is checked by `tools/frame_geometry.py` — perimeter
+against the rounded-rectangle formula, the walk starting and closing at the top
+edge, coverage growing with progress, and a clamped radius — so an edit can be
+verified without a running shell.
 
 Deliberate choices around it:
 
