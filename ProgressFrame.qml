@@ -10,7 +10,6 @@
 // The faint whole frame is drawn first, the filled part on top of it: that is
 // what makes it read as a frame filling up rather than a line growing.
 import QtQuick
-import qs.Commons
 
 Item {
   id: root
@@ -20,13 +19,17 @@ Item {
   // Unknown length: a short piece travels around the frame instead of a
   // progress that would be a guess.
   property bool indeterminate: false
-  property color color: Color.accent
+  property color color: "white"
   property color frameColor: Qt.rgba(color.r, color.g, color.b, 0.28)
   property real thickness: Math.max(1, Math.round(Math.min(width, height) * 0.1))
   // Corner radius; the caller passes the cover's own radius.
   property real cornerRadius: width * 0.18
   // Position of the travelling piece, 0..1.
   property real phase: 0
+  // How much of the perimeter the fill covers, 0..1. Read by the paint and by
+  // the test: the bug this guards against was a share clamped with `Math.max(1, …)`,
+  // which silently meant "the whole frame" at every percentage.
+  readonly property real fillShare: Math.min(1, Math.max(0, progress))
   readonly property real chaseLength: 0.18
 
   onProgressChanged: canvas.requestPaint()
@@ -142,7 +145,11 @@ Item {
         strokeRange(ctx, segs, start, span)
         if (start + span > total) strokeRange(ctx, segs, 0, start + span - total)
       } else {
-        strokeRange(ctx, segs, 0, Math.max(1, Math.min(1, root.progress)) * total)
+        // A share of the perimeter, clamped to it. The minimum is in *pixels*
+        // and not a share: `Math.max(1, progress)` would mean "always the whole
+        // frame", which is exactly how this indicator was broken once.
+        var share = root.fillShare * total
+        strokeRange(ctx, segs, 0, Math.min(total, Math.max(0.5, share)))
       }
       ctx.stroke()
     }

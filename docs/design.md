@@ -162,10 +162,19 @@ downloaded) a short piece travels around the frame instead of a made-up
 progress.
 
 The frame walks a rounded rectangle as an ordered ring of straight edges and
-arcs, and that arithmetic is checked by `tools/frame_geometry.py` — perimeter
-against the rounded-rectangle formula, the walk starting and closing at the top
-edge, coverage growing with progress, and a clamped radius — so an edit can be
-verified without a running shell.
+arcs, and two checks guard it:
+
+* `tools/frame_geometry.py` — the arithmetic: perimeter against the
+  rounded-rectangle formula, the walk starting and closing at the top edge,
+  coverage growing with progress, and a clamped radius.
+* `tests/qml/tst_progress_frame.qml` plus `tools/check_frame_render.py` — the
+  pixels. The QML test renders the frame at a quarter, a half and the whole
+  perimeter (offscreen, `QT_QPA_PLATFORM=offscreen`), and the script walks the
+  same outline in a rendered image to measure how much of it came out filled:
+  25.9 %, 51.2 % and 100 %. The arithmetic check cannot see the failure this
+  finds — the fill length was a *share* clamped with `Math.max(1, …)`, which
+  means "the whole frame" — because the walk was right and the number handed to
+  it was wrong.
 
 Deliberate choices around it:
 
@@ -279,6 +288,9 @@ click continues it.
   command per interaction step, so a drag paid Python's startup twenty times a
   second; `bin/omarchy-vk-music` is a shell script on a Unix socket now, with the
   Python client kept for the interactive login and as a fallback.
+* **A pixel-style minimum on a share.** `Math.max(1, progress)` looks like the
+  neighbouring `Math.max(1, thickness)` and means something else entirely: every
+  percentage painted the whole buffering frame. Only a rendered image showed it.
 * **`PanelSlider` resets `liveValue` to `value` on release.** With `value` bound to
   a position that arrives once per poll, the knob jumped back to the stale position
   and forward again a second later. Seeking now holds the target locally and
