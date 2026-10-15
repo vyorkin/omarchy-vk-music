@@ -204,6 +204,49 @@ Panel {
     }
   }
 
+  // Volume is optimistic for the same reason as the position: the backend
+  // reports it once per poll, and a drag must not be dragged back by that.
+  property real volumeTarget: -1
+  property double volumeTargetAt: 0
+  property real pendingVolume: -1
+  property real lastAudibleVolume: 70
+
+  readonly property real displayVolume: {
+    if (root.volumeTarget >= 0 && Date.now() - root.volumeTargetAt < 2000) return root.volumeTarget
+    return root.volume
+  }
+
+  Timer {
+    id: liveVolume
+    interval: 200
+    repeat: false
+    onTriggered: {
+      if (root.pendingVolume < 0) return
+      var target = root.pendingVolume
+      root.pendingVolume = -1
+      root.call([root.cli, "volume", String(Math.round(target))])
+    }
+  }
+
+  function setVolume(value, live) {
+    var clamped = Math.max(0, Math.min(100, value))
+    root.volumeTarget = clamped
+    root.volumeTargetAt = Date.now()
+    if (clamped > 0) root.lastAudibleVolume = clamped
+    if (live) {
+      root.pendingVolume = clamped
+      liveVolume.restart()
+      return
+    }
+    root.pendingVolume = -1
+    liveVolume.stop()
+    root.call([root.cli, "volume", String(Math.round(clamped))])
+  }
+
+  function toggleMute() {
+    root.setVolume(root.displayVolume > 0 ? 0 : root.lastAudibleVolume, false)
+  }
+
   function seekTo(target) {
     var upper = root.duration > 0 ? root.duration : target
     var clamped = Math.max(0, Math.min(upper, target))
@@ -237,6 +280,12 @@ Panel {
       root.reportedAt = Date.now()
       if (root.seekTarget >= 0 && Math.abs(root.reportedPosition - root.seekTarget) < 2) {
         root.seekTarget = -1
+      }
+      if (root.volumeTarget >= 0 && Math.abs(Number(answer.data.volume || 0) - root.volumeTarget) < 1) {
+        root.volumeTarget = -1
+      }
+      if (Number(answer.data.volume || 0) > 0) {
+        root.lastAudibleVolume = Number(answer.data.volume)
       }
       // One line per track so the widget's own view of the state can be checked
       // from the shell log instead of a screenshot.
@@ -703,13 +752,43 @@ Panel {
           }
 
           Item { Layout.fillWidth: true }
+        }
+
+        // Volume has its own row: a slider squeezed next to the transport was
+        // cramped, and this is the control the hand reaches for most often.
+        RowLayout {
+          Layout.fillWidth: true
+          spacing: Style.space(6)
+          visible: root.signedIn
 
           Button {
-            iconText: "󰕾"
-            text: String(root.volume)
+            iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
             foreground: root.textColor
-            tooltipText: "Громкость, шаг 10"
-            onClicked: root.call([root.cli, "volume", String(root.volume >= 100 ? 0 : root.volume + 10)])
+            tooltipText: root.displayVolume <= 0 ? "Включить звук" : "Выключить звук"
+            onClicked: root.toggleMute()
+          }
+
+          PanelSlider {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+            minimum: 0
+            maximum: 100
+            value: root.displayVolume
+            integer: true
+            bar: root.bar
+            onMoved: function(value) { root.setVolume(value, true) }
+            onReleased: function(value) { root.setVolume(value, false) }
+          }
+
+          Text {
+            Layout.preferredWidth: Style.space(38)
+            Layout.alignment: Qt.AlignVCenter
+            horizontalAlignment: Text.AlignRight
+            textFormat: Text.PlainText
+            text: Math.round(root.displayVolume) + "%"
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
           }
         }
 
