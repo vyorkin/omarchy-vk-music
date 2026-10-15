@@ -75,7 +75,15 @@ DEFAULT_PREFERENCES: dict[str, Any] = {
     "cacheLimitMb": 256,
     "restoreOnStart": True,
     "defaultSource": "section:all",
+    # Downloading the next queue track while the current one plays: the same
+    # file would be fetched when its turn comes, so it costs no extra traffic,
+    # only a track of lead time.
+    "prefetchEnabled": True,
 }
+
+# How long a track must be playing before its successor is fetched. Short
+# enough to be ready, long enough that flipping through tracks fetches nothing.
+PREFETCH_DELAY_S = 4.0
 
 # Errors that mean "stop and tell the user", mapped to the message the bar shows.
 HALT_MESSAGES = {
@@ -373,6 +381,13 @@ class Player:
         self.source: dict[str, str] = {"kind": "", "id": "", "title": ""}
         self._download_thread: threading.Thread | None = None
         self._download_cancel = threading.Event()
+        self._prefetch_thread: threading.Thread | None = None
+        self._prefetch_key = ""
+        self._prefetch_cancel = threading.Event()
+        self._prefetch_timer: threading.Timer | None = None
+        # One lock for the API: the prefetch thread resolves the next track's URL
+        # while the command thread may be doing anything else with the client.
+        self._api_lock = threading.Lock()
         self._ignore_events_until = 0.0
         self._ignore_pause_until = 0.0
         self.playing_from_cache = False
@@ -471,7 +486,8 @@ class Player:
             raise VkApiError(0, "not signed in", method="session")
         assert self.client is not None
         try:
-            return function()
+            with self._api_lock:
+                return function()
         except VkHaltError as exc:
             message = HALT_MESSAGES.get(exc.code) or f"VK: {classify(exc)}"
             self.error = message
@@ -552,6 +568,7 @@ class Player:
 
     def play(self, tracks: Sequence[Track], *, index: int = 0, source: Mapping[str, str] | None = None) -> None:
         with self.lock:
+            self._cancel_prefetch()
             self.queue = list(tracks)
             self.index = max(0, min(index, len(self.queue) - 1)) if self.queue else -1
             self.unplayable.clear()
@@ -564,6 +581,7 @@ class Player:
             self._start_current()
 
     def _start_current(self) -> None:
+        self._cancel_prefetch()
         track = self.current_track()
         if track is None:
             self.playing = False
@@ -598,6 +616,70 @@ class Player:
             self._start_download(track, url)
             return
         self._play_url(url)
+
+    def _schedule_prefetch(self) -> None:
+        """Fetch the next track once the current one has been playing a while.
+
+        The delay matters: skipping through a playlist should not download a
+        file per skipped track.
+        """
+        self._cancel_prefetch()
+        if not self.preferences.get("prefetchEnabled", True):
+            return
+        timer = threading.Timer(PREFETCH_DELAY_S, self._maybe_prefetch)
+        timer.daemon = True
+        self._prefetch_timer = timer
+        timer.start()
+
+    def _cancel_prefetch(self) -> None:
+        """Drop a pending or running prefetch; the queue moved elsewhere."""
+        if self._prefetch_timer is not None:
+            self._prefetch_timer.cancel()
+            self._prefetch_timer = None
+        self._prefetch_cancel.set()
+        self._prefetch_cancel = threading.Event()
+
+    def _maybe_prefetch(self) -> None:
+        if not self.preferences.get("prefetchEnabled", True):
+            return
+        if not self.preferences.get("cacheEnabled", True) or self.cache.limit_bytes <= 0:
+            return
+        track = self._next_playable()
+        if track is None or self.cache.get(track.key):
+            return
+        if self._prefetch_thread and self._prefetch_thread.is_alive():
+            return
+        cancel = self._prefetch_cancel
+        self._prefetch_key = track.key
+        self._prefetch_thread = threading.Thread(
+            target=self._prefetch_worker, args=(track, cancel), daemon=True,
+            name="vk-music-prefetch",
+        )
+        self._prefetch_thread.start()
+
+    def _next_playable(self) -> Track | None:
+        with self.lock:
+            for index in range(self.index + 1, len(self.queue)):
+                candidate = self.queue[index]
+                if candidate.key not in self.unplayable:
+                    return candidate
+        return None
+
+    def _prefetch_worker(self, track: Track, cancel: threading.Event) -> None:
+        try:
+            url = self.resolve_url(track)
+        except (VkApiError, VkHaltError) as exc:
+            log(f"prefetch skipped for {track.key}: {classify(exc)}")
+            return
+        if cancel.is_set() or not url:
+            return
+        try:
+            path = self.cache.download(url, track.key)
+        except CacheError as exc:
+            log(f"prefetch failed for {track.key}: {exc}")
+            return
+        if not cancel.is_set():
+            log(f"prefetched {track.label} ({path.stat().st_size // 1024} KiB)")
 
     def _start_download(self, track: Track, url: str) -> None:
         cancel = threading.Event()
@@ -723,6 +805,7 @@ class Player:
 
     def stop(self) -> None:
         with self.lock:
+            self._cancel_prefetch()
             self._download_cancel.set()
             try:
                 self.mpv.command("stop")
@@ -796,6 +879,7 @@ class Player:
                 self.paused = False
                 self.position = 0
                 self._publish_mpris()
+                self._schedule_prefetch()
                 return
             if name == "end-file":
                 if data == "eof":

@@ -57,6 +57,10 @@ class AudioCache:
         self.limit_bytes = max(int(limit_bytes), 0)
         self._lock = threading.Lock()
         self._index: dict[str, dict[str, object]] = {}
+        # Downloads in flight, by track key. Prefetching the next track and
+        # starting it can overlap, and two ffmpeg runs for one file would fight
+        # over the same target; the second caller waits for the first instead.
+        self._inflight: dict[str, threading.Event] = {}
         self.tracks_dir.mkdir(parents=True, exist_ok=True)
         self._load_index()
 
@@ -94,15 +98,38 @@ class AudioCache:
     def download(self, url: str, key: str) -> Path:
         """Fetch a whole track into the cache and return its path.
 
-        ffmpeg does the HLS demuxing and the AES-128 decryption, and copies
-        the audio stream when it is already mp3, so the common case costs no
-        CPU beyond the download itself.
+        Safe to call twice for the same track: the second caller waits for the
+        download already running instead of starting its own.
         """
         if not url:
             raise CacheError("track has no stream url")
         if self.limit_bytes <= 0:
             raise CacheError("cache is disabled")
 
+        cached = self.get(key)
+        if cached:
+            return cached
+
+        with self._lock:
+            waiter = self._inflight.get(key)
+            owner = waiter is None
+            if owner:
+                waiter = threading.Event()
+                self._inflight[key] = waiter
+        if not owner:
+            waiter.wait(timeout=DOWNLOAD_TIMEOUT + 30)
+            cached = self.get(key)
+            if cached:
+                return cached
+            raise CacheError("a parallel download did not produce the file")
+        try:
+            return self._download_fresh(url, key)
+        finally:
+            with self._lock:
+                self._inflight.pop(key, None)
+            waiter.set()
+
+    def _download_fresh(self, url: str, key: str) -> Path:
         final = self.tracks_dir / f"{_safe(key)}.mp3"
         tmp = final.with_suffix(final.suffix + TMP_SUFFIX)
         tmp.parent.mkdir(parents=True, exist_ok=True)
