@@ -1,0 +1,23 @@
+[Unit]
+Description=VK Music backend for Omarchy Shell
+Documentation=https://github.com/vyorkin/omarchy-vk-music
+After=network-online.target pipewire.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/omarchy-vk-music/venv/bin/python %h/.local/share/omarchy-vk-music/backend.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+Environment=XDG_CACHE_HOME=%h/.cache
+# The service reads the browser cookie database to sign in, so the whole home
+# is visible read-only; only the config, the runtime dir and the cache are
+# writable.
+ReadWritePaths=%h/.config/omarchy-vk-music %t %h/.cache/omarchy-vk-music
+
+[Install]
+WantedBy=default.target

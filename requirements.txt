@@ -1,0 +1,4 @@
+# Runtime dependencies for the VK Music backend.
+# Install with pip inside the plugin's own virtualenv; see install.sh.
+dbus-next==0.2.3
+requests==2.34.2

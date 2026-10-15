@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "vyorkin.vk-music",
+  "name": "VK Music",
+  "version": "0.1.0",
+  "author": "vyorkin",
+  "license": "MIT",
+  "description": "Native VK Music player for the Omarchy bar: your music, playlists and search, streamed through mpv with MPRIS and a disk cache",
+  "keywords": [
+    "vk",
+    "music",
+    "audio",
+    "player",
+    "mpv",
+    "mpris",
+    "widget"
+  ],
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "VK Music",
+    "description": "Play VK Music without keeping a browser open",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
