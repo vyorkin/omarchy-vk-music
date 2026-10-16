@@ -851,7 +851,11 @@ Panel {
   function moveCursor(step) {
     var count = root.cursorCount()
     if (count === 0) return
-    var next = root.cursor < 0 ? (step > 0 ? 0 : count - 1) : root.cursor + step
+    // With nothing picked yet, the first j or k starts where the list is already
+    // scrolled, not at the first or the last row of a list that may be a hundred long.
+    var next = root.cursor < 0
+      ? root.firstVisibleIndex() + (step > 0 ? 0 : -1)
+      : root.cursor + step
     root.cursor = Math.max(0, Math.min(count - 1, next))
     root.revealCursor()
     // Again once the layout has settled: the list's height is still changing while
@@ -861,8 +865,9 @@ Panel {
 
   // The delegate item the cursor sits on, so the list can be scrolled to it: rows
   // are not a fixed height, and arithmetic on an index would drift.
-  function cursorRow() {
-    var index = root.cursor
+  // The row of the cursor's list at an index. Separate from the cursor so that the
+  // panel can also ask about rows the cursor is not on.
+  function rowAt(index) {
     if (index < 0) return null
     if (root.openPlaylist !== null) return root.activeList().playlistTrackRepeater.itemAt(index)
     if (root.view === "queue") return root.activeList().queueRepeater.itemAt(index)
@@ -902,6 +907,22 @@ Panel {
       return root.activeList().suggestionRepeater.itemAt(index)
     }
     return null
+  }
+
+  function cursorRow() {
+    return root.rowAt(root.cursor)
+  }
+
+  // The first row of the cursor's list that is inside the viewport: where the eye
+  // already is, and the honest place to start from.
+  function firstVisibleIndex() {
+    var list = root.activeList()
+    var count = root.cursorCount()
+    for (var i = 0; i < count; i++) {
+      var row = root.rowAt(i)
+      if (row && row.y + row.height > list.contentY) return i
+    }
+    return 0
   }
 
   function revealCursor() {
@@ -3816,7 +3837,9 @@ Panel {
       anchors.fill: parent
       // While the search field has the keyboard, the field owns every key: «j» is a
       // letter to type there, not a step down the list. The field handles Esc itself.
-      blocked: root.activeField().activeFocus || root.filterFocused
+      // A hidden field cannot own the keyboard, and one that thinks it does blocks
+      // every key in the panel: `visible` is part of the question.
+      blocked: (root.activeField().visible && root.activeField().activeFocus) || root.filterFocused
       // Up and down move the selection instead of the playback: pressing a key
       // to look through a list should not start a track. `n` and `p` below still
       // switch tracks.

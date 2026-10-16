@@ -308,6 +308,13 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* A hidden field cannot own the keyboard, but it can think it does: the panel blocks
+  every key for whichever field is focused, and a search field that kept focus while
+  another view was showing left j, k and everything else dead — the keys went to a
+  field nobody could see. `visible` is part of the question now.
+* With nothing picked yet, the first j or k starts from the first row of the visible
+  area rather than from the top or the bottom of the whole list, which in a hundred-row
+  section is a jump to somewhere the user is not looking.
 * The component's height is not the viewport's height. `TrackList` is a column with
   the sticky row on top and the Flickable underneath, so `activeList().height` is the
   viewport plus that row; the scrolling maths used it anyway, asked for a scroll
