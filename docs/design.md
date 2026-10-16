@@ -308,6 +308,13 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* A loading flag is not a decoration: a reply that arrives after the pane has
+  moved on has to clear the flag it set even when it must not paint its rows. The
+  section loader returned early on a mismatched slug — with the flag still up — so
+  opening «Люди» while a section was in flight left the loading line running under
+  the panel forever, most visibly on the settings page, where nothing at all is
+  loading. One request token per pane drops stale data; every entry point clears
+  the flags of the kinds it is not, and `anyLoading()` names all of them.
 * The queue's own actions («Убрать» and «Очистить») lost their place when the
   player became a band, so they moved to where the queue is: «Очистить» sits in
   the queue's header, and right-clicking a queue row offers «Играть сейчас» and

@@ -190,7 +190,24 @@ Panel {
 
   // Anything at all still on its way: the bottom line has one reason to be there.
   function anyLoading() {
-    return root.browseLoading || root.browseMoreLoading || root.searchLoading || root.queueLoading
+    // Every kind of load the panel can have in flight: one of them left behind is
+    // the difference between an honest line and one that never stops.
+    return root.browseLoading || root.browseMoreLoading || root.searchLoading
+      || root.queueLoading || root.playlistSearchLoading || root.personLoading
+      || root.friendsLoading || root.openPlaylistLoading
+  }
+
+  // A reply that arrives after the pane has moved on must not paint stale rows —
+  // but it must still clear the flag it set. Forgetting the second half is what
+  // left the loading line running under the settings page forever.
+  property int _browseSeq: 0
+
+  function clearBrowseLoading() {
+    root.browseLoading = false
+    root.browseMoreLoading = false
+    root.openPlaylistLoading = false
+    root.personLoading = false
+    root.friendsLoading = false
   }
 
   function radioValue(name, fallback) {
@@ -713,6 +730,8 @@ Panel {
 
   function setSearchMode(mode) {
     if (root.searchMode === mode) return
+    root.searchLoading = false
+    root.playlistSearchLoading = false
     root.searchMode = mode
     root.cursor = -1
     if (root.query.trim().length >= 2) root.runSearch(true)
@@ -921,19 +940,23 @@ Panel {
     root.browsePlaylists = []
     root.browseNext = ""
     root.browseTitle = ""
+    root.clearBrowseLoading()
+    root._browseSeq = root._browseSeq + 1
+    var seq = root._browseSeq
     if (slug === "radiostations") {
       if (root.stations.length > 0) return
       root.browseLoading = true
       root.call([root.cli, "radio"], function(answer) {
-        if (root.browseSlug === slug) root.browseLoading = false
+        root.browseLoading = false
+        if (seq !== root._browseSeq) return
         if (answer && answer.ok) root.stations = answer.data || []
       })
       return
     }
     root.browseLoading = true
     root.call([root.cli, "section", slug], function(answer) {
-      if (root.browseSlug !== slug) return
       root.browseLoading = false
+      if (seq !== root._browseSeq) return
       if (answer && answer.ok) root.adoptSection(answer.data)
     })
   }
@@ -952,10 +975,14 @@ Panel {
     if (root.browseNext === "" || root.browseMoreLoading) return
     var slug = root.browseSlug
     var cursor = root.browseNext
+    root.browseMoreLoading = false
+    root._browseSeq = root._browseSeq + 1
+    var seqMore = root._browseSeq
     root.browseMoreLoading = true
     root.call([root.cli, "section", slug, cursor], function(answer) {
       if (root.browseSlug !== slug) return
       root.browseMoreLoading = false
+      if (seqMore !== root._browseSeq) return
       if (!answer || !answer.ok) return
       var page = answer.data || {}
       root.browseTracks = root.browseTracks.concat(page.tracks || [])
@@ -1001,6 +1028,9 @@ Panel {
     var owner = Number(item.owner_id || 0)
     var list = Number(item.playlist_id || 0)
     if (!(owner !== 0 && list > 0)) return
+    root.clearBrowseLoading()
+    root._browseSeq = root._browseSeq + 1
+    var seqList = root._browseSeq
     root.playlistBack = root.browseSlug
     root.openPlaylist = item
     root.openPlaylistTracks = []
@@ -1011,6 +1041,7 @@ Panel {
     if (item.title) args.push(String(item.title))
     root.call(args, function(answer) {
       root.openPlaylistLoading = false
+      if (seqList !== root._browseSeq) return
       if (answer && answer.ok && answer.data) {
         root.openPlaylistTracks = answer.data.tracks || []
       } else {
@@ -1020,6 +1051,8 @@ Panel {
   }
 
   function closePlaylistView() {
+    root.clearBrowseLoading()
+    root._browseSeq = root._browseSeq + 1
     root.openPlaylist = null
     root.openPlaylistTracks = []
     root.openPlaylistLoading = false
@@ -1046,6 +1079,8 @@ Panel {
   }
 
   function browseFriends() {
+    root.clearBrowseLoading()
+    root._browseSeq = root._browseSeq + 1
     if (root.browseSlug === "friends" && root.friends.length > 0) return
     root.browseSlug = "friends"
     root.browseTitle = "Друзья"
@@ -1064,6 +1099,9 @@ Panel {
   function openPerson(reference) {
     var text = String(reference || "").trim()
     if (text === "") return
+    root.clearBrowseLoading()
+    root._browseSeq = root._browseSeq + 1
+    var seqPerson = root._browseSeq
     root.personLoading = true
     root.person = null
     root.personPlaylists = []
@@ -1075,6 +1113,7 @@ Panel {
     root.browseTitle = "Человек"
     root.call([root.cli, "person", text], function(answer) {
       root.personLoading = false
+      if (seqPerson !== root._browseSeq) return
       if (answer && answer.ok && answer.data) {
         root.person = answer.data.person || null
         root.personPlaylists = answer.data.playlists || []
