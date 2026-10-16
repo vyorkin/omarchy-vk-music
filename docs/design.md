@@ -308,6 +308,14 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* A caption in a plain `Row` is not aligned with buttons: a Row places every child
+  at its top, and a `PanelSectionHeader` is a `Text` whose own height is smaller
+  than a button's, so the caption floats above the row's centre line. The three
+  header rows of the popup are `RowLayout`s with `Layout.alignment: Qt.AlignVCenter`,
+  and the caption carries `Layout.fillWidth`, which is also what pushes whatever
+  follows it — «Играть», «Очистить» — against the right edge instead of leaving it
+  somewhere in the middle. A `PanelSeparator` closes each of them, so a list is
+  visibly a list and not more controls.
 * A loading flag is not a decoration: a reply that arrives after the pane has
   moved on has to clear the flag it set even when it must not paint its rows. The
   section loader returned early on a mismatched slug — with the flag still up — so

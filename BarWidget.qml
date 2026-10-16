@@ -2007,15 +2007,18 @@ Panel {
           }
         }
 
-        Row {
+        RowLayout {
           width: parent.width
+          height: implicitHeight
           spacing: Style.space(6)
           visible: root.queue.length > 0
 
           PanelSectionHeader {
             // The queue is numbered by absolute position, so the header carries the
             // count and the remaining time: «Дальше в очереди · 96 треков · 5 ч 58 мин».
-            width: parent.width - queueClear.width - Style.space(6)
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+            verticalAlignment: Text.AlignVCenter
             text: {
               var summary = root.listSummary(root.upcoming, "трек", "трека", "треков")
               return summary === "" ? "Дальше в очереди" : "Дальше в очереди · " + summary
@@ -2025,11 +2028,18 @@ Panel {
 
           Button {
             id: queueClear
+            Layout.alignment: Qt.AlignVCenter
             text: "Очистить"
             foreground: root.textColor
             tooltipText: "Очистить очередь"
             onClicked: root.clearQueue()
           }
+        }
+
+        PanelSeparator {
+          width: parent.width
+          foreground: root.textColor
+          visible: root.queue.length > 0
         }
 
         Repeater {
@@ -2113,13 +2123,19 @@ Panel {
           onPicked: function(index) { root.openPlaylistView(root.browsePlaylists[index]) }
         }
 
-        Row {
+        // A RowLayout rather than a Row: a caption in a plain Row sits at the top
+        // of the line while the buttons sit in the middle of it, and the two never
+        // look aligned. The caption takes the free width, so whatever follows it
+        // ends up against the right edge.
+        RowLayout {
           width: parent.width
+          height: implicitHeight
           spacing: Style.space(6)
           visible: root.browseHeader !== "" || root.person !== null
 
           Button {
             id: backButton
+            Layout.alignment: Qt.AlignVCenter
             visible: root.person !== null
             text: "Назад"
             foreground: root.textColor
@@ -2131,10 +2147,18 @@ Panel {
           }
 
           PanelSectionHeader {
-            width: parent.width - (backButton.visible ? backButton.width + Style.space(6) : 0)
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+            verticalAlignment: Text.AlignVCenter
             text: root.browseHeader
             foreground: root.dim
           }
+        }
+
+        PanelSeparator {
+          width: parent.width
+          foreground: root.textColor
+          visible: root.person !== null
         }
 
         Text {
@@ -2279,11 +2303,13 @@ Panel {
         spacing: Style.space(4)
         visible: root.view === "browse" && root.openPlaylist !== null
 
-        Row {
+        RowLayout {
           width: parent.width
+          height: implicitHeight
           spacing: Style.space(6)
 
           Button {
+            Layout.alignment: Qt.AlignVCenter
             text: "Назад"
             foreground: root.textColor
             tooltipText: "К плейлистам"
@@ -2291,12 +2317,15 @@ Panel {
           }
 
           PanelSectionHeader {
-            width: parent.width - Style.space(200)
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+            verticalAlignment: Text.AlignVCenter
             text: root.browseHeader
             foreground: root.dim
           }
 
           Button {
+            Layout.alignment: Qt.AlignVCenter
             text: "Играть"
             foreground: root.textColor
             enabled: root.openPlaylistTracks.length > 0
@@ -2304,6 +2333,12 @@ Panel {
             tooltipText: "Играть весь плейлист"
             onClicked: root.playPlaylistTrack(0)
           }
+        }
+
+        // The tracks are a list, not more controls: the line says so.
+        PanelSeparator {
+          width: parent.width
+          foreground: root.textColor
         }
 
         Repeater {
