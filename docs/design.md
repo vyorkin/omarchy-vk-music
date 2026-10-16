@@ -371,6 +371,14 @@ while `fave.getPhotos` works), and a community's playlists are refused with erro
 * `audio.get(owner_id, album_id, access_key)` plays them, which is the same call
   the plugin already made for its own playlists.
 
+The way in is the «Люди» entry, first in the source row of «Обзор» and deliberately
+not last: choosing a person is a route to a list, not a section, and a chip at the
+end of a row that scrolls is a chip nobody finds. It opens a screen with the friend
+list — a photo and a name each, clickable — a field for a link, an id or a friend's
+name, and the people opened before. Clicking anybody opens their page: their name,
+how many playlists they have, a «Назад» button, and the playlists in the gallery or
+as rows. The keyboard cursor walks the list the same way it walks tracks.
+
 So the plugin offers four ways in — the playlist search, the friend list, any
 person by link, id or screen name, and its own playlists in the gallery — and keeps
 a local list of recently opened people (`recentPeople` in the state file, eight of

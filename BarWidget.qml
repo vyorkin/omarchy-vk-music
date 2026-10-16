@@ -980,6 +980,8 @@ Panel {
     root.personLoading = true
     root.person = null
     root.personPlaylists = []
+    // The previous person's playlists must not linger under the new name.
+    root.browsePlaylists = []
     root.browseSlug = "person"
     root.browseTracks = []
     root.browseNext = ""
@@ -1602,6 +1604,76 @@ Panel {
     }
   }
 
+  // A person in a list: their picture, their name, and a click that opens their
+  // playlists. The selected fill is the keyboard cursor, as everywhere else.
+  component PersonRow: Item {
+    id: person
+    property var item: null
+    property bool selected: false
+    signal activated()
+
+    width: parent ? parent.width : 0
+    height: Style.space(30)
+
+    BorderSurface {
+      anchors.fill: parent
+      radius: Style.cornerRadius
+      color: Style.selectedFillFor(Color.foreground, Color.accent)
+      borderSpec: Border.none()
+      visible: person.selected
+    }
+
+    BorderSurface {
+      id: avatar
+      width: Style.space(24)
+      height: width
+      radius: width / 2
+      anchors.left: parent.left
+      anchors.leftMargin: Style.space(4)
+      anchors.verticalCenter: parent.verticalCenter
+      color: Color.popups.background
+      borderSpec: Border.none()
+
+      Image {
+        anchors.fill: parent
+        anchors.margins: Style.space(1)
+        source: person.item ? String(person.item.photo || "") : ""
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        visible: String(person.item ? person.item.photo || "" : "") !== ""
+      }
+
+      Text {
+        anchors.centerIn: parent
+        visible: !(person.item && person.item.photo)
+        text: "󰀄"
+        color: root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
+    }
+
+    Text {
+      anchors.left: avatar.right
+      anchors.leftMargin: Style.space(8)
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(6)
+      anchors.verticalCenter: parent.verticalCenter
+      textFormat: Text.PlainText
+      elide: Text.ElideRight
+      text: person.item ? String(person.item.name || "") : ""
+      color: root.textColor
+      font.family: Style.font.family
+      font.pixelSize: Style.font.bodySmall
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      cursorShape: Qt.PointingHandCursor
+      onClicked: person.activated()
+    }
+  }
+
   // The same list of playlists as rows, for people who would rather read names.
   component PlaylistRows: Column {
     id: rows
@@ -1858,6 +1930,16 @@ Panel {
             id: sourceRow
             spacing: Style.space(6)
 
+            // First, and deliberately: choosing a person is a way in, not a
+            // section, and it must not hide behind a scrolling row.
+            Button {
+              text: "Люди"
+              foreground: root.textColor
+              selected: root.browseSlug === "friends" || root.browseSlug === "person"
+              tooltipText: "Друзья и любой человек по ссылке — их плейлисты"
+              onClicked: root.browseFriends()
+            }
+
             Repeater {
               model: root.sources
               delegate: Button {
@@ -1868,13 +1950,6 @@ Panel {
               }
             }
 
-            Button {
-              text: "Друзья"
-              foreground: root.textColor
-              selected: root.browseSlug === "friends" || root.browseSlug === "person"
-              tooltipText: "Плейлисты друзей и любого человека по ссылке"
-              onClicked: root.browseFriends()
-            }
           }
         }
 
@@ -1970,13 +2045,10 @@ Panel {
           Repeater {
             id: friendRepeater
             model: root.friends
-            delegate: Button {
-              width: listColumn.width
-              leftAlign: true
+            delegate: PersonRow {
+              item: modelData
               selected: index === root.cursor
-              text: modelData ? String(modelData.name || "") : ""
-              foreground: root.textColor
-              onClicked: if (modelData) root.openPerson(String(modelData.id))
+              onActivated: if (modelData) root.openPerson(String(modelData.id))
             }
           }
 
@@ -1989,12 +2061,9 @@ Panel {
           Repeater {
             id: recentPeopleRepeater
             model: root.people
-            delegate: Button {
-              width: listColumn.width
-              leftAlign: true
-              text: modelData ? String(modelData.name || "") : ""
-              foreground: root.textColor
-              onClicked: if (modelData) root.openPerson(String(modelData.id))
+            delegate: PersonRow {
+              item: modelData
+              onActivated: if (modelData) root.openPerson(String(modelData.id))
             }
           }
 
