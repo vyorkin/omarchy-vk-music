@@ -2443,6 +2443,11 @@ Panel {
     property alias browseGrid: browseGrid
     property alias friendsGrid: friendsGrid
     property alias recentGrid: recentGrid
+    // The rows as well as the cards: with the gallery off the people are rows, and
+    // the cursor needs to find them by index. Without these two the lookup threw and
+    // took the whole movement with it.
+    property alias friendRepeater: friendRepeater
+    property alias recentPeopleRepeater: recentPeopleRepeater
     property alias browsePlaylistRows: browsePlaylistRows
     property alias playlistTrackRepeater: playlistTrackRepeater
     property alias searchGrid: searchGrid

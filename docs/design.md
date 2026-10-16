@@ -308,6 +308,12 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* An exception in a QML function kills the whole handler silently. The people list
+  moved nothing at all because `rowAt` called `itemAt` on a repeater the component had
+  not handed out — the missing alias threw, `moveCursor` died with it, and the panel
+  showed a dead key with no error in the UI. `TypeError` in the shell journal is the
+  first thing to look for when a key "does nothing"; the second is whether every
+  repeater the cursor may look up is actually exported.
 * An index in the cursor's list is not an index in a repeater. A section's column is
   the playlists and then the tracks, so the cursor's row 0 is the first playlist while
   `browseTrackRepeater`'s row 0 is the first track: resolving a playlist index against
