@@ -100,6 +100,11 @@ Panel {
     return root.radio !== null
   }
 
+  // Anything at all still on its way: the bottom line has one reason to be there.
+  function anyLoading() {
+    return root.browseLoading || root.browseMoreLoading || root.searchLoading || root.queueLoading
+  }
+
   function radioValue(name, fallback) {
     if (root.radio === null || root.radio === undefined) return fallback
     var value = root.radio[name]
@@ -946,7 +951,9 @@ Panel {
     contentWidth: panel.fittedContentWidth(Style.space(400))
     // Fixed height, but not one height for everything: a signed-out card holding
     // two lines of text and one button would otherwise be mostly empty space.
-    contentHeight: panel.fittedContentHeight(root.signedIn ? Style.space(460) : Style.space(200))
+    // 690 rather than 460: with the smaller card the queue showed four tracks and
+    // had to be scrolled for a fifth, and the settings page was barely usable.
+    contentHeight: panel.fittedContentHeight(root.signedIn ? Style.space(690) : Style.space(200))
 
     PanelKeyCatcher {
       id: keys
@@ -1368,13 +1375,6 @@ Panel {
                 }
               }
 
-              ProgressLine {
-                width: parent.width
-                thickness: Math.max(2, Style.space(2))
-                color: Color.accent
-                visible: root.queueLoading
-              }
-
               Text {
                 visible: root.queue.length === 0 && !root.queueLoading
                 textFormat: Text.PlainText
@@ -1451,15 +1451,6 @@ Panel {
                 visible: root.browseHeader !== ""
               }
 
-              // Where the missing rows will appear: at the top of an empty list,
-              // and above the row that asks for the next page.
-              ProgressLine {
-                width: parent.width
-                thickness: Math.max(2, Style.space(2))
-                color: Color.accent
-                visible: root.browseLoading
-              }
-
               Text {
                 width: parent.width
                 textFormat: Text.PlainText
@@ -1490,13 +1481,6 @@ Panel {
                     else root.playBrowseTrack(index)
                   }
                 }
-              }
-
-              ProgressLine {
-                width: parent.width
-                thickness: Math.max(2, Style.space(2))
-                color: Color.accent
-                visible: root.browseMoreLoading
               }
 
               Button {
@@ -1532,13 +1516,6 @@ Panel {
                 text: root.searchHeader
                 foreground: root.dim
                 visible: root.searchHeaderVisible
-              }
-
-              ProgressLine {
-                width: parent.width
-                thickness: Math.max(2, Style.space(2))
-                color: Color.accent
-                visible: root.searchLoading
               }
 
               Repeater {
@@ -1790,6 +1767,22 @@ Panel {
             }
           }
         }
+        // The line sits at the bottom of the card, not inside a list: one place
+        // for every view, its own row of height, and the list keeps all of its
+        // own. The row is always here, so nothing shifts when it lights up.
+        Item {
+          Layout.fillWidth: true
+          Layout.preferredHeight: Math.max(2, Style.space(2))
+          visible: root.signedIn
+
+          ProgressLine {
+            anchors.fill: parent
+            thickness: Math.max(2, Style.space(2))
+            color: Color.accent
+            visible: root.anyLoading()
+          }
+        }
+
       }
     }
   }
