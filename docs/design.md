@@ -320,6 +320,15 @@ Three things learned in the move:
   the track repeater sent the reveal to a row far below the viewport, and the row the
   cursor had actually moved to stayed off-screen — the keys looked dead because
   nothing visible changed. `rowAt` now picks the repeater by where the index falls.
+* A cleanup script that removes blocks by text matching removes the WRONG blocks, and
+  nothing about the result looks wrong: the file still parses, the widget still loads,
+  the journal is clean. A probe timer that switches the view was left alive and the
+  panel jumped to «Обзор» two seconds after every open; at the same time five working
+  timers — the poll and tick, `liveVolume`, `liveSeek`, `suggestTimer`, `wheelWrite` —
+  had been cut out, leaving calls to ids that no longer existed. What catches it is
+  counting the things that are NOT the thing being edited (how many timers exist, and
+  whether the ids they are called by still exist), not the brace balance. The fix was
+  to restore the file from the last complete commit and re-apply the round's changes.
 * A filter belongs to the list it was typed in. Filtering a section to «Русс» and then
   opening a playlist showed an *empty* playlist, because the filter was still applied
   to the new list's rows — the playlist had forty tracks and none of them matched the
