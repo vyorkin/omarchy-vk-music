@@ -790,7 +790,11 @@ Panel {
           ? root.activeList().browseGrid.itemAt(index)
           : root.activeList().browsePlaylistRows.itemAt(index)
       }
-      if (root.browseSlug === "friends") return root.activeList().friendRepeater.itemAt(index)
+      if (root.browseSlug === "friends") {
+        return root.gridView
+          ? root.activeList().friendsGrid.itemAt(index)
+          : root.activeList().friendRepeater.itemAt(index)
+      }
       return root.browseSlug === "radiostations"
         ? root.activeList().stationRepeater.itemAt(index)
         : root.activeList().browseTrackRepeater.itemAt(index)
@@ -1749,6 +1753,98 @@ Panel {
     }
   }
 
+  // A person in the gallery: their picture and their name. The picture is a
+  // circle, the way every VK profile is, and the name sits under it.
+  component PersonCard: Item {
+    id: personCard
+    property var item: null
+    property real cellWidth: 100
+    property bool selected: false
+    signal activated()
+
+    width: cellWidth
+    height: body.implicitHeight
+
+    Column {
+      id: body
+      width: parent.width
+      spacing: Style.space(3)
+
+      BorderSurface {
+        width: parent.width
+        height: width
+        radius: width / 2
+        color: Color.popups.background
+        borderSpec: personCard.selected
+          ? Border.controlSpec("selected", Color.foreground, Color.accent, Color.urgent)
+          : Border.none()
+
+        Image {
+          anchors.fill: parent
+          anchors.margins: Style.space(2)
+          source: personCard.item ? String(personCard.item.photo || "") : ""
+          fillMode: Image.PreserveAspectCrop
+          asynchronous: true
+          visible: source !== ""
+        }
+
+        Text {
+          anchors.centerIn: parent
+          visible: !(personCard.item && personCard.item.photo)
+          text: "󰀄"
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.displayLarge
+        }
+      }
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        maximumLineCount: 2
+        wrapMode: Text.WordWrap
+        horizontalAlignment: Text.AlignHCenter
+        text: personCard.item ? String(personCard.item.name || "") : ""
+        color: root.textColor
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      cursorShape: Qt.PointingHandCursor
+      onClicked: personCard.activated()
+    }
+  }
+
+  // The same people as a grid: choosing a person is picking a face, which is what
+  // a gallery is for.
+  component PeopleGrid: Grid {
+    id: peopleGrid
+    property var items: []
+    readonly property real cellWidth: (width - spacing * (columns - 1)) / Math.max(1, columns)
+    signal picked(int index)
+
+    function itemAt(index) { return cardRepeater.itemAt(index) }
+
+    width: parent ? parent.width : 0
+    columns: root.galleryColumns
+    spacing: Style.space(6)
+
+    Repeater {
+      id: cardRepeater
+      model: peopleGrid.items
+      delegate: PersonCard {
+        item: modelData
+        cellWidth: peopleGrid.cellWidth
+        selected: index === root.cursor
+        onActivated: peopleGrid.picked(index)
+      }
+    }
+  }
+
   // A person in a list: their picture, their name, and a click that opens their
   // playlists. The selected fill is the keyboard cursor, as everywhere else.
   component PersonRow: Item {
@@ -2156,6 +2252,8 @@ Panel {
     property alias resultRepeater: resultRepeater
     property alias historyRepeater: historyRepeater
     property alias browseGrid: browseGrid
+    property alias friendsGrid: friendsGrid
+    property alias recentGrid: recentGrid
     property alias browsePlaylistRows: browsePlaylistRows
     property alias playlistTrackRepeater: playlistTrackRepeater
     property alias searchGrid: searchGrid
@@ -2394,9 +2492,18 @@ Panel {
             visible: root.friends.length > 0
           }
 
+          PeopleGrid {
+            id: friendsGrid
+            items: root.gridView ? root.friends : []
+            visible: items.length > 0
+            onPicked: function(index) {
+              if (root.friends[index]) root.openPerson(String(root.friends[index].id))
+            }
+          }
+
           Repeater {
             id: friendRepeater
-            model: root.friends
+            model: root.gridView ? [] : root.friends
             delegate: PersonRow {
               item: modelData
               selected: index === root.cursor
@@ -2410,9 +2517,18 @@ Panel {
             visible: root.people.length > 0
           }
 
+          PeopleGrid {
+            id: recentGrid
+            items: root.gridView ? root.people : []
+            visible: items.length > 0
+            onPicked: function(index) {
+              if (root.people[index]) root.openPerson(String(root.people[index].id))
+            }
+          }
+
           Repeater {
             id: recentPeopleRepeater
-            model: root.people
+            model: root.gridView ? [] : root.people
             delegate: PersonRow {
               item: modelData
               onActivated: if (modelData) root.openPerson(String(modelData.id))

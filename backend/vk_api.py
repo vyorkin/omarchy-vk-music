@@ -804,13 +804,13 @@ class VkClient:
 
     def friends(self, *, count: int = 200) -> list[Person]:
         """Everyone on my friend list, by name."""
-        response = self.call("friends.get", count=count, order="name", fields="photo_100")
+        response = self.call("friends.get", count=count, order="name", fields="photo_200")
         items = response.get("items") if isinstance(response, Mapping) else None
         return [Person.from_item(item) for item in (items or []) if isinstance(item, Mapping)]
 
     def users(self, ids: str) -> list[Person]:
         """Resolve ids or screen names into people, for a pasted link."""
-        response = self.call("users.get", user_ids=ids, fields="photo_100")
+        response = self.call("users.get", user_ids=ids, fields="photo_200")
         items = response if isinstance(response, list) else []
         return [Person.from_item(item) for item in items if isinstance(item, Mapping)]
 

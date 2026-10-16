@@ -433,6 +433,12 @@ in both popup shapes, and it no longer competes with the header for room.
 
 ## Two views for playlists
 
+People follow the same switch as playlists, because choosing a person is picking a
+face: in the gallery they are cards — the picture in a circle, the name under it, two
+lines for a long one — and in the list they are rows with a small round picture and
+the name beside it. `friends.get` and `users.get` ask for `photo_200` rather than
+`photo_100`, since a card shows the picture at 143 pixels.
+
 A track in a list is a row too, and the same one everywhere it appears — the queue,
 a playlist, a section and a search — because four ways of writing «artist — title»
 was four things to learn. `TrackRow` puts the track's place on the left when it has
