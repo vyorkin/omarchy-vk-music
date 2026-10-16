@@ -809,7 +809,13 @@ Panel {
     if (root.view === "browse") {
       if (root.browseSlug === "person") return root.filtered(root.personPlaylists)
       if (root.browseSlug === "friends") return root.filtered(root.friends)
-      return root.browseSlug === "radiostations" ? root.stations : root.filtered(root.browseTracks)
+      if (root.browseSlug === "radiostations") return root.stations
+      // With the gallery on, the cards in front of you are the playlists, so the
+      // cursor walks those rather than the section's tracks underneath them.
+      if (root.galleryMode && root.browsePlaylists.length > 0) {
+        return root.filtered(root.browsePlaylists)
+      }
+      return root.filtered(root.browseTracks)
     }
     if (root.view === "search") {
       if (root.searchMode === "playlists") return root.filtered(root.foundPlaylists)
@@ -841,6 +847,10 @@ Panel {
     if (root.openPlaylist !== null) return root.activeList().playlistTrackRepeater.itemAt(index)
     if (root.view === "queue") return root.activeList().queueRepeater.itemAt(index)
     if (root.view === "browse") {
+      if (root.galleryMode && root.browseSlug !== "person" && root.browseSlug !== "friends"
+          && root.browseSlug !== "radiostations" && root.browsePlaylists.length > 0) {
+        return root.activeList().browseGrid.itemAt(index)
+      }
       if (root.browseSlug === "person") {
         return root.gridView
           ? root.activeList().browseGrid.itemAt(index)
@@ -897,7 +907,11 @@ Panel {
     if (root.view === "queue") {
       root.playQueueAt(root.indexOfItem(root.queue, item))
     } else if (root.view === "browse") {
-      if (root.browseSlug === "person") root.openPlaylistView(root.personPlaylists[index])
+      if (root.galleryMode && root.browseSlug !== "person" && root.browseSlug !== "friends"
+          && root.browseSlug !== "radiostations" && root.browsePlaylists.length > 0) {
+        root.openPlaylistView(item)
+      }
+      else if (root.browseSlug === "person") root.openPlaylistView(root.personPlaylists[index])
       else if (root.browseSlug === "friends") root.openPerson(root.friends[index].id)
       else if (root.browseSlug === "radiostations") root.playStation(root.stations[index])
       else root.playBrowseTrack(index)
@@ -1354,6 +1368,9 @@ Panel {
   readonly property string playlistView: String(root.setting("playlistView", root.prefs.playlistView || "list"))
   readonly property bool gridView: root.playlistView === "grid"
   readonly property int galleryColumns: root.isExtended() ? 4 : 2
+  // A grid of pictures, as opposed to a one-column list: only then do h and l mean
+  // anything, and only then does j move a row rather than a line.
+  readonly property bool galleryMode: root.gridView && root.openPlaylist === null
 
   readonly property int marqueeSpeed: {
     var value = Number(root.setting("marqueeSpeed", root.prefs.marqueeSpeed))
@@ -1754,6 +1771,9 @@ Panel {
     // The Column lays itself out; the MouseArea sits beside it, because a
     // positioner refuses to lay out an anchored child.
     height: body.implicitHeight
+    // The border says «the pointer is here», the cover steps back a little to say it
+    // twice: a border alone is easy to miss under a bright picture.
+    opacity: cardArea.containsMouse && !card.selected ? 0.82 : 1.0
 
     Column {
       id: body
@@ -1796,7 +1816,7 @@ Panel {
         elide: Text.ElideRight
         maximumLineCount: 1
         text: card.item ? String(card.item.title || "") : ""
-        color: root.textColor
+        color: card.selected ? Color.accent : root.textColor
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
       }
@@ -3648,11 +3668,11 @@ Panel {
       // Enter is not handled here: the panel's key catcher owns it, and two
       // handlers meant the field re-ran the search first, which reset the
       // list selection before Enter could play it.
-      // Esc in the field: the query first, then the panel. The key catcher is
-      // blocked while a field has the keyboard, so the field answers for itself.
+      // Esc in the field drops the focus and nothing else: the keyboard goes back to
+      // the list, where j/k (or hjkl in the gallery) take over. Clearing the query
+      // and closing the panel are the next Escs, from the list.
       Keys.onEscapePressed: function(event) {
-        if (root.query.length > 0) root.clearSearch()
-        else root.close()
+        root.focusList()
         event.accepted = true
       }
       onTextChanged: {
@@ -3719,7 +3739,20 @@ Panel {
       // to look through a list should not start a track. `n` and `p` below still
       // switch tracks.
       onMoveRequested: function(dx, dy) {
-        if (dy !== 0) root.moveCursor(dy)
+        // The gallery is a grid, so h and l step sideways and j and k step a whole
+        // row; a list is one column, where only j and k mean anything.
+        if (dx !== 0) {
+          if (root.galleryMode) root.moveCursor(dx)
+          return
+        }
+        if (dy !== 0) root.moveCursor(root.galleryMode ? dy * root.galleryColumns : dy)
+      }
+      // Tab hands the keyboard to the list and puts the cursor on its first item —
+      // the way out of a search field that has finished being typed into.
+      onTabRequested: function(direction) {
+        root.focusList()
+        root.cursor = -1
+        root.moveCursor(direction > 0 ? 1 : -1)
       }
       // Enter arrives as `returnRequested` and then as `activateRequested`, so
       // the flag keeps the second one from toggling playback on top of the first.

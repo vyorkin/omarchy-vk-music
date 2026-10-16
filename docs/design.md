@@ -308,6 +308,13 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* The cursor walks what is on screen. In the gallery the section's playlists are the
+  cards, so h and l step a card and j and k step a row of `galleryColumns`, and the
+  cursor covers the playlists rather than the tracks drawn underneath them; in a list
+  only j and k mean anything. Tab hands the keyboard to the list and puts the cursor
+  on its first item, which is the way out of a search field that has been typed into.
+  Esc in a field now drops the focus and nothing else — clearing the query and
+  closing the panel are the next Escs, from the list.
 * `containsMouse` is always false without `hoverEnabled`. The track rows had no
   hover state at all — not a styling choice, a MouseArea that never tracked the
   pointer. A row now has two fills: the selected one for the keyboard cursor and the
