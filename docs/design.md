@@ -308,6 +308,13 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* A loading line that reserves its place is a line that can sit on the last row of
+  the list above it. The panel's indicator held two pixels in the layout whether or
+  not anything was loading, and the row of a list ended up looking cut by a dark
+  stripe. It is only in the layout while it is loading now, and it clips to its own
+  height, so an idle panel has nothing below the last row. The same one line serves
+  every view — the queue, a playlist, a section, a person's playlists, the search —
+  so the fix holds wherever a list is.
 * A hint at the bottom of the card is a hint on top of the last row of every list.
   The key hints took the place of the title at the top instead, where the panel has
   space that the content never needs, and the list got its last line back.

@@ -3764,13 +3764,16 @@ Panel {
   component LoadingLine: Item {
     Layout.fillWidth: true
     Layout.preferredHeight: Math.max(2, Style.space(2))
-    visible: root.signedIn
+    // Only while something is loading, and clipped to its own two pixels: a line
+    // that holds a place for itself in the layout is a line that can sit on the last
+    // row of whatever list is above it.
+    visible: root.signedIn && root.anyLoading()
+    clip: true
 
     ProgressLine {
       anchors.fill: parent
       thickness: Math.max(2, Style.space(2))
       color: Color.accent
-      visible: root.anyLoading()
     }
   }
 

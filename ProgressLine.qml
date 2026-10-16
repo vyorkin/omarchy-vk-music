@@ -23,6 +23,8 @@ Item {
   property real phase: 0
 
   implicitHeight: thickness
+  // Never paint outside the two pixels this is meant to occupy.
+  clip: true
   implicitWidth: 120
 
   onProgressChanged: canvas.requestPaint()
