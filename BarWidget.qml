@@ -1718,29 +1718,80 @@ Timer {
       }
     }
 
-    Item {
+    Row {
       id: transportZone
-      width: Style.space(24)
+      visible: root.hasTrack && root.barShowControls
       height: root.implicitHeight
       anchors.verticalCenter: parent.verticalCenter
-      visible: root.hasTrack && root.barShowControls
+      spacing: Style.space(4)
 
-      Text {
-        anchors.centerIn: parent
-        textFormat: Text.PlainText
-        // The glyph never turns into a downloader: play stays play, dimmed while
-        // the track is being fetched.
-        text: root.playing ? "󰏤" : "󰐊"
-        color: root.fg
-        opacity: root.loading ? 0.45 : 1.0
-        font.family: bar ? bar.fontFamily : Style.font.family
-        font.pixelSize: Style.font.caption
+      // Three plain glyphs and nothing else: previous, play or pause, next. No frames
+      // and no boxes — the bar is not a panel, and a box around a glyph is one more
+      // thing to read. Each glyph is its own target, so a track can be switched
+      // without opening the popup.
+      Item {
+        width: Style.space(22)
+        height: parent.height
+
+        Text {
+          anchors.centerIn: parent
+          textFormat: Text.PlainText
+          text: "󰒮"
+          color: root.fg
+          opacity: root.loading ? 0.45 : 1.0
+          font.family: bar ? bar.fontFamily : Style.font.family
+          font.pixelSize: Style.bar.iconFont
+        }
+
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.skipPrevious()
+        }
       }
 
-      MouseArea {
-        anchors.fill: parent
-        cursorShape: Qt.PointingHandCursor
-        onClicked: root.togglePause()
+      Item {
+        width: Style.space(24)
+        height: parent.height
+
+        Text {
+          anchors.centerIn: parent
+          textFormat: Text.PlainText
+          // The glyph never turns into a downloader: play stays play, dimmed while
+          // the track is being fetched.
+          text: root.playing ? "󰏤" : "󰐊"
+          color: root.fg
+          opacity: root.loading ? 0.45 : 1.0
+          font.family: bar ? bar.fontFamily : Style.font.family
+          font.pixelSize: Style.bar.iconFont
+        }
+
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.togglePause()
+        }
+      }
+
+      Item {
+        width: Style.space(22)
+        height: parent.height
+
+        Text {
+          anchors.centerIn: parent
+          textFormat: Text.PlainText
+          text: "󰒭"
+          color: root.fg
+          opacity: root.loading ? 0.45 : 1.0
+          font.family: bar ? bar.fontFamily : Style.font.family
+          font.pixelSize: Style.bar.iconFont
+        }
+
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.skipNext()
+        }
       }
     }
   }

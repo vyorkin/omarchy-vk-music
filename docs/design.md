@@ -238,6 +238,13 @@ the download itself and mpv's load, and only the split says which one is to
 blame. In practice the download dominates, and now that starting a track clears
 mpv's pause, the sound follows the download by about 0.2 s.
 
+The bar's transport is three plain glyphs — previous, play or pause, next — each in
+its own 22-24 px target, with no frame around any of them. The bar is not a panel: a box
+around a glyph is one more thing to read at a size where every pixel competes with the
+clock. The glyph size is the bar's own icon token rather than a panel font, so the row
+cannot grow taller than the bar, and the middle glyph still never turns into a download
+icon — it dims while the track is being fetched.
+
 ## What the bar row shows
 
 Fourteen preferences, most of them about the row in the bar, taken from the shape
