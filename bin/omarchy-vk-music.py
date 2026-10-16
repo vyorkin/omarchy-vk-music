@@ -140,6 +140,11 @@ def parse_argv(argv: list[str]) -> dict:
     }
     if head in simple:
         return {"command": simple[head]}
+    if head == "queue" and words:
+        if words[0] == "remove":
+            return {"command": "queue_remove", "index": int(words[1]) if len(words) > 1 else 0}
+        if words[0] == "clear":
+            return {"command": "queue_clear"}
     if head == "jump":
         return {"command": "jump", "index": int(words[0]) if words else 0}
     if head == "section":

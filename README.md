@@ -86,6 +86,8 @@ omarchy-vk-music section explore         # one catalog page, with its cursor
 omarchy-vk-music section explore PUlYVA8FWRs   # the next page
 omarchy-vk-music radio                   # the live stations
 omarchy-vk-music play radio 1            # play a station
+omarchy-vk-music queue remove 3        # drop a queue entry
+omarchy-vk-music queue clear           # empty the queue
 omarchy-vk-music next | previous | pause
 omarchy-vk-music seek 90 | volume 40 | volume +10
 omarchy-vk-music shuffle on | repeat all

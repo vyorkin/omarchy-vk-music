@@ -951,6 +951,36 @@ class Player:
             self._start_current()
             self.save_state()
 
+    def remove_from_queue(self, index: int) -> None:
+        """Drop one entry from the queue.
+
+        Removing the track that is playing stops playback and leaves the index on
+        the entry that took its place: playing on while the list says otherwise
+        would make every later action act on the wrong track.
+        """
+        with self.lock:
+            if not (0 <= index < len(self.queue)):
+                return
+            if index == self.index:
+                del self.queue[index]
+                self.stop()
+                self.index = min(self.index, len(self.queue) - 1)
+            else:
+                del self.queue[index]
+                if index < self.index:
+                    self.index -= 1
+            self.save_state()
+
+    def clear_queue(self) -> None:
+        """Empty the queue and stop: the popup's "clear" action."""
+        with self.lock:
+            self.stop()
+            self.queue = []
+            self.index = -1
+            self.position = 0
+            self.duration = 0
+            self.save_state()
+
     def previous(self) -> None:
         with self.lock:
             if self.position > 5:
@@ -1879,6 +1909,14 @@ class Backend:
 
     def cmd_next(self) -> dict[str, Any]:
         self.player.next()
+        return self.player.status()
+
+    def cmd_queue_remove(self, index: int = 0) -> dict[str, Any]:
+        self.player.remove_from_queue(int(index))
+        return self.player.status()
+
+    def cmd_queue_clear(self) -> dict[str, Any]:
+        self.player.clear_queue()
         return self.player.status()
 
     def cmd_jump(self, index: int = 0) -> dict[str, Any]:

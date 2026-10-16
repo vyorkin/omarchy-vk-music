@@ -277,6 +277,14 @@ Notes from building it:
 * A `Row` cannot lay out an anchored child, so the progress line is a sibling of
   the bar row rather than a child of it.
 
+## Queue actions
+
+Three commands exist for the popup to build on: `queue_remove <index>`,
+`queue_clear`, and the shuffle and repeat toggles that were already in the CLI.
+Removing the track that is playing stops playback and leaves the index on the
+entry that took its place — playing on while the list says otherwise would make
+every later action act on the wrong track.
+
 ## The keyboard in the lists
 
 Up and down move a **selection**, not the playback: looking through a list should
