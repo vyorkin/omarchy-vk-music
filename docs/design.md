@@ -238,6 +238,13 @@ the download itself and mpv's load, and only the split says which one is to
 blame. In practice the download dominates, and now that starting a track clears
 mpv's pause, the sound follows the download by about 0.2 s.
 
+The bar's control glyph is drawn to the recipe the reference music widget uses for its
+own bar buttons, because two music widgets sitting in the same bar should not look like
+two different applications: a 24 px wide, full-height target with a 14 px icon,
+transparent at rest, a fill of the foreground at 8 % under the pointer, an accent fill
+with an accent icon while pressed, 35 % opacity when disabled, and the tooltip through
+the bar's own tooltip. Nothing else is drawn — no frame, no background, no border.
+
 The bar's transport is three plain glyphs — previous, play or pause, next — each in
 its own 22-24 px target, with no frame around any of them. The bar is not a panel: a box
 around a glyph is one more thing to read at a size where every pixel competes with the

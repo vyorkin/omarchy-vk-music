@@ -1674,27 +1674,15 @@ Timer {
       anchors.verticalCenter: parent.verticalCenter
     }
 
-    // Liking from the bar, without opening the popup.
-    Item {
+    // Liking from the bar, without opening the popup: the same glyph target as the
+    // transport, with the accent colour standing for «it is in my music».
+    BarGlyph {
       visible: root.barShowLike && root.hasTrack && !root.onAir()
-      width: Style.space(18)
-      height: root.implicitHeight
       anchors.verticalCenter: parent.verticalCenter
-
-      Text {
-        anchors.centerIn: parent
-        textFormat: Text.PlainText
-        text: root.liked ? "󰋑" : "󰋕"
-        color: root.liked ? Color.urgent : root.fg
-        font.family: bar ? bar.fontFamily : Style.font.family
-        font.pixelSize: Style.font.caption
-      }
-
-      MouseArea {
-        anchors.fill: parent
-        cursorShape: Qt.PointingHandCursor
-        onClicked: root.toggleLike()
-      }
+      icon: root.liked ? "󰋑" : "󰋕"
+      iconColor: root.liked ? Color.accent : root.fg
+      tooltip: root.liked ? "Убрать из моей музыки" : "В мою музыку"
+      onClicked: root.toggleLike()
     }
 
     // A small urgent dot is the whole error report in the bar; the text stays
@@ -1723,75 +1711,27 @@ Timer {
       visible: root.hasTrack && root.barShowControls
       height: root.implicitHeight
       anchors.verticalCenter: parent.verticalCenter
-      spacing: Style.space(4)
 
-      // Three plain glyphs and nothing else: previous, play or pause, next. No frames
-      // and no boxes — the bar is not a panel, and a box around a glyph is one more
-      // thing to read. Each glyph is its own target, so a track can be switched
-      // without opening the popup.
-      Item {
-        width: Style.space(22)
-        height: parent.height
-
-        Text {
-          anchors.centerIn: parent
-          textFormat: Text.PlainText
-          text: "󰒮"
-          color: root.fg
-          opacity: root.loading ? 0.45 : 1.0
-          font.family: bar ? bar.fontFamily : Style.font.family
-          font.pixelSize: Style.bar.iconFont
-        }
-
-        MouseArea {
-          anchors.fill: parent
-          cursorShape: Qt.PointingHandCursor
-          onClicked: root.skipPrevious()
-        }
+      // The same three glyphs the reference widget shows, in the same shape: previous,
+      // play or pause, next — 24 px each, nothing drawn between them.
+      BarGlyph {
+        icon: "󰒮"
+        tooltip: "Предыдущий трек"
+        onClicked: root.skipPrevious()
       }
 
-      Item {
-        width: Style.space(24)
-        height: parent.height
-
-        Text {
-          anchors.centerIn: parent
-          textFormat: Text.PlainText
-          // The glyph never turns into a downloader: play stays play, dimmed while
-          // the track is being fetched.
-          text: root.playing ? "󰏤" : "󰐊"
-          color: root.fg
-          opacity: root.loading ? 0.45 : 1.0
-          font.family: bar ? bar.fontFamily : Style.font.family
-          font.pixelSize: Style.bar.iconFont
-        }
-
-        MouseArea {
-          anchors.fill: parent
-          cursorShape: Qt.PointingHandCursor
-          onClicked: root.togglePause()
-        }
+      BarGlyph {
+        // The glyph never turns into a downloader: play stays play, dimmed while the
+        // track is being fetched.
+        icon: root.playing ? "󰏤" : "󰐊"
+        tooltip: root.playing ? "Пауза" : "Играть"
+        onClicked: root.togglePause()
       }
 
-      Item {
-        width: Style.space(22)
-        height: parent.height
-
-        Text {
-          anchors.centerIn: parent
-          textFormat: Text.PlainText
-          text: "󰒭"
-          color: root.fg
-          opacity: root.loading ? 0.45 : 1.0
-          font.family: bar ? bar.fontFamily : Style.font.family
-          font.pixelSize: Style.bar.iconFont
-        }
-
-        MouseArea {
-          anchors.fill: parent
-          cursorShape: Qt.PointingHandCursor
-          onClicked: root.skipNext()
-        }
+      BarGlyph {
+        icon: "󰒭"
+        tooltip: "Следующий трек"
+        onClicked: root.skipNext()
       }
     }
   }
@@ -1968,6 +1908,57 @@ Timer {
   // it beside the player rather than under it.
   // A playlist in the gallery: the cover, its name, how long it is. The accent
   // frame is the keyboard cursor, the way the fill is on a row.
+  // The bar's control glyph, drawn to the same recipe the reference music widget uses:
+  // a 24 px wide, full-height target with a 14 px icon, transparent at rest, a faint
+  // fill under the pointer and an accent fill with an accent icon while pressed. That
+  // is the whole vocabulary — in a 30 px bar a frame around every glyph competes with
+  // every other widget for the same pixels.
+  component BarGlyph: Item {
+    id: glyph
+    property string icon: ""
+    property string tooltip: ""
+    property color iconColor: root.fg
+    signal clicked()
+    signal wheeled(var wheel)
+
+    width: Style.space(24)
+    height: parent ? parent.height : Style.space(24)
+    opacity: enabled ? 1 : 0.35
+
+    Rectangle {
+      anchors.fill: parent
+      radius: Style.cornerRadius
+      color: glyphArea.pressed
+        ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.2)
+        : (glyphArea.containsMouse
+           ? Qt.rgba(glyph.iconColor.r, glyph.iconColor.g, glyph.iconColor.b, 0.08)
+           : "transparent")
+    }
+
+    Text {
+      anchors.centerIn: parent
+      textFormat: Text.PlainText
+      text: glyph.icon
+      color: glyphArea.pressed
+        ? Color.accent
+        : (glyphArea.containsMouse ? Qt.lighter(glyph.iconColor, 1.15) : glyph.iconColor)
+      opacity: root.loading ? 0.45 : 1.0
+      font.family: bar ? bar.fontFamily : Style.font.family
+      font.pixelSize: Style.space(14)
+    }
+
+    MouseArea {
+      id: glyphArea
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: glyph.clicked()
+      onWheel: function(wheel) { glyph.wheeled(wheel) }
+      onEntered: if (bar && glyph.tooltip !== "") bar.showTooltip(glyph, glyph.tooltip)
+      onExited: if (bar) bar.hideTooltip(glyph)
+    }
+  }
+
   component PlaylistCard: Item {
     id: card
     property var item: null
