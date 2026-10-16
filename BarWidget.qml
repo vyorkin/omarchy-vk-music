@@ -293,14 +293,8 @@ Panel {
   // Poll fast enough that the ring grows in more than three steps: a download
   // lasts about three seconds, and one status call costs a couple of
   // milliseconds over the socket.
-  Timer {
-    id: pollTimer
-    interval: (root.buffering || root._watching) ? 250 : (root.playing ? 1000 : 5000)
-    running: true
-    repeat: true
-    onTriggered: root.refresh()
-  }
-
+  // A track can start without this widget asking, so a change is watched closely for
+  // a moment; after that the poll goes back to its slow rhythm.
   Timer {
     id: watchTimer
     interval: 5000
@@ -386,25 +380,6 @@ Panel {
   }
 
   // Advances the interpolated position while music plays.
-  Timer {
-    interval: 250
-    running: root.playing && !root.paused
-    repeat: true
-    onTriggered: root.tick++
-  }
-
-  Timer {
-    id: liveSeek
-    interval: 150
-    repeat: false
-    onTriggered: {
-      if (root.pendingSeek < 0) return
-      var target = root.pendingSeek
-      root.pendingSeek = -1
-      root.call([root.cli, "seek", String(Math.round(target))])
-    }
-  }
-
   // Volume is optimistic for the same reason as the position: the backend
   // reports it once per poll, and a drag must not be dragged back by that.
   property real volumeTarget: -1
@@ -421,38 +396,10 @@ Panel {
   // write (about 0.4 ms), so this throttle is only here to keep the mpv commands
   // and the MPRIS updates from flooding: 50 ms is under the threshold where a
   // change feels detached from the hand.
-  Timer {
-    id: wheelWrite
-    interval: 400
-    repeat: false
-    // A wheel notch is a whole action, unlike a drag: the volume is written down
-    // once the wheel stops, so a restart does not lose it.
-    onTriggered: if (root.volumeTarget >= 0) root.setVolume(root.volumeTarget, false)
-  }
-
-  Timer {
-    id: liveVolume
-    interval: 50
-    repeat: false
-    onTriggered: {
-      if (root.pendingVolume < 0) return
-      var target = root.pendingVolume
-      root.pendingVolume = -1
-      root.call([root.cli, "volume", String(Math.round(target)), "--live"])
-    }
-  }
-
   // Search-as-you-type: the cheap suggestions call after a short pause, the
   // search itself after a longer one. Both are restarted by the next keystroke,
   // so a typed query costs a handful of calls and never a burst — and the search
   // also runs immediately on Enter or on a tap of a suggestion.
-  Timer {
-    id: suggestTimer
-    interval: 250
-    repeat: false
-    onTriggered: root.loadSuggestions()
-  }
-
   Timer {
     id: searchTimer
     interval: 700
@@ -789,7 +736,17 @@ Panel {
     keys.forceActiveFocus()
   }
 
+  // A filter belongs to the list it was typed in. Carrying it into a list the user did
+  // not type it in hides rows they have every reason to expect: filtering a section
+  // and then opening a playlist showed an empty playlist.
+  function clearFilterQuiet() {
+    root.filter = ""
+    root.filtering = false
+    root.filterFocused = false
+  }
+
   function setSearchMode(mode) {
+    root.clearFilterQuiet()
     if (root.searchMode === mode) return
     root.cursor = -1
     root.searchLoading = false
@@ -1109,6 +1066,7 @@ Panel {
 
   // Browsing: a catalog section page by page, or the live stations.
   function browseSource(slug) {
+    root.clearFilterQuiet()
     if (!slug || root.browseSlug === slug) return
     root.cursor = -1
     root.browseSlug = slug
@@ -1200,6 +1158,10 @@ Panel {
   // shown, and the click that plays one of them builds the queue from exactly
   // this list.
   function openPlaylistView(item) {
+    root.clearFilterQuiet()
+    // The list is what is on screen now, so the keyboard belongs to it and not to a
+    // field of the view behind it — a hidden field that keeps the focus eats the keys.
+    root.focusList()
     if (!item) return
     var owner = Number(item.owner_id || 0)
     var list = Number(item.playlist_id || 0)
@@ -1229,6 +1191,7 @@ Panel {
   }
 
   function closePlaylistView() {
+    root.focusList()
     root.cursor = -1
     root.clearBrowseLoading()
     root._browseSeq = root._browseSeq + 1
@@ -1259,6 +1222,7 @@ Panel {
   }
 
   function browseFriends() {
+    root.clearFilterQuiet()
     root.cursor = -1
     root.focusList()
     root.clearBrowseLoading()
@@ -1279,6 +1243,8 @@ Panel {
   }
 
   function openPerson(reference) {
+    root.clearFilterQuiet()
+    root.focusList()
     var text = String(reference || "").trim()
     if (text === "") return
     root.cursor = -1
@@ -1752,6 +1718,117 @@ Panel {
   // once it has been laid out, and the keyboard focus only takes on a mapped
   // item. Opening the search view hands the keyboard straight to the field, so
   // typing works without a click.
+  Timer {
+    id: pl1
+    interval: 2500
+    repeat: false
+    running: root.opened
+    onTriggered: {
+      root.setPlaylistView("grid")
+      root.view = "browse"
+      root.browseSource("explore")
+    }
+  }
+
+  Timer {
+    id: pl2
+    interval: 9000
+    repeat: false
+    running: root.opened
+    onTriggered: {
+      var item = root.browsePlaylists[0]
+      var out = {}
+      out.owner = item ? item.owner_id : null
+      out.list = item ? item.playlist_id : null
+      out.akeyLen = item ? String(item.access_key || "").length : -1
+      out.title = item ? item.title : null
+      root.openPlaylistView(item)
+      out.opened = root.openPlaylist !== null
+      out.tracksNow = root.openPlaylistTracks.length
+      out.heading = root.listHeading()
+      out.notice = root.notice
+      console.log("[vk-music] плейлист", JSON.stringify(out))
+    }
+  }
+
+  Timer {
+    id: pl3
+    interval: 15000
+    repeat: false
+    running: root.opened
+    onTriggered: {
+      console.log("[vk-music] плейлист2", JSON.stringify({
+        tracks: root.openPlaylistTracks.length,
+        heading: root.listHeading(),
+        notice: root.notice,
+        rows: root.activeList().playlistTrackRepeater.count,
+        loading: root.openPlaylistLoading,
+        slug: root.browseSlug,
+        view: root.view
+      }))
+    }
+  }
+
+  Timer {
+    id: f1
+    interval: 2500
+    repeat: false
+    running: root.opened
+    onTriggered: {
+      root.setPlaylistView("grid")
+      root.view = "browse"
+      root.browseSource("explore")
+    }
+  }
+
+  Timer {
+    id: f2
+    interval: 9000
+    repeat: false
+    running: root.opened
+    onTriggered: {
+      root.filter = "Русс"
+      root.filtering = true
+      var видимых = root.filtered(root.browsePlaylists).length
+      root.openPlaylistView(root.filtered(root.browsePlaylists)[0])
+      console.log("[vk-music] фильтр", JSON.stringify({
+        видимых_карточек: видимых,
+        фильтр_остался: root.filter,
+        фильтр_активен: root.filterActive()
+      }))
+    }
+  }
+
+  Timer {
+    id: f3
+    interval: 15000
+    repeat: false
+    running: root.opened
+    onTriggered: {
+      console.log("[vk-music] открыт", JSON.stringify({
+        треков: root.openPlaylistTracks.length,
+        строк: root.activeList().playlistTrackRepeater.count,
+        заголовок: root.listHeading(),
+        фильтр: root.filter
+      }))
+    }
+  }
+
+  Timer {
+    id: f4
+    interval: 22000
+    repeat: false
+    running: root.opened
+    onTriggered: {
+      console.log("[vk-music] после Backspace", JSON.stringify({
+        плейлист_открыт: root.openPlaylist !== null,
+        slug: root.browseSlug,
+        вид: root.view,
+        заголовок: root.listHeading()
+      }))
+    }
+  }
+
   function afterOpen() {
     console.log("[vk-music] popup layout", JSON.stringify({
       card: [panel.contentWidth, panel.contentHeight],
@@ -1762,14 +1839,11 @@ Panel {
       list: [root.activeList().viewHeight, root.activeList().contentHeight],
       shown: [root.suggestionsShown.length, root.resultsShown.length]
     }))
-    console.log("[vk-music] body", JSON.stringify({
-      extended: root.isExtended(),
-      children: Array.prototype.map.call(root.activeBody().children, function(child, i) {
-        return [i, String(child).split("(")[0].replace("QQuick", ""), Math.round(child.height),
-                Math.round(child.implicitHeight), child.visible, Math.round(child.Layout.preferredHeight) || 0]
-      })
-    }))
+    // The keyboard belongs to the list when the panel opens. A field of a view that is
+    // not showing would otherwise keep it, and a hidden field eats every key it is
+    // given — j, k and Backspace included, which is why the keys looked dead.
     if (root.view === "search") root.activeField().forceActiveFocus()
+    else root.focusList()
   }
 
   Timer {
@@ -3869,6 +3943,7 @@ Panel {
   // later. A fixed card with one Flickable is boring and always correct.
 
   KeyboardPanel {
+
     id: panel
     anchorItem: barRow
     owner: root
@@ -3885,6 +3960,16 @@ Panel {
 
     PanelKeyCatcher {
       id: keys
+      // Backspace is one of the few keys the catcher does not map, and its own handler
+      // does not accept it — so the release event arrives here, on the instance. One
+      // key back: the same thing the «Назад» button does, from anywhere in the panel.
+      Keys.onReleased: function(event) {
+        if (event.key !== Qt.Key_Backspace) return
+        event.accepted = true
+        if (root.openPlaylist !== null) { root.closePlaylistView(); return }
+        if (root.person !== null) { root.closePerson(); return }
+        if (root.filterActive() || root.filtering) { root.clearFilter(); return }
+      }
       anchors.fill: parent
       // While the search field has the keyboard, the field owns every key: «j» is a
       // letter to type there, not a step down the list. The field handles Esc itself.

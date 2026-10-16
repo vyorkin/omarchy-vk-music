@@ -320,6 +320,19 @@ Three things learned in the move:
   the track repeater sent the reveal to a row far below the viewport, and the row the
   cursor had actually moved to stayed off-screen — the keys looked dead because
   nothing visible changed. `rowAt` now picks the repeater by where the index falls.
+* A filter belongs to the list it was typed in. Filtering a section to «Русс» and then
+  opening a playlist showed an *empty* playlist, because the filter was still applied
+  to the new list's rows — the playlist had forty tracks and none of them matched the
+  text typed into a different list. Every navigation that changes the list clears the
+  filter.
+* The keyboard belongs to the list when the panel opens, not to a field of a view that
+  is not showing: the field would sit there focused and eat every key it was given,
+  Backspace included.
+* Backspace goes back one level, the same thing the «Назад» button does. It cannot be
+  read from `onTextKey` (it is not a character) and the panel never sees it (the key
+  catcher owns the focus and its handler accepts what it maps), but the catcher does not
+  map Backspace — so it arrives as a key *release* on the catcher instance, which is the
+  one place a plugin can legitimately attach to.
 * A hidden field cannot own the keyboard, but it can think it does: the panel blocks
   every key for whichever field is focused, and a search field that kept focus while
   another view was showing left j, k and everything else dead — the keys went to a
