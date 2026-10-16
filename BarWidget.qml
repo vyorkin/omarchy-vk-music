@@ -1105,7 +1105,7 @@ Panel {
       Text {
         anchors.centerIn: parent
         textFormat: Text.PlainText
-        text: root.liked ? "󰋕" : "󰋑"
+        text: root.liked ? "󰋑" : "󰋕"
         color: root.liked ? Color.urgent : root.fg
         font.family: bar ? bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.caption
@@ -1992,12 +1992,29 @@ Panel {
 
     Button {
       visible: !root.onAir()
-      iconText: root.liked ? "󰋕" : "󰋑"
+      // Filled is `mdi-heart`, outline is `mdi-heart-outline`: the filled one
+      // means the track is in «Моя музыка».
+      iconText: root.liked ? "󰋑" : "󰋕"
       foreground: root.liked ? Color.urgent : root.textColor
       enabled: root.hasTrack
       opacity: enabled ? 1.0 : 0.4
       tooltipText: root.liked ? "Убрать из моей музыки" : "В мою музыку"
       onClicked: root.toggleLike()
+    }
+
+    Button {
+      iconText: "󰒟"
+      foreground: root.shuffled ? Color.accent : root.textColor
+      tooltipText: root.shuffled ? "Перемешивание включено" : "Перемешать"
+      onClicked: root.toggleShuffle()
+    }
+
+    Button {
+      iconText: root.repeatGlyph
+      foreground: root.repeatMode === "off" ? root.textColor : Color.accent
+      tooltipText: root.repeatMode === "off" ? "Повтор выключен"
+        : (root.repeatMode === "one" ? "Повторять трек" : "Повторять очередь")
+      onClicked: root.cycleRepeat()
     }
 
     Item { Layout.fillWidth: true }
@@ -2029,32 +2046,17 @@ Panel {
     Item { Layout.fillWidth: true }
   }
 
-    // Shuffle and repeat are one row in both shapes; the two queue actions need
-    // the room only the extended popup has.
+    // The queue actions get a row of their own, and only the extended popup has
+    // the room for it: everything else lives in the transport row.
     RowLayout {
       Layout.fillWidth: true
+      visible: playerColumn.wide
       spacing: Style.space(6)
-
-      Button {
-        iconText: "󰒟"
-        foreground: root.shuffled ? Color.accent : root.textColor
-        tooltipText: root.shuffled ? "Перемешивание включено" : "Перемешать"
-        onClicked: root.toggleShuffle()
-      }
-
-      Button {
-        iconText: root.repeatGlyph
-        foreground: root.repeatMode === "off" ? root.textColor : Color.accent
-        tooltipText: root.repeatMode === "off" ? "Повтор выключен"
-          : (root.repeatMode === "one" ? "Повторять трек" : "Повторять очередь")
-        onClicked: root.cycleRepeat()
-      }
 
       Item { Layout.fillWidth: true }
 
       Button {
         text: "Убрать"
-        visible: playerColumn.wide
         foreground: root.textColor
         enabled: root.hasTrack
         opacity: enabled ? 1.0 : 0.4
@@ -2064,7 +2066,6 @@ Panel {
 
       Button {
         text: "Очистить"
-        visible: playerColumn.wide
         foreground: root.textColor
         enabled: root.queue.length > 0
         opacity: enabled ? 1.0 : 0.4

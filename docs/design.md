@@ -316,6 +316,19 @@ Three things learned in the move:
   a `var` kept its first value, and the card stayed 400 wide after the setting was
   switched until the shell was restarted.
 
+## The transport row
+
+One row, in both popup shapes: the heart, shuffle, repeat, then previous, play and
+next. The queue actions — «Убрать» and «Очистить» — need more room than the
+240-pixel column of the extended popup's player has, so they keep a row of their
+own there and are absent from the compact popup entirely.
+
+The heart says one thing: filled means the track is in «Моя музыка», outline means
+it is not. `mdi-heart` is `F2D1` and `mdi-heart-outline` is `F2D5`, and the pair
+was wired the wrong way round until both codepoints were rendered side by side and
+looked at — the shell draws `󰋑` solid and `󰋕` hollow. A two-glyph question is
+settled by rendering the two glyphs, not by reading their names.
+
 ## What the lists say
 
 Three small things were added once the lists worked, all of them about a list
