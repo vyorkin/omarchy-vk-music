@@ -74,6 +74,7 @@ case "$command_name" in
   pause|toggle) send "$C_PAUSE" ;;
   stop) send "$C_STOP" ;;
   logout) send "$C_LOGOUT" ;;
+  radio) send '{"command":"radio"}' ;;
   suggestions)
     send "$(jq -nc --arg query "$*" '{command:"suggestions", query:$query}')"
     ;;
@@ -183,6 +184,9 @@ case "$command_name" in
         send "$(jq -nc --argjson ownerId "$owner" --argjson playlistId "$playlist" \
           --arg accessKey "$access_key" --arg title "$title" \
           '{command:"play_playlist", ownerId:$ownerId, playlistId:$playlistId, accessKey:$accessKey, title:$title}')"
+        ;;
+      radio)
+        send "$(jq -nc --argjson id "$(number "${1:-0}")" '{command:"play_radio", id:$id}')"
         ;;
       queue)
         # Reads a JSON array of tracks from stdin.

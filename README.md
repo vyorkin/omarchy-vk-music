@@ -65,6 +65,8 @@ hours, and it can ask for a captcha and an SMS code.
 | `Space` in the popup | Play / pause |
 | `N` / `P` in the popup | Next / previous |
 | Typing in Поиск | Suggestions after a pause, results after a longer one, `Enter` at once |
+| Tab Обзор | Sections (Главная, Моя музыка, Обзор, Радио, Обновления), their playlists and tracks, `Ещё` for the next page |
+| A station in Обзор → Радио | Live stream: the bar shows the station, the popup has no timeline to seek in |
 
 ## Commands
 
@@ -77,6 +79,10 @@ omarchy-vk-music play search radiohead  # queue the search results
 omarchy-vk-music play keys 371745444_456389989 371745438_456389857 --index 1
 omarchy-vk-music search radiohead --play
 omarchy-vk-music suggestions radioh      # VK's own completion
+omarchy-vk-music section explore         # one catalog page, with its cursor
+omarchy-vk-music section explore PUlYVA8FWRs   # the next page
+omarchy-vk-music radio                   # the live stations
+omarchy-vk-music play radio 1            # play a station
 omarchy-vk-music next | previous | pause
 omarchy-vk-music seek 90 | volume 40 | volume +10
 omarchy-vk-music shuffle on | repeat all

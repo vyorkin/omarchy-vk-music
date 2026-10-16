@@ -105,6 +105,8 @@ def parse_argv(argv: list[str]) -> dict:
                 "accessKey": args[2] if len(args) > 2 else "",
                 "title": " ".join(args[3:]),
             }
+        elif kind == "radio":
+            payload = {"command": "play_radio", "id": int(args[0]) if args else 0}
         elif kind == "queue":
             payload = {"command": "play_tracks", "tracks": json.load(sys.stdin)}
         elif kind == "keys":
@@ -149,6 +151,8 @@ def parse_argv(argv: list[str]) -> dict:
         query = " ".join(words)
         payload = {"command": "search", "query": query}
         return {"command": "play_search", "query": query} if play_after else payload
+    if head == "radio":
+        return {"command": "radio"}
     if head == "suggestions":
         return {"command": "suggestions", "query": " ".join(words)}
     if head == "seek":

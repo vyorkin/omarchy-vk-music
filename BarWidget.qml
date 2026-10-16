@@ -30,7 +30,15 @@ Panel {
   // Guards against a slow reply for an older query overwriting newer results.
   property int _searchSeq: 0
   property string _searchedQuery: ""
-  property string view: "queue" // queue | playlists | search
+  property string view: "queue" // queue | browse | search
+  // Browsing a catalog section: which one, what came back, and where the next
+  // page starts.
+  property string browseSlug: ""
+  property string browseTitle: ""
+  property var browseTracks: []
+  property var browsePlaylists: []
+  property string browseNext: ""
+  property var stations: []
   property string query: ""
   property string busy: ""
   property string errorText: ""
@@ -70,6 +78,26 @@ Panel {
   readonly property string notice: String(status.notice || "")
   readonly property string halted: String(status.halted || "")
   readonly property var prefs: status.preferences || ({})
+  // A live station stands in for the track: it has no timeline and no queue.
+  // The same shape as `track`/`hasTrack` above, deliberately: a cached property
+  // whose binding reads a field inside a `var` (`radio.name !== undefined`) went
+  // stale — the raw expression was true while the property stayed false — so the
+  // station is a nullable object and its fields are read through a helper.
+  readonly property var radio: (status && status.radio !== undefined && status.radio.name)
+    ? status.radio : null
+  // Read through a function, not a cached property: a `readonly property bool
+  // onRadio: root.radio !== null` bound to the object above stayed false while
+  // the object itself was there — the same staleness `trackValue` was written to
+  // avoid. A call is evaluated whenever the binding around it is.
+  function onAir() {
+    return root.radio !== null
+  }
+
+  function radioValue(name, fallback) {
+    if (root.radio === null || root.radio === undefined) return fallback
+    var value = root.radio[name]
+    return (value === undefined || value === null) ? fallback : value
+  }
   readonly property bool liked: root.trackValue("is_liked", false) === true
 
   // Buffering, as the ring needs it. `bufferProgress` is 0..1, or -1 when the
@@ -509,6 +537,76 @@ Panel {
     call([root.cli, "play", "section", id, "0", "--title", title], function() { root.watchForTrack() })
   }
 
+  // The sections come as opaque ids with a friendly slug inside the url. The
+  // backend accepts either, and the url is what lets the UI label them.
+  function sourceSlug(section) {
+    if (!section) return ""
+    var match = String(section.url || "").match(/section=([a-z]+)/)
+    return match ? match[1] : String(section.id || "")
+  }
+
+  // Browsing: a catalog section page by page, or the live stations.
+  function browseSource(slug) {
+    if (!slug || root.browseSlug === slug) return
+    root.browseSlug = slug
+    root.browseTracks = []
+    root.browsePlaylists = []
+    root.browseNext = ""
+    root.browseTitle = ""
+    if (slug === "radiostations") {
+      if (root.stations.length === 0) {
+        root.call([root.cli, "radio"], function(answer) {
+          if (answer && answer.ok) root.stations = answer.data || []
+        })
+      }
+      return
+    }
+    root.call([root.cli, "section", slug], function(answer) {
+      if (answer && answer.ok && root.browseSlug === slug) root.adoptSection(answer.data)
+    })
+  }
+
+  function adoptSection(page) {
+    if (!page) return
+    root.browseTitle = String(page.title || "")
+    root.browseTracks = page.tracks || []
+    root.browsePlaylists = page.playlists || []
+    root.browseNext = String(page.next || "")
+  }
+
+  // «Ещё»: the sections are paged by a cursor, the tracks are appended to the
+  // list the user is already looking at.
+  function browseMore() {
+    if (root.browseNext === "") return
+    var slug = root.browseSlug
+    var cursor = root.browseNext
+    root.call([root.cli, "section", slug, cursor], function(answer) {
+      if (!answer || !answer.ok || root.browseSlug !== slug) return
+      var page = answer.data || {}
+      root.browseTracks = root.browseTracks.concat(page.tracks || [])
+      root.browsePlaylists = root.browsePlaylists.concat(page.playlists || [])
+      root.browseNext = String(page.next || "")
+    })
+  }
+
+  function playBrowseTrack(index) {
+    // Same rule as a search result: the queue is exactly the list on screen.
+    var keys = []
+    for (var i = 0; i < root.browseTracks.length; i++) {
+      if (root.browseTracks[i] && root.browseTracks[i].key) keys.push(String(root.browseTracks[i].key))
+    }
+    if (keys.length === 0) return
+    var args = [root.cli, "play", "keys"].concat(keys)
+    args.push("--index", String(index))
+    args.push("--title", root.browseTitle !== "" ? root.browseTitle : "Обзор")
+    root.call(args, function() { root.watchForTrack() })
+  }
+
+  function playStation(station) {
+    if (!station || !station.id) return
+    root.call([root.cli, "play", "radio", String(station.id)], function() { root.watchForTrack() })
+  }
+
   function playPlaylist(playlist) {
     call([
       root.cli, "play", "playlist", String(playlist.owner_id), String(playlist.playlist_id),
@@ -580,6 +678,8 @@ Panel {
   readonly property string barLabel: {
     if (root.halted !== "") return "остановлен"
     if (!root.signedIn) return "vk music"
+    // A live station has no track behind it: its name is the whole label.
+    if (root.onAir()) return String(root.radioValue("name", "радио"))
     if (!root.hasTrack) return root.loading ? "загрузка…" : "vk music"
     return root.trackValue("title") + (root.trackValue("artist", "") ? "  ·  " + root.trackValue("artist", "") : "")
   }
@@ -635,7 +735,9 @@ Panel {
         anchors.margins: Style.space(2)
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
-        source: root.hasTrack && root.trackValue("thumb", "") ? root.trackValue("thumb", "") : ""
+        source: root.onAir()
+          ? String(root.radioValue("logo", ""))
+          : (root.hasTrack && root.trackValue("thumb", "") ? root.trackValue("thumb", "") : "")
         visible: source !== ""
       }
 
@@ -869,7 +971,9 @@ Panel {
               anchors.margins: Style.space(2)
               fillMode: Image.PreserveAspectCrop
               asynchronous: true
-              source: root.hasTrack && root.trackValue("thumb", "") ? root.trackValue("thumb", "") : ""
+              source: root.onAir()
+                ? String(root.radioValue("logo", ""))
+                : (root.hasTrack && root.trackValue("thumb", "") ? root.trackValue("thumb", "") : "")
               visible: source !== ""
             }
 
@@ -930,7 +1034,9 @@ Panel {
               Layout.fillWidth: true
               textFormat: Text.PlainText
               elide: Text.ElideRight
-              text: root.hasTrack ? root.trackValue("title") : "Ничего не играет"
+              text: root.onAir()
+                ? String(root.radioValue("name", "Радио"))
+                : (root.hasTrack ? root.trackValue("title") : "Ничего не играет")
               color: root.textColor
               font.family: Style.font.family
               font.pixelSize: Style.font.subtitle
@@ -941,8 +1047,8 @@ Panel {
               Layout.fillWidth: true
               textFormat: Text.PlainText
               elide: Text.ElideRight
-              visible: root.hasTrack
-              text: root.trackValue("artist", "")
+              visible: root.hasTrack || root.onAir()
+              text: root.onAir() ? "Радио · в эфире" : root.trackValue("artist", "")
               color: root.dim
               font.family: Style.font.family
               font.pixelSize: Style.font.bodySmall
@@ -951,7 +1057,8 @@ Panel {
             Text {
               Layout.fillWidth: true
               textFormat: Text.PlainText
-              visible: root.hasTrack
+              // A live stream has no position and no length to show.
+              visible: root.hasTrack && !root.onAir()
               text: root.clock(root.displayPosition) + " / " + root.clock(root.duration)
               color: root.dim
               font.family: Style.font.family
@@ -982,6 +1089,7 @@ Panel {
           visible: root.signedIn
 
           Button {
+            visible: !root.onAir()
             iconText: root.liked ? "󰋕" : "󰋑"
             foreground: root.liked ? Color.urgent : root.textColor
             enabled: root.hasTrack
@@ -1073,10 +1181,13 @@ Panel {
           }
 
           Button {
-            text: "Плейлисты"
+            text: "Обзор"
             foreground: root.textColor
-            selected: root.view === "playlists"
-            onClicked: root.view = "playlists"
+            selected: root.view === "browse"
+            onClicked: {
+              root.view = "browse"
+              root.browseSource(root.browseSlug !== "" ? root.browseSlug : "explore")
+            }
           }
 
           Button {
@@ -1203,30 +1314,116 @@ Panel {
               }
             }
 
-            // Playlists from the catalog.
+            // Browsing the catalog: choose a section, then look at what it
+            // holds. Sections come page by page, so «Ещё» appends the next page
+            // to the list instead of replacing what is already on screen.
             Column {
               width: parent.width
               spacing: Style.space(4)
-              visible: root.view === "playlists"
+              visible: root.view === "browse"
 
-              Repeater {
-                model: root.playlists
-                delegate: Button {
-                  width: listColumn.width
-                  leftAlign: true
-                  text: modelData ? (modelData.title + (modelData.count ? "  ·  " + modelData.count : "")) : ""
-                  foreground: root.textColor
-                  onClicked: if (modelData) root.playPlaylist(modelData)
+              // The sections do not fit side by side, and wrapping them would
+              // cost a row of height: the row scrolls instead.
+              Flickable {
+                width: parent.width
+                height: sourceRow.height
+                contentWidth: sourceRow.width
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+
+                Row {
+                  id: sourceRow
+                  spacing: Style.space(6)
+
+                  Repeater {
+                    model: root.sources
+                    delegate: Button {
+                      text: modelData ? String(modelData.title || "") : ""
+                      foreground: root.textColor
+                      selected: modelData ? root.sourceSlug(modelData) === root.browseSlug : false
+                      onClicked: if (modelData) root.browseSource(root.sourceSlug(modelData))
+                    }
+                  }
+                }
+              }
+
+              Flickable {
+                width: parent.width
+                height: playlistRow.height
+                contentWidth: playlistRow.width
+                clip: true
+                visible: root.browsePlaylists.length > 0
+                boundsBehavior: Flickable.StopAtBounds
+
+                Row {
+                  id: playlistRow
+                  spacing: Style.space(6)
+
+                  Repeater {
+                    model: root.browsePlaylists
+                    delegate: Button {
+                      text: modelData ? String(modelData.title || "") : ""
+                      tooltipText: modelData
+                        ? (String(modelData.title || "")
+                           + (modelData.count ? " · " + modelData.count + " треков" : ""))
+                        : ""
+                      foreground: root.textColor
+                      onClicked: if (modelData) root.playPlaylist(modelData)
+                    }
+                  }
                 }
               }
 
               Text {
-                visible: root.playlists.length === 0
+                width: parent.width
                 textFormat: Text.PlainText
-                text: "Плейлисты не найдены"
+                wrapMode: Text.WordWrap
+                visible: root.browseSlug === ""
+                text: "Выбери раздел: подборки, новинки, эфир."
                 color: root.dim
                 font.family: Style.font.family
                 font.pixelSize: Style.font.bodySmall
+              }
+
+              Repeater {
+                model: root.browseSlug === "radiostations" ? root.stations : root.browseTracks
+                delegate: Button {
+                  width: listColumn.width
+                  leftAlign: true
+                  selected: root.browseSlug === "radiostations"
+                    ? (root.onAir() && root.radioValue("id", 0) === modelData.id)
+                    : false
+                  text: modelData
+                    ? (root.browseSlug === "radiostations"
+                       ? String(modelData.name || "")
+                       : (modelData.artist + " — " + modelData.title))
+                    : ""
+                  foreground: root.textColor
+                  onClicked: if (modelData) {
+                    if (root.browseSlug === "radiostations") root.playStation(modelData)
+                    else root.playBrowseTrack(index)
+                  }
+                }
+              }
+
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                visible: root.browseSlug !== "" && root.browseSlug !== "radiostations"
+                  && root.browseTracks.length === 0 && root.browsePlaylists.length === 0
+                text: "Пусто"
+                color: root.dim
+                font.family: Style.font.family
+                font.pixelSize: Style.font.bodySmall
+              }
+
+              Button {
+                width: listColumn.width
+                leftAlign: true
+                visible: root.browseNext !== ""
+                text: "Ещё"
+                foreground: root.textColor
+                onClicked: root.browseMore()
               }
             }
 

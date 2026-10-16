@@ -385,6 +385,9 @@ class Player:
         self.unplayable: set[str] = set()
         self.source: dict[str, str] = {"kind": "", "id": "", "title": ""}
         self._download_thread: threading.Thread | None = None
+        # Set while a live station plays: a name, a logo and a stream URL, with
+        # no queue behind it, no duration and nothing to seek in.
+        self.radio: dict[str, Any] | None = None
         # Where the time went for the track being started: filled as the start
         # proceeds and printed once per start. A "playback takes a few seconds"
         # report cannot otherwise be told apart from a slow download.
@@ -590,6 +593,7 @@ class Player:
     def play(self, tracks: Sequence[Track], *, index: int = 0, source: Mapping[str, str] | None = None) -> None:
         with self.lock:
             self._cancel_prefetch()
+            self.radio = None
             self.queue = list(tracks)
             self.index = max(0, min(index, len(self.queue) - 1)) if self.queue else -1
             self.unplayable.clear()
@@ -603,6 +607,7 @@ class Player:
 
     def _start_current(self) -> None:
         self._cancel_prefetch()
+        self.radio = None
         self._trace = {"start": time.monotonic()}
         track = self.current_track()
         if track is None:
@@ -639,6 +644,36 @@ class Player:
             self._start_download(track, url)
             return
         self._play_url(url)
+
+    def play_radio(self, station: Mapping[str, Any]) -> None:
+        """Play a live station: a stream URL, a name and a logo, nothing else.
+
+        The stream is endless and not ours, so it is never cached, never queued
+        and never seeked: the player plays the URL as it comes and the station
+        stands in for the track in the bar and over MPRIS.
+        """
+        with self.lock:
+            self._cancel_prefetch()
+            self._download_cancel.set()
+            url = str(station.get("stream_url", ""))
+            if not url:
+                self.error = "у станции нет ссылки на поток"
+                return
+            self.radio = {
+                "id": int(station.get("id", 0) or 0),
+                "name": str(station.get("name", "")),
+                "logo": str(station.get("logo_url", "")),
+            }
+            self.position = 0
+            self.duration = 0
+            self.buffer_total = 0
+            self.error = ""
+            self.notice = ""
+            self.loading = True
+            self.playing = False
+            self.paused = False
+            self._publish_mpris()
+            self._play_url(url)
 
     def _schedule_prefetch(self) -> None:
         """Fetch the next track once the current one has been playing a while.
@@ -872,6 +907,7 @@ class Player:
     def stop(self) -> None:
         with self.lock:
             self._cancel_prefetch()
+            self.radio = None
             self._download_cancel.set()
             try:
                 self.mpv.command("stop")
@@ -888,6 +924,9 @@ class Player:
 
     def seek(self, position: int) -> None:
         with self.lock:
+            if self.radio:
+                # A live stream has no timeline to move along.
+                return
             position = max(0, int(position))
             try:
                 self.mpv.ensure()
@@ -1037,6 +1076,24 @@ class Player:
     def mpris_state(self) -> dict[str, Any]:
         track = self.current_track()
         with self.lock:
+            radio = self.radio
+            if radio:
+                return {
+                    "playing": self.playing and not self.paused,
+                    "paused": self.paused,
+                    "position": 0,
+                    "duration": 0,
+                    "volume": self.volume,
+                    "title": radio.get("name", ""),
+                    "artist": "Радио",
+                    "artists": [{"name": "Радио"}],
+                    "artUrl": radio.get("logo", ""),
+                    "trackId": f"radio{radio.get('id', 0)}",
+                    # Nothing to move through or along: the stream decides.
+                    "hasQueue": False,
+                    "shuffle": self.shuffle,
+                    "repeat": self.repeat,
+                }
             return {
                 "playing": self.playing and not self.paused,
                 "paused": self.paused,
@@ -1082,7 +1139,10 @@ class Player:
                 "queueLength": len(self.queue),
                 "unplayable": sorted(self.unplayable),
                 "streaming": not self.playing_from_cache,
-                "track": track_to_state(track) if track else None,
+                "radio": dict(self.radio) if self.radio else {},
+                # A station stands in for the track: while it plays there is no
+                # current track to report, only the station and its stream.
+                "track": None if self.radio else (track_to_state(track) if track else None),
                 "next": track_to_state(self.queue[self.index + 1])
                 if 0 <= self.index + 1 < len(self.queue)
                 else None,
@@ -1382,6 +1442,8 @@ class Backend:
         self.player = Player()
         self.server_socket: socket.socket | None = None
         self.mobile_auth: dict[str, Any] = {}
+        # (stations, expires at) — the station list changes rarely.
+        self._radio_cache: tuple[list[dict[str, Any]] | None, float] = (None, 0.0)
         # Counts every request the service answered. A bar widget polling on a
         # timer keeps this rising even when nothing seems to happen, which is
         # the quickest way to tell a live widget from a dead one.
@@ -1566,6 +1628,32 @@ class Backend:
             index=index,
             source={"kind": "search", "id": query, "title": f"Поиск: {query}"},
         )
+        return self.player.status()
+
+    RADIO_CACHE_SECONDS = 600
+
+    def cmd_radio(self) -> list[dict[str, Any]]:
+        """The live stations. Cached: the list barely changes and VK is asked
+        for it only when a browse view is opened."""
+        now = time.monotonic()
+        cached, expires = self._radio_cache
+        if cached is not None and now < expires:
+            return cached
+        client = self.player.client
+        if client is None:
+            raise VkApiError(0, "not signed in", method="radio")
+        stations = self.player.api(lambda: client.radio_stations())
+        payload = [asdict(station) for station in stations]
+        self._radio_cache = (payload, now + self.RADIO_CACHE_SECONDS)
+        return payload
+
+    def cmd_play_radio(self, id: int = 0) -> dict[str, Any]:
+        station = next(
+            (item for item in self.cmd_radio() if int(item.get("id", 0)) == int(id)), None
+        )
+        if station is None:
+            raise VkApiError(0, f"unknown radio station: {id}", method="play_radio")
+        self.player.play_radio(station)
         return self.player.status()
 
     def cmd_play_keys(

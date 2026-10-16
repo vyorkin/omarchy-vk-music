@@ -238,6 +238,30 @@ the download itself and mpv's load, and only the split says which one is to
 blame. In practice the download dominates, and now that starting a track clears
 mpv's pause, the sound follows the download by about 0.2 s.
 
+## Browsing, and radio as a stream
+
+The **Обзор** tab is a browser: the five catalog sections (`catalog.getAudio`)
+sit in a scrollable row, each holding tracks and playlists from
+`catalog.getSection`. Sections are paged by an opaque cursor, so `Ещё` asks for
+the next page with that cursor and *appends* it — the list the user is looking at
+grows rather than being replaced. Search pages by `offset` instead (`audio.search`
+has no cursor and answers 30 items at a time; `next_from` never comes back, but
+`offset` does move).
+
+Playing from a browse page uses the same rule as a search result: the widget
+sends the keys of what is on screen (`play keys … --index N`), so the queue is
+exactly that list and the backend needs no second search.
+
+**Radio is not a queue of tracks.** `catalog.getAudio` on the radio section
+returns `radio_stations` beside the catalog rather than inside its blocks: each
+station is a name, a logo and a `stream_url` pointing at the broadcaster. There
+is nothing to resolve, cache or seek, so a station plays through the same path as
+an uncached stream (`_play_url`): no file in the cache, an indeterminate frame,
+no timeline in the popup, and MPRIS reports the station as the track with
+`CanSeek` false. Starting any track, `next` or `stop` leaves radio behind. The
+station list is cached for ten minutes — it barely changes, and asking for it per
+open would be noise.
+
 ## Playback and cache
 
 - One long-lived `mpv` with `--no-config --idle=yes --no-video
@@ -284,8 +308,9 @@ automatically.
    one plays, and two downloads of the same file are deduplicated.
 4. **Auth UI** — sign-in page for both paths, warning states from error 5/9/14.
    The web path works from the popup; the mobile path exists on the CLI only.
+   Known gap: a halt can only be cleared by restarting the service.
 5. ~~**Polish** — likes, settings page, search-as-you-type.~~ done
-6. **Later** — lyrics via LRCLIB, radio sections, playlist editing.
+6. **Later** — lyrics via LRCLIB, playlist editing.
 
 ## What is built and verified
 
@@ -305,6 +330,8 @@ automatically.
 | Settings in the popup | cache, prefetch, restore, and what the bar row shows |
 | Search as you type | suggestions at 250 ms, results at 700 ms or on `Enter`; stale replies dropped |
 | Playing a search result | queues the keys of the results on screen, one `audio.getById`, no second search |
+| Browsing sections and their playlists | works; `Ещё` appends the next page |
+| Radio | 100 live stations play as streams; the bar and MPRIS show the station |
 
 The queue and the position survive a restart, but playback does **not** resume
 by itself at login: the bar shows the track that was playing, paused, and one
@@ -355,6 +382,13 @@ click continues it.
   `...` made every emit raise `SignatureBodyMismatchError` and no consumer ever
   saw a `Seeked`. It returns the position now, and the bus shows `Seeked` with
   the expected microseconds.
+* **A cached `readonly property` that reads a field inside a `var` goes stale.**
+  `readonly property bool onRadio: root.radio.name !== undefined && …` stayed
+  false while the object was demonstrably there, and so did the `!== null` form
+  above it: in one logged expression `root.radio === null` was false while
+  `root.onRadio` said false. The value is read through a function now
+  (`onAir()`), the same reason `trackValue()` exists. Whatever the engine is
+  doing, a derived boolean about JSON-shaped state is not something to cache.
 * **A nested `Layout.fillHeight` in the wrong place, and a list that reports
   nothing when it has no height.** The popup's list was **2 px** tall, so the
   queue, the playlists, the search results and the whole settings page were never

@@ -302,6 +302,32 @@ class Section:
 
 
 @dataclass(frozen=True)
+class RadioStation:
+    """A live radio stream.
+
+    Radio is not a queue of tracks: VK returns the stations with a plain
+    `stream_url` to hand to the player, and nothing about them is resolved
+    through the audio API afterwards.
+    """
+
+    id: int
+    name: str
+    logo_url: str
+    stream_url: str
+    is_enabled: bool = True
+
+    @classmethod
+    def from_item(cls, item: Mapping[str, Any]) -> "RadioStation":
+        return cls(
+            id=int(item.get("id", 0) or 0),
+            name=str(item.get("name", "")),
+            logo_url=str(item.get("logo_url", "") or item.get("logo_png_url", "")),
+            stream_url=str(item.get("stream_url", "")),
+            is_enabled=bool(item.get("is_enabled", True)),
+        )
+
+
+@dataclass(frozen=True)
 class SectionBlocks:
     """A flattened `catalog.getSection` answer."""
 
@@ -546,6 +572,28 @@ class VkClient:
             if isinstance(item, Mapping)
         ]
         return sections, audios, playlists, str(catalog.get("default_section", ""))
+
+    def radio_stations(self) -> list[RadioStation]:
+        """`catalog.getAudio` on the radio section: live stations, not tracks.
+
+        They arrive next to the catalog rather than inside it (`radio_stations`
+        at the top level), which is why the station list is read separately
+        instead of from the section blocks.
+        """
+        station_section = next(
+            (section for section in self.sections() if "section=radiostations" in section.url),
+            None,
+        )
+        if station_section is None:
+            return []
+        response = self.call("catalog.getAudio", url=station_section.url, need_blocks=1)
+        if not isinstance(response, Mapping):
+            return []
+        return [
+            RadioStation.from_item(item)
+            for item in response.get("radio_stations") or []
+            if isinstance(item, Mapping)
+        ]
 
     def section(self, section_id: str, *, start_from: str | None = None) -> SectionBlocks:
         """`catalog.getSection`: one section, flattened into tracks."""
