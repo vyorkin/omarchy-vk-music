@@ -283,6 +283,19 @@ Notes from building it:
 * A `Row` cannot lay out an anchored child, so the progress line is a sibling of
   the bar row rather than a child of it.
 
+## Two popups, one set of blocks
+
+The popup's list — the queue, a catalog section, the search results, the settings
+page — is a component of its own (`TrackList`). It has to be: the extended popup
+shows it beside the player instead of under it, and a layout cannot move a block,
+only a component can be placed twice.
+
+Two things learned in the move. A component cannot see the ids around it, so the
+delegate repeaters are handed out through `property alias` — the keyboard cursor
+uses them to scroll the selected row into view. And the component's root must *be*
+the Flickable: a Flickable nested inside another one has no size of its own, and
+the list came out zero pixels tall with the outer one empty.
+
 ## Queue actions
 
 Three commands exist for the popup to build on: `queue_remove <index>`,

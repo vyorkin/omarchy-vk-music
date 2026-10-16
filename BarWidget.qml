@@ -587,16 +587,16 @@ Panel {
   function cursorRow() {
     var index = root.cursor
     if (index < 0) return null
-    if (root.view === "queue") return queueRepeater.itemAt(index)
+    if (root.view === "queue") return trackList.queueRepeater.itemAt(index)
     if (root.view === "browse") {
       return root.browseSlug === "radiostations"
-        ? stationRepeater.itemAt(index)
-        : browseTrackRepeater.itemAt(index)
+        ? trackList.stationRepeater.itemAt(index)
+        : trackList.browseTrackRepeater.itemAt(index)
     }
     if (root.view === "search") {
       return root.resultsShown.length > 0
-        ? resultRepeater.itemAt(index)
-        : suggestionRepeater.itemAt(index)
+        ? trackList.resultRepeater.itemAt(index)
+        : trackList.suggestionRepeater.itemAt(index)
     }
     return null
   }
@@ -607,10 +607,10 @@ Panel {
     var margin = Style.space(6)
     var top = row.y
     var bottom = top + row.height
-    if (top - margin < listView.contentY) {
-      listView.contentY = Math.max(0, top - margin)
-    } else if (bottom + margin > listView.contentY + listView.height) {
-      listView.contentY = bottom + margin - listView.height
+    if (top - margin < trackList.contentY) {
+      trackList.contentY = Math.max(0, top - margin)
+    } else if (bottom + margin > trackList.contentY + trackList.height) {
+      trackList.contentY = bottom + margin - trackList.height
     }
   }
 
@@ -1110,7 +1110,7 @@ Panel {
       available: [panel.availableCardWidth, panel.availableCardHeight],
       inset: panel.verticalContentInset,
       blocks: body.children.length,
-      list: [listView.height, listColumn.implicitHeight],
+      list: [trackList.height, trackList.contentHeight],
       shown: [root.suggestionsShown.length, root.resultsShown.length]
     }))
     if (root.view === "search") searchField.forceActiveFocus()
@@ -1193,6 +1193,473 @@ Panel {
           onClicked: if (modelData) root.setPreference(choiceRow.key, modelData.value)
         }
       }
+    }
+  }
+
+  // The popup's list: the queue, a catalog section, the search results or the
+  // settings page. It is a component of its own because the extended popup shows
+  // it beside the player rather than under it.
+  component TrackList: Flickable {
+    id: view
+
+    // The keyboard cursor scrolls the selected row into view, and a component
+    // cannot see the ids of the file around it: the delegates are handed out here.
+    property alias queueRepeater: queueRepeater
+    property alias stationRepeater: stationRepeater
+    property alias browseTrackRepeater: browseTrackRepeater
+    property alias suggestionRepeater: suggestionRepeater
+    property alias resultRepeater: resultRepeater
+
+    Layout.fillWidth: true
+    Layout.fillHeight: true
+    visible: root.signedIn
+    clip: true
+    contentWidth: width
+    contentHeight: listColumn.implicitHeight
+    boundsBehavior: Flickable.StopAtBounds
+
+    Column {
+      id: listColumn
+      width: view.width
+      spacing: Style.space(4)
+
+      // Queue: the sources that fill it, then the next few tracks.
+      Column {
+        width: parent.width
+        spacing: Style.space(4)
+        visible: root.view === "queue"
+
+        Row {
+          spacing: Style.space(6)
+
+          Button {
+            text: "Моя музыка"
+            foreground: root.textColor
+            onClicked: root.playSection("all", "Моя музыка")
+          }
+
+          Repeater {
+            model: root.sources.filter(function(s) { return s.url.indexOf("section=updates") !== -1 })
+            delegate: Button {
+              text: modelData ? modelData.title : ""
+              foreground: root.textColor
+              onClicked: if (modelData) root.playSection(modelData.id, modelData.title)
+            }
+          }
+        }
+
+        PanelSectionHeader {
+          text: "Дальше в очереди"
+          foreground: root.dim
+          visible: root.upcoming.length > 0
+        }
+
+        Repeater {
+          id: queueRepeater
+          model: root.upcoming
+          delegate: Button {
+            width: listColumn.width
+            leftAlign: true
+            selected: index === root.cursor
+            text: modelData ? ((root.upcomingStart + index + 1) + ".  " + modelData.artist + " — " + modelData.title) : ""
+            foreground: root.textColor
+            onClicked: root.playQueueAt(root.upcomingStart + index)
+          }
+        }
+
+        Text {
+          visible: root.queue.length === 0 && !root.queueLoading
+          textFormat: Text.PlainText
+          text: "Очередь пуста. Начни с «Моя музыка»."
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+        }
+      }
+
+      // Browsing the catalog: choose a section, then look at what it
+      // holds. Sections come page by page, so «Ещё» appends the next page
+      // to the list instead of replacing what is already on screen.
+      Column {
+        width: parent.width
+        spacing: Style.space(4)
+        visible: root.view === "browse"
+
+        // The sections do not fit side by side, and wrapping them would
+        // cost a row of height: the row scrolls instead.
+        Flickable {
+          width: parent.width
+          height: sourceRow.height
+          contentWidth: sourceRow.width
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+
+          Row {
+            id: sourceRow
+            spacing: Style.space(6)
+
+            Repeater {
+              model: root.sources
+              delegate: Button {
+                text: modelData ? String(modelData.title || "") : ""
+                foreground: root.textColor
+                selected: modelData ? root.sourceSlug(modelData) === root.browseSlug : false
+                onClicked: if (modelData) root.browseSource(root.sourceSlug(modelData))
+              }
+            }
+          }
+        }
+
+        Flickable {
+          width: parent.width
+          height: playlistRow.height
+          contentWidth: playlistRow.width
+          clip: true
+          visible: root.browsePlaylists.length > 0
+          boundsBehavior: Flickable.StopAtBounds
+
+          Row {
+            id: playlistRow
+            spacing: Style.space(6)
+
+            Repeater {
+              model: root.browsePlaylists
+              delegate: Button {
+                text: modelData ? String(modelData.title || "") : ""
+                tooltipText: modelData
+                  ? (String(modelData.title || "")
+                     + (modelData.count ? " · " + modelData.count + " треков" : ""))
+                  : ""
+                foreground: root.textColor
+                onClicked: if (modelData) root.playPlaylist(modelData)
+              }
+            }
+          }
+        }
+
+        PanelSectionHeader {
+          text: root.browseHeader
+          foreground: root.dim
+          visible: root.browseHeader !== ""
+        }
+
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          wrapMode: Text.WordWrap
+          visible: root.browseSlug === ""
+          text: "Выбери раздел: подборки, новинки, эфир."
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        Repeater {
+          id: stationRepeater
+          model: root.browseSlug === "radiostations" ? root.stations : []
+          delegate: Button {
+            width: listColumn.width
+            leftAlign: true
+            // The accent fill is the keyboard selection; what is playing is
+            // marked with a glyph, so the two never look alike.
+            selected: index === root.cursor
+            text: modelData
+              ? ((root.onAir() && root.radioValue("id", 0) === modelData.id ? "▶  " : "")
+                 + String(modelData.name || ""))
+              : ""
+            foreground: root.onAir() && modelData && root.radioValue("id", 0) === modelData.id
+              ? Color.accent : root.textColor
+            onClicked: if (modelData) root.playStation(modelData)
+          }
+        }
+
+        Repeater {
+          id: browseTrackRepeater
+          model: root.browseSlug === "radiostations" ? [] : root.browseTracks
+          delegate: Button {
+            width: listColumn.width
+            leftAlign: true
+            selected: index === root.cursor
+            text: modelData ? (modelData.artist + " — " + modelData.title) : ""
+            foreground: root.textColor
+            onClicked: if (modelData) {
+              if (root.browseSlug === "radiostations") root.playStation(modelData)
+              else root.playBrowseTrack(index)
+            }
+          }
+        }
+
+        Button {
+          width: listColumn.width
+          leftAlign: true
+          visible: root.browseNext !== ""
+          enabled: !root.browseMoreLoading
+          opacity: enabled ? 1.0 : 0.5
+          text: "Ещё"
+          foreground: root.textColor
+          onClicked: root.browseMore()
+        }
+      }
+
+      // Search: suggestions while typing, results once a search has run.
+      Column {
+        width: parent.width
+        spacing: Style.space(4)
+        visible: root.view === "search"
+
+        Text {
+          visible: root._queryLength < 2
+          width: parent.width
+          textFormat: Text.PlainText
+          wrapMode: Text.WordWrap
+          text: "Начни печатать — подсказки ВК появятся сами, поиск пойдёт после паузы"
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        PanelSectionHeader {
+          text: root.searchHeader
+          foreground: root.dim
+          visible: root.searchHeaderVisible
+        }
+
+        Repeater {
+          id: suggestionRepeater
+          model: root.suggestionsShown
+          delegate: Button {
+            width: listColumn.width
+            leftAlign: true
+            selected: index === root.cursor
+            text: modelData ? String(modelData) : ""
+            foreground: root.textColor
+            onClicked: if (modelData) root.searchSuggestion(String(modelData))
+          }
+        }
+
+        Repeater {
+          id: resultRepeater
+          model: root.resultsShown
+          delegate: Button {
+            width: listColumn.width
+            leftAlign: true
+            selected: index === root.cursor
+            text: modelData ? (modelData.artist + " — " + modelData.title) : ""
+            foreground: root.textColor
+            onClicked: root.playSearchResult(index)
+          }
+        }
+      }
+
+      // Settings. Everything here is a backend preference: the widget only
+      // sends the new value and re-reads the status, so the daemon stays the
+      // one place that knows how the plugin behaves.
+      Column {
+        width: parent.width
+        spacing: Style.spacing.controlGap
+        visible: root.view === "settings"
+
+        PanelSectionHeader { text: "Строка в баре"; foreground: root.dim }
+
+        ToggleRow { label: "Обложка трека"; key: "showArtwork"; on: root.prefs.showArtwork !== false }
+        ToggleRow { label: "Название трека"; key: "showTitle"; on: root.prefs.showTitle !== false }
+        ToggleRow { label: "Исполнитель"; key: "showArtist"; on: root.prefs.showArtist !== false }
+        ToggleRow { label: "Кнопки управления"; key: "showControls"; on: root.prefs.showControls !== false }
+        ToggleRow { label: "Линия прогресса"; key: "showProgress"; on: root.prefs.showProgress !== false }
+        ToggleRow { label: "Время трека"; key: "showTime"; on: root.prefs.showTime === true }
+        ToggleRow { label: "Кнопка «Нравится»"; key: "showLike"; on: root.prefs.showLike === true }
+
+        ChoiceRow {
+          label: "Форма обложки"
+          key: "coverShape"
+          value: String(root.prefs.coverShape || "rounded")
+          options: [
+            { value: "square", label: "Квадрат" },
+            { value: "rounded", label: "Скруглённая" },
+            { value: "circle", label: "Круг" }
+          ]
+        }
+
+        ChoiceRow {
+          label: "Длинные названия"
+          key: "longTitleMode"
+          value: String(root.prefs.longTitleMode || "scroll")
+          options: [
+            { value: "truncate", label: "Обрезать" },
+            { value: "scroll", label: "Прокрутка" }
+          ]
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+
+          Text {
+            text: "Ширина подписи"
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
+          Row {
+            spacing: Style.space(6)
+
+            Repeater {
+              model: [
+                { value: 120, label: "Узкая" },
+                { value: 180, label: "Обычная" },
+                { value: 260, label: "Широкая" }
+              ]
+              delegate: Button {
+                text: modelData ? String(modelData.label) : ""
+                foreground: root.textColor
+                selected: (Number(root.prefs.labelWidth) || 180) === (modelData ? modelData.value : -1)
+                onClicked: if (modelData) root.setPreference("labelWidth", modelData.value)
+              }
+            }
+          }
+
+          Row {
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSlider {
+              width: parent.width - widthLabel.width - Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+              minimum: 80
+              maximum: 400
+              step: 20
+              integer: true
+              value: Number(root.prefs.labelWidth) || 180
+              bar: root.bar
+              onReleased: function(value) { root.setPreference("labelWidth", Math.round(value)) }
+            }
+
+            Text {
+              id: widthLabel
+              width: 46
+              text: (Number(root.prefs.labelWidth) || 180) + " px"
+              horizontalAlignment: Text.AlignRight
+              anchors.verticalCenter: parent.verticalCenter
+              color: root.dim
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+          }
+        }
+
+        PanelSeparator { width: parent.width; foreground: root.textColor }
+
+        PanelSectionHeader { text: "Воспроизведение"; foreground: root.dim }
+
+        ToggleRow {
+          label: "Скачивать следующий трек заранее — переключение без паузы"
+          key: "prefetchEnabled"
+          on: root.prefs.prefetchEnabled !== false && root.prefs.cacheEnabled !== false
+          dim: root.prefs.cacheEnabled === false
+        }
+
+        Text {
+          text: "Возвращать при запуске"
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        Row {
+          spacing: Style.space(6)
+
+          ChipToggle { text: "Очередь"; key: "restoreQueue"; on: root.prefs.restoreQueue !== false }
+          ChipToggle { text: "Позицию"; key: "restorePosition"; on: root.prefs.restorePosition !== false }
+          ChipToggle { text: "Громкость"; key: "restoreVolume"; on: root.prefs.restoreVolume !== false }
+        }
+
+        PanelSeparator { width: parent.width; foreground: root.textColor }
+
+        PanelSectionHeader { text: "Уведомления"; foreground: root.dim }
+
+        ChoiceRow {
+          label: "Уведомлять о смене трека"
+          key: "notifications"
+          value: String(root.prefs.notifications || "off")
+          options: [
+            { value: "off", label: "Нет" },
+            { value: "all", label: "Показывать" }
+          ]
+        }
+
+        PanelSeparator { width: parent.width; foreground: root.textColor }
+
+        PanelSectionHeader { text: "Кеш"; foreground: root.dim }
+
+        ToggleRow {
+          label: "Хранить треки на диске · "
+            + root.megabytes(root.status.cache ? root.status.cache.bytes : 0)
+            + " из " + root.megabytes(root.status.cache ? root.status.cache.limit_bytes : 0)
+            + (root.status.cache && root.status.cache.files ? " · файлов " + root.status.cache.files : "")
+          key: "cacheEnabled"
+          on: root.prefs.cacheEnabled !== false
+        }
+
+        Row {
+          width: parent.width
+          spacing: Style.space(8)
+          visible: root.prefs.cacheEnabled !== false
+
+          Text {
+            text: "Лимит кеша"
+            anchors.verticalCenter: parent.verticalCenter
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
+          PanelSlider {
+            width: parent.width - 150
+            anchors.verticalCenter: parent.verticalCenter
+            minimum: 64
+            maximum: 1024
+            step: 64
+            integer: true
+            value: Number(root.prefs.cacheLimitMb) || 256
+            bar: root.bar
+            onReleased: function(value) { root.setPreference("cacheLimitMb", Math.round(value)) }
+          }
+
+          Text {
+            text: (Number(root.prefs.cacheLimitMb) || 256) + " МБ"
+            anchors.verticalCenter: parent.verticalCenter
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+        }
+
+        Row {
+          width: parent.width
+          spacing: Style.space(8)
+          visible: root.prefs.cacheEnabled !== false
+
+          Text {
+            width: parent.width - clearButton.width - Style.space(8)
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            text: "Освободить место прямо сейчас"
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
+          Button {
+            id: clearButton
+            text: "Очистить кеш"
+            foreground: root.textColor
+            onClicked: root.call([root.cli, "cache", "clear"], function() { root.refresh() })
+          }
+        }
+      }
+
     }
   }
 
@@ -1608,460 +2075,8 @@ Panel {
           }
         }
 
-        Flickable {
-          id: listView
-          Layout.fillWidth: true
-          Layout.fillHeight: true
-          visible: root.signedIn
-          clip: true
-          contentWidth: width
-          contentHeight: listColumn.implicitHeight
-          boundsBehavior: Flickable.StopAtBounds
+          TrackList { id: trackList }
 
-          Column {
-            id: listColumn
-            width: listView.width
-            spacing: Style.space(4)
-
-            // Queue: the sources that fill it, then the next few tracks.
-            Column {
-              width: parent.width
-              spacing: Style.space(4)
-              visible: root.view === "queue"
-
-              Row {
-                spacing: Style.space(6)
-
-                Button {
-                  text: "Моя музыка"
-                  foreground: root.textColor
-                  onClicked: root.playSection("all", "Моя музыка")
-                }
-
-                Repeater {
-                  model: root.sources.filter(function(s) { return s.url.indexOf("section=updates") !== -1 })
-                  delegate: Button {
-                    text: modelData ? modelData.title : ""
-                    foreground: root.textColor
-                    onClicked: if (modelData) root.playSection(modelData.id, modelData.title)
-                  }
-                }
-              }
-
-              PanelSectionHeader {
-                text: "Дальше в очереди"
-                foreground: root.dim
-                visible: root.upcoming.length > 0
-              }
-
-              Repeater {
-                id: queueRepeater
-                model: root.upcoming
-                delegate: Button {
-                  width: listColumn.width
-                  leftAlign: true
-                  selected: index === root.cursor
-                  text: modelData ? ((root.upcomingStart + index + 1) + ".  " + modelData.artist + " — " + modelData.title) : ""
-                  foreground: root.textColor
-                  onClicked: root.playQueueAt(root.upcomingStart + index)
-                }
-              }
-
-              Text {
-                visible: root.queue.length === 0 && !root.queueLoading
-                textFormat: Text.PlainText
-                text: "Очередь пуста. Начни с «Моя музыка»."
-                color: root.dim
-                font.family: Style.font.family
-                font.pixelSize: Style.font.bodySmall
-              }
-            }
-
-            // Browsing the catalog: choose a section, then look at what it
-            // holds. Sections come page by page, so «Ещё» appends the next page
-            // to the list instead of replacing what is already on screen.
-            Column {
-              width: parent.width
-              spacing: Style.space(4)
-              visible: root.view === "browse"
-
-              // The sections do not fit side by side, and wrapping them would
-              // cost a row of height: the row scrolls instead.
-              Flickable {
-                width: parent.width
-                height: sourceRow.height
-                contentWidth: sourceRow.width
-                clip: true
-                boundsBehavior: Flickable.StopAtBounds
-
-                Row {
-                  id: sourceRow
-                  spacing: Style.space(6)
-
-                  Repeater {
-                    model: root.sources
-                    delegate: Button {
-                      text: modelData ? String(modelData.title || "") : ""
-                      foreground: root.textColor
-                      selected: modelData ? root.sourceSlug(modelData) === root.browseSlug : false
-                      onClicked: if (modelData) root.browseSource(root.sourceSlug(modelData))
-                    }
-                  }
-                }
-              }
-
-              Flickable {
-                width: parent.width
-                height: playlistRow.height
-                contentWidth: playlistRow.width
-                clip: true
-                visible: root.browsePlaylists.length > 0
-                boundsBehavior: Flickable.StopAtBounds
-
-                Row {
-                  id: playlistRow
-                  spacing: Style.space(6)
-
-                  Repeater {
-                    model: root.browsePlaylists
-                    delegate: Button {
-                      text: modelData ? String(modelData.title || "") : ""
-                      tooltipText: modelData
-                        ? (String(modelData.title || "")
-                           + (modelData.count ? " · " + modelData.count + " треков" : ""))
-                        : ""
-                      foreground: root.textColor
-                      onClicked: if (modelData) root.playPlaylist(modelData)
-                    }
-                  }
-                }
-              }
-
-              PanelSectionHeader {
-                text: root.browseHeader
-                foreground: root.dim
-                visible: root.browseHeader !== ""
-              }
-
-              Text {
-                width: parent.width
-                textFormat: Text.PlainText
-                wrapMode: Text.WordWrap
-                visible: root.browseSlug === ""
-                text: "Выбери раздел: подборки, новинки, эфир."
-                color: root.dim
-                font.family: Style.font.family
-                font.pixelSize: Style.font.bodySmall
-              }
-
-              Repeater {
-                id: stationRepeater
-                model: root.browseSlug === "radiostations" ? root.stations : []
-                delegate: Button {
-                  width: listColumn.width
-                  leftAlign: true
-                  // The accent fill is the keyboard selection; what is playing is
-                  // marked with a glyph, so the two never look alike.
-                  selected: index === root.cursor
-                  text: modelData
-                    ? ((root.onAir() && root.radioValue("id", 0) === modelData.id ? "▶  " : "")
-                       + String(modelData.name || ""))
-                    : ""
-                  foreground: root.onAir() && modelData && root.radioValue("id", 0) === modelData.id
-                    ? Color.accent : root.textColor
-                  onClicked: if (modelData) root.playStation(modelData)
-                }
-              }
-
-              Repeater {
-                id: browseTrackRepeater
-                model: root.browseSlug === "radiostations" ? [] : root.browseTracks
-                delegate: Button {
-                  width: listColumn.width
-                  leftAlign: true
-                  selected: index === root.cursor
-                  text: modelData ? (modelData.artist + " — " + modelData.title) : ""
-                  foreground: root.textColor
-                  onClicked: if (modelData) {
-                    if (root.browseSlug === "radiostations") root.playStation(modelData)
-                    else root.playBrowseTrack(index)
-                  }
-                }
-              }
-
-              Button {
-                width: listColumn.width
-                leftAlign: true
-                visible: root.browseNext !== ""
-                enabled: !root.browseMoreLoading
-                opacity: enabled ? 1.0 : 0.5
-                text: "Ещё"
-                foreground: root.textColor
-                onClicked: root.browseMore()
-              }
-            }
-
-            // Search: suggestions while typing, results once a search has run.
-            Column {
-              width: parent.width
-              spacing: Style.space(4)
-              visible: root.view === "search"
-
-              Text {
-                visible: root._queryLength < 2
-                width: parent.width
-                textFormat: Text.PlainText
-                wrapMode: Text.WordWrap
-                text: "Начни печатать — подсказки ВК появятся сами, поиск пойдёт после паузы"
-                color: root.dim
-                font.family: Style.font.family
-                font.pixelSize: Style.font.bodySmall
-              }
-
-              PanelSectionHeader {
-                text: root.searchHeader
-                foreground: root.dim
-                visible: root.searchHeaderVisible
-              }
-
-              Repeater {
-                id: suggestionRepeater
-                model: root.suggestionsShown
-                delegate: Button {
-                  width: listColumn.width
-                  leftAlign: true
-                  selected: index === root.cursor
-                  text: modelData ? String(modelData) : ""
-                  foreground: root.textColor
-                  onClicked: if (modelData) root.searchSuggestion(String(modelData))
-                }
-              }
-
-              Repeater {
-                id: resultRepeater
-                model: root.resultsShown
-                delegate: Button {
-                  width: listColumn.width
-                  leftAlign: true
-                  selected: index === root.cursor
-                  text: modelData ? (modelData.artist + " — " + modelData.title) : ""
-                  foreground: root.textColor
-                  onClicked: root.playSearchResult(index)
-                }
-              }
-            }
-
-            // Settings. Everything here is a backend preference: the widget only
-            // sends the new value and re-reads the status, so the daemon stays the
-            // one place that knows how the plugin behaves.
-            Column {
-              width: parent.width
-              spacing: Style.spacing.controlGap
-              visible: root.view === "settings"
-
-              PanelSectionHeader { text: "Строка в баре"; foreground: root.dim }
-
-              ToggleRow { label: "Обложка трека"; key: "showArtwork"; on: root.prefs.showArtwork !== false }
-              ToggleRow { label: "Название трека"; key: "showTitle"; on: root.prefs.showTitle !== false }
-              ToggleRow { label: "Исполнитель"; key: "showArtist"; on: root.prefs.showArtist !== false }
-              ToggleRow { label: "Кнопки управления"; key: "showControls"; on: root.prefs.showControls !== false }
-              ToggleRow { label: "Линия прогресса"; key: "showProgress"; on: root.prefs.showProgress !== false }
-              ToggleRow { label: "Время трека"; key: "showTime"; on: root.prefs.showTime === true }
-              ToggleRow { label: "Кнопка «Нравится»"; key: "showLike"; on: root.prefs.showLike === true }
-
-              ChoiceRow {
-                label: "Форма обложки"
-                key: "coverShape"
-                value: String(root.prefs.coverShape || "rounded")
-                options: [
-                  { value: "square", label: "Квадрат" },
-                  { value: "rounded", label: "Скруглённая" },
-                  { value: "circle", label: "Круг" }
-                ]
-              }
-
-              ChoiceRow {
-                label: "Длинные названия"
-                key: "longTitleMode"
-                value: String(root.prefs.longTitleMode || "scroll")
-                options: [
-                  { value: "truncate", label: "Обрезать" },
-                  { value: "scroll", label: "Прокрутка" }
-                ]
-              }
-
-              Column {
-                width: parent.width
-                spacing: Style.space(4)
-
-                Text {
-                  text: "Ширина подписи"
-                  color: root.dim
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption
-                }
-
-                Row {
-                  spacing: Style.space(6)
-
-                  Repeater {
-                    model: [
-                      { value: 120, label: "Узкая" },
-                      { value: 180, label: "Обычная" },
-                      { value: 260, label: "Широкая" }
-                    ]
-                    delegate: Button {
-                      text: modelData ? String(modelData.label) : ""
-                      foreground: root.textColor
-                      selected: (Number(root.prefs.labelWidth) || 180) === (modelData ? modelData.value : -1)
-                      onClicked: if (modelData) root.setPreference("labelWidth", modelData.value)
-                    }
-                  }
-                }
-
-                Row {
-                  width: parent.width
-                  spacing: Style.space(8)
-
-                  PanelSlider {
-                    width: parent.width - widthLabel.width - Style.space(8)
-                    anchors.verticalCenter: parent.verticalCenter
-                    minimum: 80
-                    maximum: 400
-                    step: 20
-                    integer: true
-                    value: Number(root.prefs.labelWidth) || 180
-                    bar: root.bar
-                    onReleased: function(value) { root.setPreference("labelWidth", Math.round(value)) }
-                  }
-
-                  Text {
-                    id: widthLabel
-                    width: 46
-                    text: (Number(root.prefs.labelWidth) || 180) + " px"
-                    horizontalAlignment: Text.AlignRight
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: root.dim
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.caption
-                  }
-                }
-              }
-
-              PanelSeparator { width: parent.width; foreground: root.textColor }
-
-              PanelSectionHeader { text: "Воспроизведение"; foreground: root.dim }
-
-              ToggleRow {
-                label: "Скачивать следующий трек заранее — переключение без паузы"
-                key: "prefetchEnabled"
-                on: root.prefs.prefetchEnabled !== false && root.prefs.cacheEnabled !== false
-                dim: root.prefs.cacheEnabled === false
-              }
-
-              Text {
-                text: "Возвращать при запуске"
-                color: root.dim
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-              }
-
-              Row {
-                spacing: Style.space(6)
-
-                ChipToggle { text: "Очередь"; key: "restoreQueue"; on: root.prefs.restoreQueue !== false }
-                ChipToggle { text: "Позицию"; key: "restorePosition"; on: root.prefs.restorePosition !== false }
-                ChipToggle { text: "Громкость"; key: "restoreVolume"; on: root.prefs.restoreVolume !== false }
-              }
-
-              PanelSeparator { width: parent.width; foreground: root.textColor }
-
-              PanelSectionHeader { text: "Уведомления"; foreground: root.dim }
-
-              ChoiceRow {
-                label: "Уведомлять о смене трека"
-                key: "notifications"
-                value: String(root.prefs.notifications || "off")
-                options: [
-                  { value: "off", label: "Нет" },
-                  { value: "all", label: "Показывать" }
-                ]
-              }
-
-              PanelSeparator { width: parent.width; foreground: root.textColor }
-
-              PanelSectionHeader { text: "Кеш"; foreground: root.dim }
-
-              ToggleRow {
-                label: "Хранить треки на диске · "
-                  + root.megabytes(root.status.cache ? root.status.cache.bytes : 0)
-                  + " из " + root.megabytes(root.status.cache ? root.status.cache.limit_bytes : 0)
-                  + (root.status.cache && root.status.cache.files ? " · файлов " + root.status.cache.files : "")
-                key: "cacheEnabled"
-                on: root.prefs.cacheEnabled !== false
-              }
-
-              Row {
-                width: parent.width
-                spacing: Style.space(8)
-                visible: root.prefs.cacheEnabled !== false
-
-                Text {
-                  text: "Лимит кеша"
-                  anchors.verticalCenter: parent.verticalCenter
-                  color: root.dim
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption
-                }
-
-                PanelSlider {
-                  width: parent.width - 150
-                  anchors.verticalCenter: parent.verticalCenter
-                  minimum: 64
-                  maximum: 1024
-                  step: 64
-                  integer: true
-                  value: Number(root.prefs.cacheLimitMb) || 256
-                  bar: root.bar
-                  onReleased: function(value) { root.setPreference("cacheLimitMb", Math.round(value)) }
-                }
-
-                Text {
-                  text: (Number(root.prefs.cacheLimitMb) || 256) + " МБ"
-                  anchors.verticalCenter: parent.verticalCenter
-                  color: root.dim
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption
-                }
-              }
-
-              Row {
-                width: parent.width
-                spacing: Style.space(8)
-                visible: root.prefs.cacheEnabled !== false
-
-                Text {
-                  width: parent.width - clearButton.width - Style.space(8)
-                  anchors.verticalCenter: parent.verticalCenter
-                  textFormat: Text.PlainText
-                  wrapMode: Text.WordWrap
-                  text: "Освободить место прямо сейчас"
-                  color: root.dim
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption
-                }
-
-                Button {
-                  id: clearButton
-                  text: "Очистить кеш"
-                  foreground: root.textColor
-                  onClicked: root.call([root.cli, "cache", "clear"], function() { root.refresh() })
-                }
-              }
-            }
-
-          }
-        }
         // The line sits at the bottom of the card, not inside a list: one place
         // for every view, its own row of height, and the list keeps all of its
         // own. The row is always here, so nothing shifts when it lights up.
