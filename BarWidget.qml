@@ -90,9 +90,10 @@ Panel {
   }
   // The popup answers to five keys and nothing on screen says so. Esc is the one
   // that means two things, so the hint follows the query.
-  readonly property string keyHints: (root.view === "search" && root.query.length > 0)
-    ? "Space пауза · ↑↓ выбор · Enter играть · Esc очистить поиск"
-    : "Space пауза · n/p трек · ↑↓ выбор · Enter играть · Esc закрыть"
+  readonly property string keyHints: {
+    if (root.activeField().activeFocus) return "Enter искать · Tab к списку · Esc выйти из поля"
+    return "Space пауза · jk выбор (hjkl в галерее) · Enter играть · / фильтр · Esc закрыть"
+  }
 
   // The heading is worth its line only when there is something under it: while
   // the query is still short nothing is shown at all.
@@ -3801,8 +3802,6 @@ Panel {
           root.startFilter()
           return
         }
-        if (character === "n") root.skipNext()
-        else if (character === "p") root.skipPrevious()
       }
 
       // Compact: the player above the list, one column, the size it has always

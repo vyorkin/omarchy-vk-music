@@ -547,7 +547,7 @@ telling the truth about itself:
   rule the plugin already had; the length is the sum of the durations VK sent with
   the tracks (`listSummary` / `tracksSpan` / `humanSpan`), so it costs nothing.
 * **Which keys work.** One dim line at the bottom of the card, above the loading
-  line: `Space пауза · n/p трек · ↑↓ выбор · Enter играть · Esc закрыть`. The
+  line: `Space пауза · jk выбор (hjkl в галерее) · Enter играть · / фильтр · Esc закрыть`. The
   popup answers to five keys and nothing on screen said so. Esc is the one key
   with two meanings, and the hint follows the query: with something typed in the
   search it reads `Esc очистить поиск` and clears the field instead of closing the
