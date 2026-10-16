@@ -46,9 +46,22 @@ Panel {
   property bool queueLoading: false
   property bool searchLoading: false
   property double sourcesLoadedAt: 0
+  // Where the keyboard is in the list that is on screen: up and down move this,
+  // Enter plays what it points at. It is an index into the visible list, so the
+  // same number means the same row in every view, and -1 means nothing is picked
+  // until a key is pressed.
+  property int cursor: -1
+  property bool _returnPressed: false
   property string query: ""
   property string busy: ""
   property string errorText: ""
+
+  onViewChanged: root.cursor = -1
+  onBrowseSlugChanged: root.cursor = -1
+  // A new query means a new list, so the selection goes. A search *answer* for
+  // the same query does not: resetting there threw the selection away a moment
+  // before Enter could use it.
+  onQueryChanged: root.cursor = -1
 
   readonly property int _queryLength: root.query.trim().length
   readonly property bool resultsShowing: root.searchState === "results" && root._queryLength >= 2
@@ -154,7 +167,7 @@ Panel {
   readonly property var upcoming: {
     if (!queue || queue.length === 0) return []
     var out = []
-    for (var i = root.upcomingStart; i < queue.length && out.length < 5; i++) out.push(queue[i])
+    for (var i = root.upcomingStart; i < queue.length && out.length < 20; i++) out.push(queue[i])
     return out
   }
 
@@ -542,6 +555,83 @@ Panel {
     root.suggestions = []
     root.searchState = "typing"
     root._searchedQuery = ""
+  }
+
+  // The list the keyboard walks through. One list per view, so the cursor index
+  // needs no kind attached to it.
+  function cursorItems() {
+    if (root.view === "queue") return root.upcoming
+    if (root.view === "browse") {
+      return root.browseSlug === "radiostations" ? root.stations : root.browseTracks
+    }
+    if (root.view === "search") {
+      return root.resultsShown.length > 0 ? root.resultsShown : root.suggestionsShown
+    }
+    return []
+  }
+
+  function cursorCount() {
+    return root.cursorItems().length
+  }
+
+  function moveCursor(step) {
+    var count = root.cursorCount()
+    if (count === 0) return
+    var next = root.cursor < 0 ? (step > 0 ? 0 : count - 1) : root.cursor + step
+    root.cursor = Math.max(0, Math.min(count - 1, next))
+    root.revealCursor()
+  }
+
+  // The delegate item the cursor sits on, so the list can be scrolled to it: rows
+  // are not a fixed height, and arithmetic on an index would drift.
+  function cursorRow() {
+    var index = root.cursor
+    if (index < 0) return null
+    if (root.view === "queue") return queueRepeater.itemAt(index)
+    if (root.view === "browse") {
+      return root.browseSlug === "radiostations"
+        ? stationRepeater.itemAt(index)
+        : browseTrackRepeater.itemAt(index)
+    }
+    if (root.view === "search") {
+      return root.resultsShown.length > 0
+        ? resultRepeater.itemAt(index)
+        : suggestionRepeater.itemAt(index)
+    }
+    return null
+  }
+
+  function revealCursor() {
+    var row = root.cursorRow()
+    if (!row) return
+    var margin = Style.space(6)
+    var top = row.y
+    var bottom = top + row.height
+    if (top - margin < listView.contentY) {
+      listView.contentY = Math.max(0, top - margin)
+    } else if (bottom + margin > listView.contentY + listView.height) {
+      listView.contentY = bottom + margin - listView.height
+    }
+  }
+
+  // Enter: play what the cursor points at. Returns false when there is nothing
+  // to activate, which is when Enter keeps its old meaning.
+  function activateCursor() {
+    var count = root.cursorCount()
+    if (count === 0) return false
+    var index = root.cursor < 0 ? 0 : Math.min(root.cursor, count - 1)
+    if (root.view === "queue") {
+      root.playQueueAt(root.upcomingStart + index)
+    } else if (root.view === "browse") {
+      if (root.browseSlug === "radiostations") root.playStation(root.stations[index])
+      else root.playBrowseTrack(index)
+    } else if (root.view === "search") {
+      if (root.resultsShown.length > 0) root.playSearchResult(index)
+      else root.searchSuggestion(String(root.suggestionsShown[index]))
+    } else {
+      return false
+    }
+    return true
   }
 
   // Any command that can start a track opens a short watch window: the widget
@@ -958,8 +1048,34 @@ Panel {
     PanelKeyCatcher {
       id: keys
       anchors.fill: parent
-      onMoveRequested: function(dx, dy) { if (dy < 0) root.skipPrevious(); else root.skipNext() }
-      onActivateRequested: root.togglePause()
+      // Up and down move the selection instead of the playback: pressing a key
+      // to look through a list should not start a track. `n` and `p` below still
+      // switch tracks.
+      onMoveRequested: function(dx, dy) {
+        if (dy !== 0) root.moveCursor(dy)
+      }
+      // Enter arrives as `returnRequested` and then as `activateRequested`, so
+      // the flag keeps the second one from toggling playback on top of the first.
+      onReturnRequested: {
+        root._returnPressed = true
+        // A picked row wins, even from the search field: after typing the hands
+        // are in the field, and Enter there should play what the arrows chose.
+        if (root.cursor >= 0 && root.activateCursor()) return
+        // With nothing picked, Enter in the field asks for the search at once
+        // instead of waiting for the pause that would have done it anyway.
+        if (searchField.activeFocus) {
+          root.runSearch(true)
+          return
+        }
+        root.togglePause()
+      }
+      onActivateRequested: {
+        if (root._returnPressed) {
+          root._returnPressed = false
+          return
+        }
+        root.togglePause()
+      }
       onCloseRequested: root.close()
       onTextKey: function(character) {
         if (searchField.activeFocus) return
@@ -1298,12 +1414,14 @@ Panel {
             // use, which is why the missing half of this pair left searching
             // silently doing nothing.
             text: root.query
+            // Enter is not handled here: the panel's key catcher owns it, and two
+            // handlers meant the field re-ran the search first, which reset the
+            // list selection before Enter could play it.
             onTextChanged: {
               if (text !== root.query) root.query = text
               suggestTimer.restart()
               searchTimer.restart()
             }
-            onAccepted: root.runSearch(true)
           }
 
           Button {
@@ -1365,10 +1483,12 @@ Panel {
               }
 
               Repeater {
+                id: queueRepeater
                 model: root.upcoming
                 delegate: Button {
                   width: listColumn.width
                   leftAlign: true
+                  selected: index === root.cursor
                   text: modelData ? ((root.upcomingStart + index + 1) + ".  " + modelData.artist + " — " + modelData.title) : ""
                   foreground: root.textColor
                   onClicked: root.playQueueAt(root.upcomingStart + index)
@@ -1463,18 +1583,32 @@ Panel {
               }
 
               Repeater {
-                model: root.browseSlug === "radiostations" ? root.stations : root.browseTracks
+                id: stationRepeater
+                model: root.browseSlug === "radiostations" ? root.stations : []
                 delegate: Button {
                   width: listColumn.width
                   leftAlign: true
-                  selected: root.browseSlug === "radiostations"
-                    ? (root.onAir() && root.radioValue("id", 0) === modelData.id)
-                    : false
+                  // The accent fill is the keyboard selection; what is playing is
+                  // marked with a glyph, so the two never look alike.
+                  selected: index === root.cursor
                   text: modelData
-                    ? (root.browseSlug === "radiostations"
-                       ? String(modelData.name || "")
-                       : (modelData.artist + " — " + modelData.title))
+                    ? ((root.onAir() && root.radioValue("id", 0) === modelData.id ? "▶  " : "")
+                       + String(modelData.name || ""))
                     : ""
+                  foreground: root.onAir() && modelData && root.radioValue("id", 0) === modelData.id
+                    ? Color.accent : root.textColor
+                  onClicked: if (modelData) root.playStation(modelData)
+                }
+              }
+
+              Repeater {
+                id: browseTrackRepeater
+                model: root.browseSlug === "radiostations" ? [] : root.browseTracks
+                delegate: Button {
+                  width: listColumn.width
+                  leftAlign: true
+                  selected: index === root.cursor
+                  text: modelData ? (modelData.artist + " — " + modelData.title) : ""
                   foreground: root.textColor
                   onClicked: if (modelData) {
                     if (root.browseSlug === "radiostations") root.playStation(modelData)
@@ -1519,10 +1653,12 @@ Panel {
               }
 
               Repeater {
+                id: suggestionRepeater
                 model: root.suggestionsShown
                 delegate: Button {
                   width: listColumn.width
                   leftAlign: true
+                  selected: index === root.cursor
                   text: modelData ? String(modelData) : ""
                   foreground: root.textColor
                   onClicked: if (modelData) root.searchSuggestion(String(modelData))
@@ -1530,10 +1666,12 @@ Panel {
               }
 
               Repeater {
+                id: resultRepeater
                 model: root.resultsShown
                 delegate: Button {
                   width: listColumn.width
                   leftAlign: true
+                  selected: index === root.cursor
                   text: modelData ? (modelData.artist + " — " + modelData.title) : ""
                   foreground: root.textColor
                   onClicked: root.playSearchResult(index)

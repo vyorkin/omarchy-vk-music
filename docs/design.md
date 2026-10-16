@@ -238,6 +238,29 @@ the download itself and mpv's load, and only the split says which one is to
 blame. In practice the download dominates, and now that starting a track clears
 mpv's pause, the sound follows the download by about 0.2 s.
 
+## The keyboard in the lists
+
+Up and down move a **selection**, not the playback: looking through a list should
+not start a track. The selection is one integer — an index into the list the
+current view is showing — so the same number means the same row in the queue,
+under a section, among search results or among the stations, and each delegate
+simply asks `index === root.cursor`. `Enter` plays what the selection points at;
+with nothing selected it plays or pauses, as before. `Space` is still play/pause,
+and `n`/`p` still switch tracks.
+
+Two details that were not obvious:
+
+* **Scrolling to the selection uses the delegate item, not arithmetic.**
+  `Repeater.itemAt(index)` gives the row, and its `y` and `height` decide how far
+  `contentY` has to move. Rows are not a fixed height, so index arithmetic drifts.
+* **Only one handler may own Enter.** The search field had its own `onAccepted`
+  (`runSearch(true)`) *and* the panel's key catcher reported Return. The field
+  handled it first, which re-ran the search and reset the selection a moment
+  before Enter was supposed to use it — so Enter in the search results appeared to
+  do nothing at all. The catcher owns Enter now; with a selection it plays that
+  row, and with the field focused and nothing selected it asks for the search at
+  once.
+
 ## Lists that are loading
 
 A list that is being fetched is not an empty list, and the popup used to say it
@@ -413,6 +436,13 @@ click continues it.
   `...` made every emit raise `SignatureBodyMismatchError` and no consumer ever
   saw a `Seeked`. It returns the position now, and the bus shows `Seeked` with
   the expected microseconds.
+* **Two Enter handlers cancel each other out.** A `TextField`'s `onAccepted` and
+  the panel's `returnRequested` both fire for the same key, and the field's runs
+  first: the selection was thrown away by a second search before `Enter` could
+  play it. One key, one owner.
+* **A pointer click right after a track switch can land elsewhere.** The seek
+  slider disappears while a track loads, which moves everything below it up by
+  about thirty pixels. Worth knowing when a click seems to do nothing.
 * **A false state is worse than no state.** Three places reported emptiness
   while they were fetching, because emptiness and "not yet known" were the same
   value. The rule taken from it: while something is loading, the interface says
