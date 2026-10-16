@@ -977,6 +977,16 @@ Panel {
   readonly property string barCoverShape: String(root.setting("coverShape", root.prefs.coverShape || "rounded"))
   readonly property string barLongTitle: String(root.setting("longTitleMode", root.prefs.longTitleMode || "scroll"))
   readonly property int barInformationWidth: Number(root.setting("labelWidth", Number(root.prefs.labelWidth) || 180))
+  // The scrolling label: how long each end of the text rests, and how fast it
+  // moves in pixels a second. Both are taste, so both live in the settings.
+  readonly property int marqueePause: {
+    var value = Number(root.setting("marqueePauseMs", root.prefs.marqueePauseMs))
+    return isNaN(value) ? 1600 : Math.max(0, Math.min(6000, value))
+  }
+  readonly property int marqueeSpeed: {
+    var value = Number(root.setting("marqueeSpeed", root.prefs.marqueeSpeed))
+    return isNaN(value) ? 70 : Math.max(10, Math.min(300, value))
+  }
   // The progress line has something to say only for a track with a length: a
   // station is endless and shows nothing.
   readonly property bool barHasProgress: root.hasTrack && !root.onAir() && root.duration > 0
@@ -1102,6 +1112,11 @@ Panel {
         anchors.verticalCenter: parent.verticalCenter
 
         readonly property bool needsScroll: implicitWidth > labelClip.width
+        // How far the text has to travel for its end to come into view: exactly
+        // the overflow, not a pixel more. Walking to the text's own width used to
+        // carry it off the edge, which left the label empty until the next pass —
+        // a title that looked broken rather than long.
+        readonly property real travel: Math.max(0, implicitWidth - labelClip.width)
 
         // The text is placed from an animated offset instead of animating `x`
         // itself: an animation on `x` discards the binding that puts the text back
@@ -1115,20 +1130,27 @@ Panel {
         onTextChanged: scrollOffset = 0
         onNeedsScrollChanged: if (!needsScroll) scrollOffset = 0
 
-        // Long titles are readable first and walk afterwards, so the name is not
-        // half-gone most of the time.
+        // Both ends of the walk get a pause: the beginning while it is there, and
+        // the end once it has arrived. With the text stopping inside the label
+        // instead of past it, the field is never empty and neither end is missed.
         SequentialAnimation on scrollOffset {
           running: root.barLongTitle === "scroll" && labelText.needsScroll
           loops: Animation.Infinite
 
-          PauseAnimation { duration: 1600 }
+          PauseAnimation { duration: root.marqueePause }
 
           NumberAnimation {
             from: 0
-            to: labelText.implicitWidth + Style.space(20)
-            duration: Math.max(2500, labelText.implicitWidth * 18)
+            to: labelText.travel
+            duration: Math.max(400, labelText.travel / Math.max(1, root.marqueeSpeed) * 1000)
             easing.type: Easing.Linear
           }
+
+          PauseAnimation { duration: root.marqueePause }
+
+          // Back to the beginning: a jump, made to read as a loop rather than a
+          // glitch by the pause in front of it.
+          PropertyAction { target: labelText; property: "scrollOffset"; value: 0 }
         }
       }
     }
@@ -1741,6 +1763,93 @@ Panel {
             { value: "truncate", label: "Обрезать" },
             { value: "scroll", label: "Прокрутка" }
           ]
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+          // Both matter only while the label scrolls.
+          opacity: root.barLongTitle === "scroll" ? 1.0 : 0.4
+
+          Text {
+            text: "Пауза перед прокруткой"
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
+          Row {
+            id: pauseRow
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSlider {
+              width: parent.width - pauseLabel.width - Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+              minimum: 0
+              maximum: 4000
+              step: 200
+              integer: true
+              enabled: root.barLongTitle === "scroll"
+              value: root.marqueePause
+              bar: root.bar
+              onReleased: function(value) { root.setPreference("marqueePauseMs", Math.round(value)) }
+            }
+
+            Text {
+              id: pauseLabel
+              width: 62
+              text: root.marqueePause + " мс"
+              horizontalAlignment: Text.AlignRight
+              anchors.verticalCenter: parent.verticalCenter
+              color: root.dim
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+          opacity: root.barLongTitle === "scroll" ? 1.0 : 0.4
+
+          Text {
+            text: "Скорость прокрутки"
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
+          Row {
+            id: speedRow
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSlider {
+              width: parent.width - speedLabel.width - Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+              minimum: 10
+              maximum: 300
+              step: 10
+              integer: true
+              enabled: root.barLongTitle === "scroll"
+              value: root.marqueeSpeed
+              bar: root.bar
+              onReleased: function(value) { root.setPreference("marqueeSpeed", Math.round(value)) }
+            }
+
+            Text {
+              id: speedLabel
+              width: 62
+              text: root.marqueeSpeed + " px/с"
+              horizontalAlignment: Text.AlignRight
+              anchors.verticalCenter: parent.verticalCenter
+              color: root.dim
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+          }
         }
 
         Column {

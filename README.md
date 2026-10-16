@@ -62,6 +62,7 @@ hours, and it can ask for a captcha and an SMS code.
 | Bar, right click | Play / pause |
 | Bar, middle click | Next track |
 | Media keys | Through MPRIS, no configuration needed |
+| ⚙ → «Строка в баре» | Length, speed and pause of the scrolling title, cover shape, and which parts of the row are shown |
 | Right click on a track row | «В очередь» appends it, «Следующим» puts it right after the current track |
 | Wheel over the bar widget | Volume, five percent a notch |
 | `/` | Jumps into the search field; with it empty, the recent searches are listed |

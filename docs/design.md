@@ -356,6 +356,25 @@ is remembered — the debounce means intermediate prefixes never reach the daemo
 and the list lives in the state file (`searchHistory`, at most eight), read out of
 `status` by the widget.
 
+## The scrolling label, and why it stops at both ends
+
+A long title scrolls, and the first version scrolled it *past* the clip: the text
+walked to its own width plus a gap, so for a while every pass showed an empty
+field with only the tail's last letters behind, and the label looked broken rather
+than long. The walk now ends at the overflow — `implicitWidth - clip.width` — so
+the last frame of the pass shows the string's end, flush with the right edge.
+
+Both ends rest for `marqueePauseMs` (1600 by default): the beginning while the
+title reads, the end once the artist has arrived — the two places worth reading.
+The return to the start is a jump rather than a second pass, which the pause in
+front of it turns into an obvious loop. The speed is `marqueeSpeed` pixels a
+second (70 by default), so the duration follows the text instead of a constant.
+
+Both numbers are preferences, so both have sliders in the settings — and both are
+dimmed while «Длинные названия» is set to «Обрезать», where they mean nothing. A
+slider can send any value, so the daemon clamps these (and `labelWidth`, and the
+cache limit) through `PREFERENCE_RANGES` before storing them.
+
 ## The transport row
 
 One row, in both popup shapes: the heart, shuffle, repeat, then previous, play and

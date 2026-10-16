@@ -99,6 +99,10 @@ DEFAULT_PREFERENCES: dict[str, Any] = {
     "coverShape": "rounded",
     "labelWidth": 180,
     "longTitleMode": "scroll",
+    # The scrolling label: how long each end rests before the text moves, and how
+    # fast it moves (pixels a second). Both are the user's taste, not ours.
+    "marqueePauseMs": 1600,
+    "marqueeSpeed": 70,
     # "off" or "all": a desktop notification when the track changes on its own.
     "notifications": "off",
     # Which popup to open: "compact" (the small one) or "extended".
@@ -159,6 +163,16 @@ def track_to_state(track: Track) -> dict[str, Any]:
     }
 
 
+# Sliders send whatever the hand did; these keep the value inside the range the
+# UI draws, so a stored preference is always something the panel can show.
+PREFERENCE_RANGES: dict[str, tuple[int, int]] = {
+    "cacheLimitMb": (64, 1024),
+    "labelWidth": (80, 400),
+    "marqueePauseMs": (0, 6000),
+    "marqueeSpeed": (10, 300),
+}
+
+
 def coerce_preference(key: str, value: Any) -> Any:
     """Keep a preference the type it is supposed to be.
 
@@ -174,9 +188,13 @@ def coerce_preference(key: str, value: Any) -> Any:
         return bool(value)
     if isinstance(default, int):
         try:
-            return int(value)
+            number = int(value)
         except (TypeError, ValueError):
             return default
+        low, high = PREFERENCE_RANGES.get(key, (None, None))
+        if low is not None:
+            number = max(low, min(high, number))
+        return number
     if allowed is not None:
         text = str(value)
         return text if text in allowed else default
