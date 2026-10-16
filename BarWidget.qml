@@ -872,14 +872,12 @@ Panel {
     if (root.openPlaylist !== null) return root.activeList().playlistTrackRepeater.itemAt(index)
     if (root.view === "queue") return root.activeList().queueRepeater.itemAt(index)
     if (root.view === "browse") {
+      // Which repeater holds the row depends on where the index falls: with the
+      // gallery off a section's column is the playlists and then the tracks, so an
+      // index below the offset is a playlist row and one at or above it a track row.
+      // Returning a track row for a playlist index made the reveal scroll to the far
+      // end of the list and leave the highlighted row above the viewport.
       var offset = root.browseCursorOffset()
-      if (offset > 0 && index >= offset) {
-        return root.activeList().browseTrackRepeater.itemAt(index - offset)
-      }
-      if (root.galleryMode && root.browseSlug !== "person" && root.browseSlug !== "friends"
-          && root.browseSlug !== "radiostations" && root.browsePlaylists.length > 0) {
-        return root.activeList().browseGrid.itemAt(index)
-      }
       if (root.browseSlug === "person") {
         return root.gridView
           ? root.activeList().browseGrid.itemAt(index)
@@ -890,9 +888,18 @@ Panel {
           ? root.activeList().friendsGrid.itemAt(index)
           : root.activeList().friendRepeater.itemAt(index)
       }
-      return root.browseSlug === "radiostations"
-        ? root.activeList().stationRepeater.itemAt(index)
-        : root.activeList().browseTrackRepeater.itemAt(index)
+      if (root.browseSlug === "radiostations") {
+        return root.activeList().stationRepeater.itemAt(index)
+      }
+      if (offset > 0 && index >= offset) {
+        return root.activeList().browseTrackRepeater.itemAt(index - offset)
+      }
+      if (offset > 0) {
+        return root.gridView
+          ? root.activeList().browseGrid.itemAt(index)
+          : root.activeList().browsePlaylistRows.itemAt(index)
+      }
+      return root.activeList().browseTrackRepeater.itemAt(index)
     }
     if (root.view === "search") {
       if (root.searchMode === "playlists") {
@@ -2217,6 +2224,10 @@ Panel {
       model: rows.items
       delegate: Item {
         id: row
+        // The same name the other rows use, so the state can be read rather than
+        // inferred from the fill.
+        property bool selected: index === root.cursor
+
         width: rows.width
         height: Style.space(44)
 
@@ -2224,11 +2235,11 @@ Panel {
         BorderSurface {
           anchors.fill: parent
           radius: Style.cornerRadius
-          color: index === root.cursor
+          color: row.selected
             ? Style.selectedFillFor(Color.foreground, Color.accent)
             : Style.normalFillFor(Color.foreground, Color.accent)
           borderSpec: Border.none()
-          visible: index === root.cursor || rowArea.containsMouse
+          visible: row.selected || rowArea.containsMouse
         }
 
         BorderSurface {

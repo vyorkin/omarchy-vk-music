@@ -308,6 +308,12 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* An index in the cursor's list is not an index in a repeater. A section's column is
+  the playlists and then the tracks, so the cursor's row 0 is the first playlist while
+  `browseTrackRepeater`'s row 0 is the first track: resolving a playlist index against
+  the track repeater sent the reveal to a row far below the viewport, and the row the
+  cursor had actually moved to stayed off-screen — the keys looked dead because
+  nothing visible changed. `rowAt` now picks the repeater by where the index falls.
 * A hidden field cannot own the keyboard, but it can think it does: the panel blocks
   every key for whichever field is focused, and a search field that kept focus while
   another view was showing left j, k and everything else dead — the keys went to a
