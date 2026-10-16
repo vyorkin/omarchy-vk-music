@@ -959,21 +959,35 @@ Panel {
         font.family: bar ? bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.bodySmall
         anchors.verticalCenter: parent.verticalCenter
-        // Back to the left edge whenever it is not travelling, so a shortened
-        // title is not left half off the row.
-        x: 0
 
         readonly property bool needsScroll: implicitWidth > labelClip.width
 
-        // Long titles walk through the clip and start over, the way the shell's
-        // own media widget does it: no tooltip needed to read a name.
-        NumberAnimation on x {
+        // The text is placed from an animated offset instead of animating `x`
+        // itself: an animation on `x` discards the binding that puts the text back
+        // at the start, so a clip that stopped scrolling kept its last position —
+        // off the edge — and a perfectly short title looked like an empty label
+        // until another long one came along.
+        property real scrollOffset: 0
+        x: -scrollOffset
+
+        // A new title starts at its beginning, and one that fits stays there.
+        onTextChanged: scrollOffset = 0
+        onNeedsScrollChanged: if (!needsScroll) scrollOffset = 0
+
+        // Long titles are readable first and walk afterwards, so the name is not
+        // half-gone most of the time.
+        SequentialAnimation on scrollOffset {
           running: root.barLongTitle === "scroll" && labelText.needsScroll
           loops: Animation.Infinite
-          duration: Math.max(6000, labelText.implicitWidth * 25)
-          from: labelClip.width
-          to: -labelText.implicitWidth
-          easing.type: Easing.Linear
+
+          PauseAnimation { duration: 1600 }
+
+          NumberAnimation {
+            from: 0
+            to: labelText.implicitWidth + Style.space(20)
+            duration: Math.max(2500, labelText.implicitWidth * 18)
+            easing.type: Easing.Linear
+          }
         }
       }
     }

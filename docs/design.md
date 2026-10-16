@@ -267,6 +267,12 @@ Notes from building it:
   old key is migrated on load.
 * The same goes for the old `showText`: it became `showTitle` and `showArtist`,
   with the stored value applied to both.
+* Scrolling titles animate a `scrollOffset` property that `x` is bound to, not
+  `x` itself. An animation on `x` discards the binding that puts the text back at
+  the start, so a clip that stopped scrolling kept its last position — off the
+  edge — and a perfectly short title looked like an empty label until another
+  long one came along. The text is also readable for a moment before it walks,
+  rather than starting off the right edge.
 * `ProgressLine` grew a determinate mode — a share filled from the left — for the
   track's position along the bottom of the bar. The pixel test covers it: 35 % and
   100 % fills, measured from the left edge.
