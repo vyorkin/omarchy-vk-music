@@ -1374,9 +1374,26 @@ Panel {
   readonly property string playlistView: String(root.setting("playlistView", root.prefs.playlistView || "list"))
   readonly property bool gridView: root.playlistView === "grid"
   readonly property int galleryColumns: root.isExtended() ? 4 : 2
-  // A grid of pictures, as opposed to a one-column list: only then do h and l mean
-  // anything, and only then does j move a row rather than a line.
-  readonly property bool galleryMode: root.gridView && root.openPlaylist === null
+  // A grid of cards, as opposed to a one-column list: only then do h and l mean
+  // anything, and only then does j move a row rather than a line. It is the list ON
+  // SCREEN that decides, never the playlist-view preference alone — a playlist's
+  // tracks and the queue are lists even when the gallery is on for playlists, and
+  // stepping four at a time there is what made «j» land on the wrong track.
+  readonly property bool galleryMode: {
+    if (root.openPlaylist !== null) return false
+    if (root.view === "browse") {
+      if (root.browseSlug === "radiostations") return false
+      if (root.browseSlug === "person") return root.gridView && root.personPlaylists.length > 0
+      if (root.browseSlug === "friends") {
+        return root.gridView && (root.friends.length > 0 || root.people.length > 0)
+      }
+      return root.gridView && root.browsePlaylists.length > 0
+    }
+    if (root.view === "search") {
+      return root.gridView && root.searchMode === "playlists" && root.foundPlaylists.length > 0
+    }
+    return false
+  }
 
   readonly property int marqueeSpeed: {
     var value = Number(root.setting("marqueeSpeed", root.prefs.marqueeSpeed))

@@ -308,6 +308,12 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* A view preference is not the same as the view. `galleryMode` asked whether the
+  playlist view was set to the gallery, which is a setting about playlists — so `j`
+  stepped a whole row inside a playlist's tracks and inside the queue, where the
+  list is one column, and the cursor landed four tracks further down than it was
+  asked to. What decides is the list on screen: a playlist's tracks and the queue are
+  lists whatever the preference says, and only a grid of cards steps by a row.
 * A function on the root cannot reach an id inside a component. `startFilter()` was
   one: it called `filterField.forceActiveFocus()`, the name resolved to nothing, and
   the filter field never took the keyboard — so «/» opened a field that swallowed
