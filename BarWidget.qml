@@ -75,13 +75,56 @@ Panel {
     : (root.searchState === "searching" ? "Ищу…"
       : (root.resultsShowing
         ? (root.results.length > 0
-          ? "Найдено " + root.results.length
+          ? ("Найдено " + root.results.length
+             + (root.tracksSpan(root.results) === "" ? "" : " · " + root.tracksSpan(root.results)))
           : (root.suggestionsShown.length > 0 ? "Ничего не найдено. Похожее:" : "Ничего не найдено"))
         : "Подсказки"))
+  // The popup answers to five keys and nothing on screen says so. Esc is the one
+  // that means two things, so the hint follows the query.
+  readonly property string keyHints: (root.view === "search" && root.query.length > 0)
+    ? "Space пауза · ↑↓ выбор · Enter играть · Esc очистить поиск"
+    : "Space пауза · n/p трек · ↑↓ выбор · Enter играть · Esc закрыть"
+
   // The heading is worth its line only when there is something under it: while
   // the query is still short nothing is shown at all.
   readonly property bool searchHeaderVisible: root.searchHeader !== ""
     && (root.searchState !== "typing" || root.suggestionsShown.length > 0)
+
+  // «6 ч 12 мин» for a list of tracks: the queue and a section page are both
+  // worth summarising, and VK already sent us every duration.
+  function humanSpan(seconds) {
+    if (!(seconds > 0)) return ""
+    var minutes = Math.round(seconds / 60)
+    var hours = Math.floor(minutes / 60)
+    minutes = minutes % 60
+    if (hours > 0) return hours + " ч " + minutes + " мин"
+    return minutes + " мин"
+  }
+
+  function tracksSpan(tracks) {
+    var seconds = 0
+    for (var i = 0; i < (tracks ? tracks.length : 0); i++) {
+      var value = Number(tracks[i] ? tracks[i].duration : 0)
+      if (value > 0 && value < 86400) seconds += value
+    }
+    return root.humanSpan(seconds)
+  }
+
+  // «100 треков · 6 ч 12 мин» — how long a list is, in both senses.
+  function listSummary(tracks, one, few, many) {
+    var count = tracks ? tracks.length : 0
+    if (count === 0) return ""
+    var parts = count + " " + root.plural(count, one, few, many)
+    var span = root.tracksSpan(tracks)
+    return span === "" ? parts : parts + " · " + span
+  }
+
+  // What is playing, by key. The queue's own rows start after the current track,
+  // but a section page or a search result can contain it, and then the row says
+  // so with a glyph — the accent fill belongs to the keyboard selection.
+  function isPlayingTrack(key) {
+    return root.hasTrack && String(key) !== "" && root.trackValue("key", "") === String(key)
+  }
 
   readonly property string pluginDir: decodeURIComponent(
     String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "").replace(/\/$/, ""))
@@ -700,7 +743,7 @@ Panel {
     if (tracks === 0) {
       return title + " · " + lists + " " + root.plural(lists, "плейлист", "плейлиста", "плейлистов")
     }
-    return title + " · " + tracks + " " + root.plural(tracks, "трек", "трека", "треков")
+    return title + " · " + root.listSummary(root.browseTracks, "трек", "трека", "треков")
   }
 
   // The sections come as opaque ids with a friendly slug inside the url. The
@@ -1254,6 +1297,19 @@ Panel {
   // The popup's list: the queue, a catalog section, the search results or the
   // settings page. It is a component of its own because the extended popup shows
   // it beside the player rather than under it.
+  // One line of key hints under the list, above the loading line, which stays the
+  // bottom edge of the card.
+  component HintRow: Text {
+    Layout.fillWidth: true
+    textFormat: Text.PlainText
+    elide: Text.ElideRight
+    color: root.dim
+    font.family: Style.font.family
+    font.pixelSize: Style.font.caption
+    text: root.keyHints
+    visible: root.signedIn
+  }
+
   component TrackList: Flickable {
     id: view
 
@@ -1304,7 +1360,12 @@ Panel {
         }
 
         PanelSectionHeader {
-          text: "Дальше в очереди"
+          // The queue is numbered by absolute position, so the header carries the
+          // count and the remaining time: «Дальше в очереди · 96 треков · 5 ч 58 мин».
+          text: {
+            var summary = root.listSummary(root.upcoming, "трек", "трека", "треков")
+            return summary === "" ? "Дальше в очереди" : "Дальше в очереди · " + summary
+          }
           foreground: root.dim
           visible: root.upcoming.length > 0
         }
@@ -1435,8 +1496,11 @@ Panel {
             width: listColumn.width
             leftAlign: true
             selected: index === root.cursor
-            text: modelData ? (modelData.artist + " — " + modelData.title) : ""
-            foreground: root.textColor
+            text: modelData
+              ? ((root.isPlayingTrack(modelData.key) ? "▶  " : "")
+                 + modelData.artist + " — " + modelData.title)
+              : ""
+            foreground: modelData && root.isPlayingTrack(modelData.key) ? Color.accent : root.textColor
             onClicked: if (modelData) {
               if (root.browseSlug === "radiostations") root.playStation(modelData)
               else root.playBrowseTrack(index)
@@ -1499,8 +1563,11 @@ Panel {
             width: listColumn.width
             leftAlign: true
             selected: index === root.cursor
-            text: modelData ? (modelData.artist + " — " + modelData.title) : ""
-            foreground: root.textColor
+            text: modelData
+              ? ((root.isPlayingTrack(modelData.key) ? "▶  " : "")
+                 + modelData.artist + " — " + modelData.title)
+              : ""
+            foreground: modelData && root.isPlayingTrack(modelData.key) ? Color.accent : root.textColor
             onClicked: root.playSearchResult(index)
           }
         }
@@ -1962,11 +2029,10 @@ Panel {
     Item { Layout.fillWidth: true }
   }
 
-    // The extended popup has room for what the compact one keeps on the command
-    // line: shuffle, repeat, and the two queue actions.
+    // Shuffle and repeat are one row in both shapes; the two queue actions need
+    // the room only the extended popup has.
     RowLayout {
       Layout.fillWidth: true
-      visible: playerColumn.wide
       spacing: Style.space(6)
 
       Button {
@@ -1988,6 +2054,7 @@ Panel {
 
       Button {
         text: "Убрать"
+        visible: playerColumn.wide
         foreground: root.textColor
         enabled: root.hasTrack
         opacity: enabled ? 1.0 : 0.4
@@ -1997,6 +2064,7 @@ Panel {
 
       Button {
         text: "Очистить"
+        visible: playerColumn.wide
         foreground: root.textColor
         enabled: root.queue.length > 0
         opacity: enabled ? 1.0 : 0.4
@@ -2195,7 +2263,16 @@ Panel {
         }
         root.togglePause()
       }
-      onCloseRequested: root.close()
+      // Esc backs out one step at a time: the search it can clear, the popup it
+      // closes.
+      onCloseRequested: {
+        if (root.view === "search" && root.query.length > 0) {
+          root.clearSearch()
+          root.activeField().forceActiveFocus()
+          return
+        }
+        root.close()
+      }
       onTextKey: function(character) {
         if (root.activeField().activeFocus) return
         if (character === "n") root.skipNext()
@@ -2218,6 +2295,7 @@ Panel {
         TabsRow { Layout.fillWidth: true }
         SearchFieldRow { id: compactFieldRow; Layout.fillWidth: true }
         TrackList { id: compactList }
+        HintRow { Layout.fillWidth: true }
         LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
       }
 
@@ -2256,6 +2334,7 @@ Panel {
           }
         }
 
+        HintRow { Layout.fillWidth: true }
         LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
       }
     }

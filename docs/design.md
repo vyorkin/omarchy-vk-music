@@ -316,6 +316,28 @@ Three things learned in the move:
   a `var` kept its first value, and the card stayed 400 wide after the setting was
   switched until the shell was restarted.
 
+## What the lists say
+
+Three small things were added once the lists worked, all of them about a list
+telling the truth about itself:
+
+* **Which row is playing.** The accent fill marks the keyboard selection, so the
+  playing track is marked with a glyph instead: `▶  Go_A — Жальменіна (2016)` in
+  the accent colour, matching by track key (`isPlayingTrack`). The queue needs
+  none of this — its rows begin after the current track — but a section page and a
+  search result both can contain it, and then the row says so.
+* **How long the list is.** Every heading carries a count and a total length,
+  both for tracks: `Обзор · 52 трека · 2 ч 26 мин`, `Найдено 30 · 1 ч 41 мин`,
+  `Дальше в очереди · 96 треков · 5 ч 58 мин`. The count uses the Russian plural
+  rule the plugin already had; the length is the sum of the durations VK sent with
+  the tracks (`listSummary` / `tracksSpan` / `humanSpan`), so it costs nothing.
+* **Which keys work.** One dim line at the bottom of the card, above the loading
+  line: `Space пауза · n/p трек · ↑↓ выбор · Enter играть · Esc закрыть`. The
+  popup answers to five keys and nothing on screen said so. Esc is the one key
+  with two meanings, and the hint follows the query: with something typed in the
+  search it reads `Esc очистить поиск` and clears the field instead of closing the
+  popup — the second press closes, so backing out is one step at a time.
+
 ## Queue actions
 
 Three commands exist for the popup to build on: `queue_remove <index>`,
