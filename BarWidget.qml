@@ -676,6 +676,9 @@ Panel {
   property var openPlaylistTracks: []
   property bool openPlaylistLoading: false
   property string playlistBack: ""
+  // Where the playlist was opened from. A playlist opened from a search must come
+  // back to that search, with the query still in the field.
+  property string playlistBackView: ""
   property var foundPlaylists: []
   property int foundPlaylistsTotal: 0
   property bool playlistSearchLoading: false
@@ -748,9 +751,10 @@ Panel {
   // The list the keyboard walks through. One list per view, so the cursor index
   // needs no kind attached to it.
   function cursorItems() {
+    // Whatever view it was opened from, an open playlist is the list on screen.
+    if (root.openPlaylist !== null) return root.openPlaylistTracks
     if (root.view === "queue") return root.upcoming
     if (root.view === "browse") {
-      if (root.openPlaylist !== null) return root.openPlaylistTracks
       if (root.browseSlug === "person") return root.personPlaylists
       if (root.browseSlug === "friends") return root.friends
       return root.browseSlug === "radiostations" ? root.stations : root.browseTracks
@@ -782,9 +786,9 @@ Panel {
   function cursorRow() {
     var index = root.cursor
     if (index < 0) return null
+    if (root.openPlaylist !== null) return root.activeList().playlistTrackRepeater.itemAt(index)
     if (root.view === "queue") return root.activeList().queueRepeater.itemAt(index)
     if (root.view === "browse") {
-      if (root.openPlaylist !== null) return root.activeList().playlistTrackRepeater.itemAt(index)
       if (root.browseSlug === "person") {
         return root.gridView
           ? root.activeList().browseGrid.itemAt(index)
@@ -833,11 +837,14 @@ Panel {
     var count = root.cursorCount()
     if (count === 0) return false
     var index = root.cursor < 0 ? 0 : Math.min(root.cursor, count - 1)
+    if (root.openPlaylist !== null) {
+      root.playPlaylistTrack(index)
+      return true
+    }
     if (root.view === "queue") {
       root.playQueueAt(root.upcomingStart + index)
     } else if (root.view === "browse") {
-      if (root.openPlaylist !== null) root.playPlaylistTrack(index)
-      else if (root.browseSlug === "person") root.openPlaylistView(root.personPlaylists[index])
+      if (root.browseSlug === "person") root.openPlaylistView(root.personPlaylists[index])
       else if (root.browseSlug === "friends") root.openPerson(root.friends[index].id)
       else if (root.browseSlug === "radiostations") root.playStation(root.stations[index])
       else root.playBrowseTrack(index)
@@ -882,6 +889,15 @@ Panel {
   // What the sticky row above the list says, and what its right button does: one
   // place per view instead of one header per list.
   function listHeading() {
+    // A playlist that is open owns the heading, whichever view it was opened from.
+    if (root.openPlaylist !== null) {
+      if (root.openPlaylistLoading) return root.openPlaylistTitle + " · загрузка…"
+      var held = root.openPlaylistTracks.length
+      if (held === 0) return root.openPlaylistTitle + " · пусто"
+      var span = root.tracksSpan(root.openPlaylistTracks)
+      return root.openPlaylistTitle + " · " + held + " "
+        + root.plural(held, "трек", "трека", "треков") + (span === "" ? "" : " · " + span)
+    }
     if (root.view === "queue") {
       if (root.queue.length === 0) return ""
       var summary = root.listSummary(root.upcoming, "трек", "трека", "треков")
@@ -899,14 +915,6 @@ Panel {
   }
 
   readonly property string browseHeader: {
-    if (root.browseSlug === "playlist") {
-      if (root.openPlaylistLoading) return root.openPlaylistTitle + " · загрузка…"
-      var held = root.openPlaylistTracks.length
-      if (held === 0) return root.openPlaylistTitle + " · пусто"
-      var span = root.tracksSpan(root.openPlaylistTracks)
-      return root.openPlaylistTitle + " · " + held + " "
-        + root.plural(held, "трек", "трека", "треков") + (span === "" ? "" : " · " + span)
-    }
     if (root.browseSlug === "") return ""
     if (root.browseSlug === "person") {
       if (root.personLoading) return "Открываю…"
@@ -1054,6 +1062,7 @@ Panel {
     root.clearBrowseLoading()
     root._browseSeq = root._browseSeq + 1
     var seqList = root._browseSeq
+    root.playlistBackView = root.view
     root.playlistBack = root.browseSlug
     root.openPlaylist = item
     root.openPlaylistTracks = []
@@ -1079,6 +1088,7 @@ Panel {
     root.openPlaylist = null
     root.openPlaylistTracks = []
     root.openPlaylistLoading = false
+    root.view = root.playlistBackView !== "" ? root.playlistBackView : "browse"
     root.browseSlug = root.playlistBack !== "" ? root.playlistBack : "explore"
   }
 
@@ -2594,7 +2604,9 @@ Panel {
       Column {
         width: parent.width
         spacing: Style.space(4)
-        visible: root.view === "browse" && root.openPlaylist !== null
+        // Opened from a search or from a section: the tracks replace whatever the
+        // view was showing, so a click always has something to show for itself.
+        visible: (root.view === "browse" || root.view === "search") && root.openPlaylist !== null
 
         // The tracks are a list, not more controls: the line says so.
         Repeater {
@@ -2625,7 +2637,7 @@ Panel {
       Column {
         width: parent.width
         spacing: Style.space(4)
-        visible: root.view === "search"
+        visible: root.view === "search" && root.openPlaylist === null
 
         // One box, two kinds of answer.
         Row {

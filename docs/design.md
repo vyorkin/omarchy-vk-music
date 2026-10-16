@@ -308,6 +308,12 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* A click must have somewhere to show its result. The playlist screen was drawn
+  only in the browse view, so a playlist clicked in the search results was fetched,
+  remembered and never seen — the click looked dead. The screen now belongs to the
+  open playlist rather than to a view, the search's own content steps aside while it
+  is up, and the pair `(view, browseSlug)` is remembered at open time so «Назад»
+  returns to the search with the query still in the field.
 * A heading inside the scroll stops being a heading. Every view's header row lived
   in the list's own column, so it slid away with the rows — and for the settings
   page, which is the longest thing in the panel, it meant losing the only thing that
