@@ -433,6 +433,15 @@ in both popup shapes, and it no longer competes with the header for room.
 
 ## Two views for playlists
 
+A row is not a line of text with a dot in the middle: it carries the playlist's
+cover at 28 pixels, the name on one line and «N треков» in the muted colour under
+it. The cover is the thumbnail VK keeps for exactly this (`photo_68`, then
+`photo_135`), so a page of thirty playlists costs thirty small images rather than
+thirty covers — the gallery is where the big ones belong, and `_extract_cover`
+takes a `small` flag to say which is wanted. The author is deliberately not in the
+row: on a person's page the heading already says whose playlists these are, and in
+a search the title matters more than the second name.
+
 Playlists are shown as a gallery of covers or as rows, and one setting chooses for
 every list of playlists — a section's own, a person's, or a search's. It is
 `playlistView`, switched by two small buttons in the header of the list and

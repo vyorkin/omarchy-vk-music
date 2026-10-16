@@ -1819,7 +1819,10 @@ Panel {
     }
   }
 
-  // The same list of playlists as rows, for people who would rather read names.
+  // A playlist as a row: its cover, its name, and how long it is. The cover is the
+  // small one VK keeps for exactly this, so a list of thirty rows costs thirty
+  // thumbnails rather than thirty covers, and the text sits on two lines so a long
+  // name has somewhere to go instead of being cut off after the first few words.
   component PlaylistRows: Column {
     id: rows
     property var items: []
@@ -1828,23 +1831,95 @@ Panel {
     function itemAt(index) { return rowRepeater.itemAt(index) }
 
     width: parent ? parent.width : 0
-    spacing: Style.space(4)
+    spacing: Style.space(2)
 
     Repeater {
       id: rowRepeater
       model: rows.items
-      delegate: Button {
+      delegate: Item {
+        id: row
         width: rows.width
-        leftAlign: true
-        selected: index === root.cursor
-        text: modelData
-          ? (String(modelData.title || "")
-             + (modelData.count
-                ? "  ·  " + modelData.count + " " + root.plural(Number(modelData.count), "трек", "трека", "треков")
-                : ""))
-          : ""
-        foreground: root.textColor
-        onClicked: rows.picked(index)
+        height: Style.space(44)
+
+        // The cursor's fill, the same language as a filled row anywhere else.
+        BorderSurface {
+          anchors.fill: parent
+          radius: Style.cornerRadius
+          color: Style.selectedFillFor(Color.foreground, Color.accent)
+          borderSpec: Border.none()
+          visible: index === root.cursor
+        }
+
+        BorderSurface {
+          id: rowCover
+          width: Style.space(28)
+          height: width
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(6)
+          anchors.verticalCenter: parent.verticalCenter
+          radius: Style.spacing.labelGap
+          color: Color.popups.background
+          borderSpec: Border.none()
+
+          Image {
+            anchors.fill: parent
+            anchors.margins: Style.space(1)
+            source: modelData
+              ? String(modelData.cover_small || modelData.cover || "")
+              : ""
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            visible: source !== ""
+          }
+
+          Text {
+            anchors.centerIn: parent
+            visible: !(modelData && (modelData.cover_small || modelData.cover))
+            text: "󰝚"
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+          }
+        }
+
+        Column {
+          anchors.left: rowCover.right
+          anchors.leftMargin: Style.space(8)
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(6)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(1)
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+            maximumLineCount: 1
+            text: modelData ? String(modelData.title || "") : ""
+            color: root.textColor
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+            text: modelData && modelData.count
+              ? (Number(modelData.count) + " "
+                 + root.plural(Number(modelData.count), "трек", "трека", "треков"))
+              : ""
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+        }
+
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: rows.picked(index)
+        }
       }
     }
   }

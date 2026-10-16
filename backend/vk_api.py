@@ -261,6 +261,9 @@ class Playlist:
     # The gallery needs a cover, and the card is worth two numbers: how long the
     # playlist is (count) and how many people listen to it.
     cover: str = ""
+    # A gallery wants a big cover and a row wants a small one, and VK keeps both:
+    # asking for the big one thirty times is a slow list for no reason.
+    cover_small: str = ""
     plays: int = 0
     followers: int = 0
     main_color: str = ""
@@ -279,6 +282,7 @@ class Playlist:
             access_key=str(item.get("access_key") or ""),
             description=str(item.get("description") or ""),
             cover=_extract_cover(item),
+            cover_small=_extract_cover(item, small=True),
             plays=int(item.get("plays", 0) or 0),
             followers=int(item.get("followers", 0) or 0),
             main_color=str(item.get("main_color") or ""),
@@ -293,6 +297,7 @@ class Playlist:
             "title": self.title,
             "count": self.count,
             "cover": self.cover,
+            "cover_small": self.cover_small,
             "plays": self.plays,
             "followers": self.followers,
             # The widget plays a playlist by handing this back, so it has to travel.
@@ -423,17 +428,22 @@ def _person_photo(item: Mapping[str, Any]) -> str:
     return ""
 
 
-def _extract_cover(item: Mapping[str, Any]) -> str:
+def _extract_cover(item: Mapping[str, Any], *, small: bool = False) -> str:
     """A playlist's cover.
 
     Playlists arrive in two shapes: `photo` for anything from `audio.*`, and
     `thumb` for the catalog's own blocks. Both carry the same size keys, which is
-    why one helper reads them.
+    why one helper reads them. `small` asks for the thumbnail a list row needs.
     """
+    sizes = (
+        ("photo_68", "photo_135", "photo_270", "photo_300", "photo_600", "photo_1200")
+        if small
+        else ("photo_600", "photo_300", "photo_270", "photo_1200", "photo_135", "photo_68")
+    )
     for candidate in (item.get("photo"), item.get("thumb")):
         if not isinstance(candidate, Mapping):
             continue
-        for size in ("photo_600", "photo_300", "photo_270", "photo_1200", "photo_135", "photo_68"):
+        for size in sizes:
             value = candidate.get(size)
             if value:
                 return str(value)
