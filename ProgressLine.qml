@@ -12,6 +12,10 @@ Item {
 
   property color color: "white"
   property color trackColor: Qt.rgba(color.r, color.g, color.b, 0.28)
+  // A known length fills from the left; an unknown one travels. The travelling
+  // piece is the default because that is what a loading list needs.
+  property real progress: 0
+  property bool indeterminate: true
   property real thickness: 2
   // How much of the width the bright piece covers, 0..1.
   property real piece: 0.3
@@ -21,6 +25,8 @@ Item {
   implicitHeight: thickness
   implicitWidth: 120
 
+  onProgressChanged: canvas.requestPaint()
+  onIndeterminateChanged: canvas.requestPaint()
   onColorChanged: canvas.requestPaint()
   onTrackColorChanged: canvas.requestPaint()
   onThicknessChanged: canvas.requestPaint()
@@ -58,17 +64,24 @@ Item {
       ctx.fillStyle = root.trackColor
       piece(ctx, 0, width)
 
+      ctx.fillStyle = root.color
+      if (!root.indeterminate) {
+        // A share of the width, clamped to it. The minimum is in pixels, not a
+        // share: `Math.max(1, progress)` would mean "always the whole line".
+        var share = Math.min(1, Math.max(0, root.progress))
+        piece(ctx, 0, Math.min(width, Math.max(2, share * width)))
+        return
+      }
       // The bright piece runs in from the left, out at the right and starts over,
       // so it enters and leaves instead of appearing in the middle.
       var span = Math.max(2, Math.min(width, root.piece * width))
       var start = Math.max(0, Math.min(width, root.phase * (width + span) - span))
-      ctx.fillStyle = root.color
       piece(ctx, start, Math.min(span, width - start))
     }
   }
 
   NumberAnimation on phase {
-    running: root.visible
+    running: root.visible && root.indeterminate
     from: 0
     to: 1
     duration: 1300

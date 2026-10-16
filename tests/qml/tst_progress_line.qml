@@ -52,4 +52,18 @@ TestCase {
     renderTo("line-middle", 0.5)
     renderTo("line-right", 0.85)
   }
+
+  // The determinate mode: a share of the line filled from the left, which is what
+  // the bar shows for a track that is playing.
+  function renderFill(name, progress) {
+    line.indeterminate = false
+    line.progress = progress
+    renderTo(name, 0.0)
+    line.indeterminate = true
+  }
+
+  function test_render_fill() {
+    renderFill("line-fill-35", 0.35)
+    renderFill("line-fill-100", 1.0)
+  }
 }

@@ -20,6 +20,7 @@ from pathlib import Path
 FRAME_DIR = Path("/tmp/vk-music-frame-tests")
 SIZE = (320, 12)
 CASES = [("line-left", 0.0), ("line-middle", 0.5), ("line-right", 0.85)]
+FILL_CASES = [("line-fill-35", 0.35), ("line-fill-100", 1.0)]
 LINE_THICKNESS = 4
 
 
@@ -82,6 +83,39 @@ def main() -> int:
             print(f"FAIL  {name} (phase {phase}): " + "; ".join(problems))
         else:
             print(f"ok    {name} (phase {phase}): piece centred at {centre:.2f}, track {track_share:.0%}")
+
+    # The determinate mode fills from the left edge and covers the given share.
+    for name, progress in FILL_CASES:
+        path = FRAME_DIR / f"{name}.png"
+        if not path.is_file():
+            print(f"FAIL  {name}: {path} is missing (run the QML test)")
+            failures += 1
+            continue
+        width, height = SIZE
+        raw = read_rgb(path)
+        bright = []
+        for y in range(height):
+            for x in range(width):
+                i = (y * width + x) * 3
+                r, g, b = raw[i], raw[i + 1], raw[i + 2]
+                if r > 120 and b < 80:
+                    bright.append(x)
+        if not bright:
+            print(f"FAIL  {name}: nothing is filled")
+            failures += 1
+            continue
+        filled = (max(bright) + 1) / width
+        left_edge = min(bright) <= 2
+        problems = []
+        if abs(filled - progress) > 0.08:
+            problems.append(f"filled {filled:.0%}, expected {progress:.0%}")
+        if not left_edge:
+            problems.append(f"the fill starts at x={min(bright)}, not at the left edge")
+        if problems:
+            failures += 1
+            print(f"FAIL  {name} (progress {progress}): " + "; ".join(problems))
+        else:
+            print(f"ok    {name} (progress {progress}): filled {filled:.0%} from the left edge")
 
     if len(centres) == len(CASES):
         if not (centres[0] < centres[1] < centres[2]):

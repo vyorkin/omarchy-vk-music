@@ -238,6 +238,45 @@ the download itself and mpv's load, and only the split says which one is to
 blame. In practice the download dominates, and now that starting a track clears
 mpv's pause, the sound follows the download by about 0.2 s.
 
+## What the bar row shows
+
+Fourteen preferences, most of them about the row in the bar, taken from the shape
+the Yandex Music plugin uses — its list was the reference for which switches are
+worth having. They are backend preferences, so `shell.json` still overrides any of
+them for one instance, and the popup is where they are set.
+
+| Preference | Values | Default |
+| --- | --- | --- |
+| `showArtwork` | on/off | on |
+| `showTitle` / `showArtist` | on/off | on / on |
+| `showControls` | on/off | on |
+| `showProgress` | on/off | on |
+| `showTime` | on/off | off |
+| `showLike` | on/off | off |
+| `coverShape` | square / rounded / circle | rounded |
+| `longTitleMode` | truncate / scroll | scroll |
+| `labelWidth` | 80–400 px (three presets) | 180 |
+| `notifications` | off / all | off |
+| `restoreQueue` / `restorePosition` / `restoreVolume` | on/off | on |
+| `popupView` | compact / extended | compact |
+
+Notes from building it:
+
+* `restoreOnStart` was decorative — it was stored and shown but nothing read it.
+  It is now three switches that are actually honoured by `_load_state`, and the
+  old key is migrated on load.
+* The same goes for the old `showText`: it became `showTitle` and `showArtist`,
+  with the stored value applied to both.
+* `ProgressLine` grew a determinate mode — a share filled from the left — for the
+  track's position along the bottom of the bar. The pixel test covers it: 35 % and
+  100 % fills, measured from the left edge.
+* Notifications carry the cover, and the cover is scaled down with ffmpeg first:
+  VK hands out 1200x1200 images, half a megabyte each for a notification drawn at
+  a hundred pixels. It lands at about 4 KB, in `~/.cache/omarchy-vk-music/covers`,
+  and `cache clear` removes it along with the audio.
+* A `Row` cannot lay out an anchored child, so the progress line is a sibling of
+  the bar row rather than a child of it.
+
 ## The keyboard in the lists
 
 Up and down move a **selection**, not the playback: looking through a list should
@@ -385,6 +424,9 @@ automatically.
 | Playing a search result | queues the keys of the results on screen, one `audio.getById`, no second search |
 | Browsing sections and their playlists | works; `Ещё` appends the next page |
 | Radio | 100 live stations play as streams; the bar and MPRIS show the station |
+| Bar row options | artwork, title, artist, controls, progress line, time, like; cover shape, scrolling titles, width presets |
+| Notifications | a desktop notification per track, with a 4 KB cover, on the bus as `image-path` |
+| Settings page | 14 preferences, validated in the backend, with a chip or a switch each |
 | Loading states in lists | the area says it is loading instead of claiming to be empty; `ProgressLine` and the pixel check behind it |
 
 The queue and the position survive a restart, but playback does **not** resume

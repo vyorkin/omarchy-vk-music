@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import requests
 import signal
 import socket
 import subprocess
@@ -66,24 +67,57 @@ CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / (
     "omarchy-vk-music"
 )
 AUDIO_CACHE_DIR = CACHE_DIR / "audio"
+# Covers for desktop notifications: `notify-send` wants a file, not a URL.
+COVER_DIR = CACHE_DIR / "covers"
 
 MPV = "/usr/bin/mpv"
+NOTIFY_SEND = "/usr/bin/notify-send"
 MPV_PID_FILE = RUNTIME_DIR / "omarchy-vk-music-mpv.pid"
 IPC_MAX_BYTES = 8 * 1024 * 1024
 DEFAULT_PREFERENCES: dict[str, Any] = {
     "cacheEnabled": True,
     "cacheLimitMb": 256,
-    "restoreOnStart": True,
     "defaultSource": "section:all",
-    # What the bar row shows. These live here rather than in shell.json so the
-    # popup can change them; a shell.json entry still wins when present.
-    "showArtwork": True,
-    "showText": True,
-    "labelWidth": 180,
     # Downloading the next queue track while the current one plays: the same
     # file would be fetched when its turn comes, so it costs no extra traffic,
     # only a track of lead time.
     "prefetchEnabled": True,
+    # What comes back after a restart, one piece at a time: the queue, where it
+    # was, and how loud. Playback itself never resumes on its own.
+    "restoreQueue": True,
+    "restorePosition": True,
+    "restoreVolume": True,
+    # The bar row. These live here rather than in shell.json so the popup can
+    # change them; a shell.json entry still wins when present.
+    "showArtwork": True,
+    "showTitle": True,
+    "showArtist": True,
+    "showControls": True,
+    "showProgress": True,
+    "showTime": False,
+    "showLike": False,
+    "coverShape": "rounded",
+    "labelWidth": 180,
+    "longTitleMode": "scroll",
+    # "off" or "all": a desktop notification when the track changes on its own.
+    "notifications": "off",
+    # Which popup to open: "compact" (the small one) or "extended".
+    "popupView": "compact",
+}
+
+# Values a preference may take, for the ones that are not simple booleans. A
+# wrong value from the CLI would otherwise sit in the settings forever.
+PREFERENCE_ENUMS: dict[str, tuple[str, ...]] = {
+    "coverShape": ("square", "rounded", "circle"),
+    "longTitleMode": ("truncate", "scroll"),
+    "notifications": ("off", "all"),
+    "popupView": ("compact", "extended"),
+}
+
+# Preferences that existed before and what they mean now.
+LEGACY_PREFERENCES = {
+    "showText": ("showTitle", "showArtist"),
+    "restoreOnStart": ("restoreQueue", "restorePosition", "restoreVolume"),
 }
 
 # How long a track must be playing before its successor is fetched. Short
@@ -119,6 +153,30 @@ def track_to_state(track: Track) -> dict[str, Any]:
         "has_lyrics": track.has_lyrics,
         "is_liked": track.is_liked,
     }
+
+
+def coerce_preference(key: str, value: Any) -> Any:
+    """Keep a preference the type it is supposed to be.
+
+    The CLI sends strings for everything, and a value the UI does not expect
+    (a string where a boolean belongs, a word that is not in the list) would sit
+    in the settings and quietly break whatever reads it.
+    """
+    default = DEFAULT_PREFERENCES[key]
+    allowed = PREFERENCE_ENUMS.get(key)
+    if isinstance(default, bool):
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return bool(value)
+    if isinstance(default, int):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+    if allowed is not None:
+        text = str(value)
+        return text if text in allowed else default
+    return str(value)
 
 
 def track_from_state(data: Mapping[str, Any]) -> Track:
@@ -388,6 +446,9 @@ class Player:
         # Set while a live station plays: a name, a logo and a stream URL, with
         # no queue behind it, no duration and nothing to seek in.
         self.radio: dict[str, Any] | None = None
+        # The last track a notification was sent for, so a reload or a seek does
+        # not repeat it.
+        self._notified_key = ""
         # Where the time went for the track being started: filled as the start
         # proceeds and printed once per start. A "playback takes a few seconds"
         # report cannot otherwise be told apart from a slow download.
@@ -421,21 +482,36 @@ class Player:
             stored = json.loads(STATE_FILE.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return
-        self.preferences.update(stored.get("preferences") or {})
+        stored_preferences = dict(stored.get("preferences") or {})
+        for old, replacements in LEGACY_PREFERENCES.items():
+            if old in stored_preferences:
+                value = bool(stored_preferences.pop(old))
+                for replacement in replacements:
+                    stored_preferences.setdefault(replacement, value)
+        for key, value in stored_preferences.items():
+            if key in DEFAULT_PREFERENCES:
+                self.preferences[key] = coerce_preference(key, value)
         self.cache.limit_bytes = max(
             0, int(self.preferences.get("cacheLimitMb", 256)) * 1024 * 1024
         )
-        self.volume = int(stored.get("volume", self.volume) or self.volume)
+        if self.preferences.get("restoreVolume", True):
+            self.volume = int(stored.get("volume", self.volume) or self.volume)
         self.shuffle = bool(stored.get("shuffle", False))
         self.repeat = str(stored.get("repeat", "off"))
         self.source = stored.get("source") or self.source
-        restored = [track_from_state(item) for item in stored.get("queue") or []]
+        restored = (
+            [track_from_state(item) for item in stored.get("queue") or []]
+            if self.preferences.get("restoreQueue", True)
+            else []
+        )
         self.queue = restored
         self.liked_copies = {
             str(key): str(value) for key, value in (stored.get("likedCopies") or {}).items()
         }
-        self.index = int(stored.get("index", -1))
-        self.position = int(stored.get("position", 0) or 0)
+        self.index = int(stored.get("index", -1)) if restored else -1
+        self.position = int(stored.get("position", 0) or 0) if self.preferences.get(
+            "restorePosition", True
+        ) else 0
         # The queue and the position are restored so the bar shows what was
         # playing, but playback does not resume on its own: music starting by
         # itself at login is not something a user asked for.
@@ -989,8 +1065,9 @@ class Player:
     def set_preferences(self, values: Mapping[str, Any]) -> None:
         with self.lock:
             for key, value in values.items():
-                if key in DEFAULT_PREFERENCES:
-                    self.preferences[key] = value
+                if key not in DEFAULT_PREFERENCES:
+                    continue
+                self.preferences[key] = coerce_preference(key, value)
             if "cacheLimitMb" in values:
                 self.cache.limit_bytes = max(0, int(self.preferences["cacheLimitMb"]) * 1024 * 1024)
             self.save_state()
@@ -1009,6 +1086,7 @@ class Player:
             if name == "file-loaded":
                 self._trace["loaded"] = time.monotonic()
                 self._log_start_trace()
+                self._notify_track()
                 self.loading = False
                 self.buffering = False
                 self.playing = True
@@ -1050,6 +1128,90 @@ class Player:
     def attach_mpris(self) -> None:
         self._mpris = MprisBridge(self)
         self._mpris.start()
+
+    def _notify_track(self) -> None:
+        """One notification per track, when the user asked for them.
+
+        Sent from here rather than from the widget: the track changes on its own
+        as often as it is changed, and the popup is usually closed when that
+        happens.
+        """
+        if self.preferences.get("notifications") != "all":
+            return
+        radio = self.radio
+        track = self.current_track()
+        if radio:
+            key = f"radio{radio.get('id', 0)}"
+            title = str(radio.get("name", ""))
+            body = "Радио · в эфире"
+            cover = str(radio.get("logo", ""))
+        elif track:
+            key = track.key
+            title = track.title
+            body = track.artist
+            cover = track.thumb
+        else:
+            return
+        if key == self._notified_key:
+            return
+        self._notified_key = key
+        command = [NOTIFY_SEND, "--app-name=vk music"]
+        icon = self._cover_file(key, cover)
+        if icon:
+            command.append(f"--icon={icon}")
+        command += [title, body]
+        try:
+            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError as exc:
+            log(f"notification failed: {exc}")
+
+    def _cover_file(self, key: str, url: str) -> str:
+        """The cover as a local file for `notify-send`, downloaded once.
+
+        A notification wants a file, and VK hands out a URL. The image is fetched
+        from the same CDN the widget already loads it from, and cached by track.
+        """
+        if not url:
+            return ""
+        directory = COVER_DIR
+        path = directory / f"{key}.jpg"
+        try:
+            if path.is_file() and path.stat().st_size > 0:
+                return str(path)
+            directory.mkdir(parents=True, exist_ok=True)
+            response = requests.get(url, timeout=10)
+            if response.status_code != 200 or not response.content:
+                return ""
+            temp = path.with_suffix(".part")
+            temp.write_bytes(response.content)
+            # VK hands out 1200x1200 covers: half a megabyte for a notification
+            # thumbnail, and one file per track that is ever played. A notification
+            # draws it at a hundred pixels, so it is scaled down once, here.
+            if len(response.content) > 150 * 1024 and not self._shrink_cover(temp, path):
+                os.replace(temp, path)
+            else:
+                temp.unlink(missing_ok=True)
+        except (OSError, requests.RequestException) as exc:
+            log(f"cover for notification failed: {safe_error_text(exc)}")
+            return ""
+        return str(path)
+
+    def _shrink_cover(self, source: Path, target: Path) -> bool:
+        """Scale a cover down with ffmpeg, the same tool the cache already uses."""
+        # The format is named explicitly: ffmpeg picks it from the extension, and
+        # a cached cover has no meaningful one of its own.
+        command = [
+            "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(source), "-vf", "scale=192:-1",
+            "-frames:v", "1", "-f", "image2", "-c:v", "mjpeg", "-q:v", "4",
+            str(target),
+        ]
+        try:
+            completed = subprocess.run(command, capture_output=True, timeout=20)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            log(f"cover scale failed: {exc}")
+            return False
+        return completed.returncode == 0 and target.is_file() and target.stat().st_size > 0
 
     def _log_start_trace(self) -> None:
         """Print where the time of one track start went, in one line."""
@@ -1778,6 +1940,13 @@ class Backend:
     def cmd_cache(self, action: str = "stats") -> dict[str, Any]:
         if action == "clear":
             removed = self.player.cache.clear()
+            # Covers are cache too, just for notifications.
+            for cover in sorted(COVER_DIR.glob("*.jpg")) if COVER_DIR.is_dir() else []:
+                try:
+                    cover.unlink()
+                    removed += 1
+                except OSError:
+                    pass
             return {"removed": removed, **self.player.cache.stats()}
         if action == "cleanup":
             return {"removed": cleanup_stray_temp(AUDIO_CACHE_DIR), **self.player.cache.stats()}
