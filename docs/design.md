@@ -308,6 +308,14 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* The component's height is not the viewport's height. `TrackList` is a column with
+  the sticky row on top and the Flickable underneath, so `activeList().height` is the
+  viewport plus that row; the scrolling maths used it anyway, asked for a scroll
+  45 pixels further than the list could go, and the last row of every long list stayed
+  half under the bottom edge — an unclamped target plus a height that was the wrong
+  one. The reveal now clamps to `contentHeight - viewHeight` with `viewHeight` aliased
+  from the Flickable itself, and repeats once with `Qt.callLater`, because the list's
+  height is still settling while the panel opens.
 * A loading line that reserves its place is a line that can sit on the last row of
   the list above it. The panel's indicator held two pixels in the layout whether or
   not anything was loading, and the row of a list ended up looking cut by a dark

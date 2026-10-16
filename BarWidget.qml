@@ -854,6 +854,9 @@ Panel {
     var next = root.cursor < 0 ? (step > 0 ? 0 : count - 1) : root.cursor + step
     root.cursor = Math.max(0, Math.min(count - 1, next))
     root.revealCursor()
+    // Again once the layout has settled: the list's height is still changing while
+    // the panel opens, and a scroll computed against the old height lands short.
+    Qt.callLater(root.revealCursor)
   }
 
   // The delegate item the cursor sits on, so the list can be scrolled to it: rows
@@ -904,14 +907,19 @@ Panel {
   function revealCursor() {
     var row = root.cursorRow()
     if (!row) return
+    var list = root.activeList()
     var margin = Style.space(6)
     var top = row.y
     var bottom = top + row.height
-    if (top - margin < root.activeList().contentY) {
-      root.activeList().contentY = Math.max(0, top - margin)
-    } else if (bottom + margin > root.activeList().contentY + root.activeList().height) {
-      root.activeList().contentY = bottom + margin - root.activeList().height
-    }
+    // The row's y is in the content's coordinates, which is what contentY counts in,
+    // so the target is simply clamped into the scrollable range: unclamped, the last
+    // row of a long list asked for a scroll past the end, the flickable refused it,
+    // and the row stayed half under the bottom edge.
+    var maxScroll = Math.max(0, list.contentHeight - list.viewHeight)
+    var target = list.contentY
+    if (top - margin < target) target = top - margin
+    else if (bottom + margin > target + list.viewHeight) target = bottom + margin - list.viewHeight
+    list.contentY = Math.max(0, Math.min(maxScroll, target))
   }
 
   // Enter: play what the cursor points at. Returns false when there is nothing
@@ -1711,7 +1719,7 @@ Panel {
       available: [panel.availableCardWidth, panel.availableCardHeight],
       inset: panel.verticalContentInset,
       blocks: root.activeBody().children.length,
-      list: [root.activeList().height, root.activeList().contentHeight],
+      list: [root.activeList().viewHeight, root.activeList().contentHeight],
       shown: [root.suggestionsShown.length, root.resultsShown.length]
     }))
     console.log("[vk-music] body", JSON.stringify({
@@ -2411,6 +2419,10 @@ Panel {
     // be a column with a header that does not scroll.
     property alias contentY: scroller.contentY
     property alias contentHeight: scroller.contentHeight
+    // The scrolling viewport is the inner Flickable, which is shorter than this
+    // component by the sticky row above it. Scrolling maths that used the component's
+    // own height was off by exactly that much and left the last row half hidden.
+    property alias viewHeight: scroller.height
 
     Layout.fillWidth: true
     Layout.fillHeight: true
