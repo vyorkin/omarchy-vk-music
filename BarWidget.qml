@@ -676,15 +676,19 @@ Panel {
   // only a view of the same data, so clearing it costs nothing.
   property bool filtering: false
   property string filter: ""
+  // The filter field lives inside the list component, where the root cannot reach
+  // it: it takes the keyboard itself and reports back, which is also what the key
+  // catcher needs to know before it decides who owns the keys.
+  property bool filterFocused: false
 
   function startFilter() {
     root.filtering = true
-    filterField.forceActiveFocus()
   }
 
   function clearFilter() {
     root.filter = ""
     root.filtering = false
+    root.filterFocused = false
     root.focusList()
   }
 
@@ -1184,6 +1188,7 @@ Panel {
   }
 
   function browseFriends() {
+    root.focusList()
     root.clearBrowseLoading()
     root._browseSeq = root._browseSeq + 1
     if (root.browseSlug === "friends" && root.friends.length > 0) return
@@ -1855,6 +1860,9 @@ Panel {
 
     width: cellWidth
     height: body.implicitHeight
+    // A border alone is easy to miss under a bright picture: the card steps back a
+    // little as well when the pointer is on it.
+    opacity: personCardArea.containsMouse && !personCard.selected ? 0.82 : 1.0
 
     Column {
       id: body
@@ -1866,8 +1874,9 @@ Panel {
         height: width
         radius: width / 2
         color: Color.popups.background
-        borderSpec: personCard.selected
-          ? Border.controlSpec("selected", Color.foreground, Color.accent, Color.urgent)
+        borderSpec: personCard.selected || personCardArea.containsMouse
+          ? Border.controlSpec(personCard.selected ? "selected" : "hover",
+                               Color.foreground, Color.accent, Color.urgent)
           : Border.none()
 
         Image {
@@ -1897,14 +1906,16 @@ Panel {
         wrapMode: Text.WordWrap
         horizontalAlignment: Text.AlignHCenter
         text: personCard.item ? String(personCard.item.name || "") : ""
-        color: root.textColor
+        color: personCard.selected ? Color.accent : root.textColor
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
       }
     }
 
     MouseArea {
+      id: personCardArea
       anchors.fill: parent
+      hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
       onClicked: personCard.activated()
     }
@@ -2416,6 +2427,9 @@ Panel {
         visible: root.filtering
         placeholderText: "Фильтр по списку: название или исполнитель"
         text: root.filter
+        // Vim-like: «/» puts you in the field, Enter leaves it, Esc clears it.
+        onVisibleChanged: if (visible) forceActiveFocus()
+        onActiveFocusChanged: root.filterFocused = activeFocus
         onTextChanged: root.filter = text
         onAccepted: {
           root.filtering = false
@@ -2548,7 +2562,10 @@ Panel {
                 text: modelData ? String(modelData.title || "") : ""
                 foreground: root.textColor
                 selected: modelData ? root.sourceSlug(modelData) === root.browseSlug : false
-                onClicked: if (modelData) root.browseSource(root.sourceSlug(modelData))
+                onClicked: if (modelData) {
+                  root.browseSource(root.sourceSlug(modelData))
+                  root.focusList()
+                }
               }
             }
 
@@ -3601,7 +3618,10 @@ Panel {
       text: "Очередь"
       foreground: root.textColor
       selected: root.view === "queue"
-      onClicked: root.view = "queue"
+      onClicked: {
+        root.view = "queue"
+        root.focusList()
+      }
     }
 
     Button {
@@ -3611,6 +3631,7 @@ Panel {
       onClicked: {
         root.view = "browse"
         root.browseSource(root.browseSlug !== "" ? root.browseSlug : "explore")
+        root.focusList()
       }
     }
 
@@ -3735,7 +3756,7 @@ Panel {
       anchors.fill: parent
       // While the search field has the keyboard, the field owns every key: «j» is a
       // letter to type there, not a step down the list. The field handles Esc itself.
-      blocked: root.activeField().activeFocus
+      blocked: root.activeField().activeFocus || root.filterFocused
       // Up and down move the selection instead of the playback: pressing a key
       // to look through a list should not start a track. `n` and `p` below still
       // switch tracks.

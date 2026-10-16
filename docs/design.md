@@ -308,6 +308,15 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* A function on the root cannot reach an id inside a component. `startFilter()` was
+  one: it called `filterField.forceActiveFocus()`, the name resolved to nothing, and
+  the filter field never took the keyboard — so «/» opened a field that swallowed
+  nothing and typed nowhere. The field focuses itself when it appears and reports the
+  fact back through `filterFocused`, which is also what the key catcher needs before
+  it can decide who owns the keys.
+* Leaving a search field in focus while another view is on screen blocks the list's
+  keys, because the catcher is blocked while a field owns the keyboard. Switching
+  tabs and sections now hands the keyboard back to the list.
 * The cursor walks what is on screen. In the gallery the section's playlists are the
   cards, so h and l step a card and j and k step a row of `galleryColumns`, and the
   cursor covers the playlists rather than the tracks drawn underneath them; in a list
