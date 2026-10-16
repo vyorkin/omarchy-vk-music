@@ -523,6 +523,13 @@ in both popup shapes, and it no longer competes with the header for room.
 
 ## Two views for playlists
 
+The cursor walks what is on screen, and in a section that is both kinds of thing: one
+column of playlists and then tracks in the list view, a grid of cards with the same
+tracks under it in the gallery. So one offset describes both, and a step down from the
+last card lands on the first track rather than four rows into it — the grid's row step
+would otherwise jump the boundary. Coming back up, one step from the first track is the
+last card.
+
 The cursor's mark is the same in both views: a selected fill. A row takes it behind
 everything, and so does a card — cover and captions together, with a few pixels of rim
 showing around the picture, which is what makes a card read as one thing rather than a

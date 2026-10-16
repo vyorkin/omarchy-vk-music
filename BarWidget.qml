@@ -818,11 +818,10 @@ Panel {
       if (root.browseSlug === "friends") return root.filtered(root.friends)
       if (root.browseSlug === "radiostations") return root.stations
       var lists = root.filtered(root.browsePlaylists)
-      // With the gallery on, the cards in front of you are the playlists, so the
-      // cursor walks those rather than the section's tracks underneath them. In the
-      // list view both are rows in one column, so the cursor walks both: k from the
-      // first track reaches the last playlist.
-      if (root.galleryMode) return lists
+      // The cursor walks what is on screen: one column of playlists and then tracks in
+      // the list view, a grid of cards with the same tracks under it in the gallery.
+      // Either way it is both, so j carries on from the last card to the first track
+      // below and k comes back up to the last card.
       return lists.concat(root.filtered(root.browseTracks))
     }
     if (root.view === "search") {
@@ -841,8 +840,10 @@ Panel {
 
   // Where the section's tracks start in the cursor's list: the playlists come first.
   function browseCursorOffset() {
+    // Where the section's tracks begin in the cursor's list. The playlists come first
+    // in the list view and stand above the tracks in the gallery, so one offset
+    // describes both — the cursor walks the cards and then the rows under them.
     if (root.browseSlug !== "" && root.browseSlug !== "person" && root.browseSlug !== "friends") {
-      if (root.galleryMode) return 0
       return root.filtered(root.browsePlaylists).length
     }
     return 0
@@ -856,6 +857,17 @@ Panel {
     var next = root.cursor < 0
       ? root.firstVisibleIndex() + (step > 0 ? 0 : -1)
       : root.cursor + step
+    // In the gallery a step is a whole row of cards, which must not skip over the
+    // tracks underneath them: one step down from the last card is the first track, and
+    // one step up from there is the last card. It cannot cross on the way back up from
+    // the rows, because the row above the first track is the card it came from.
+    if (root.view === "browse" && root.galleryMode && root.cursor >= 0) {
+      var edge = root.filtered(root.browsePlaylists).length
+      if (edge > 0 && edge < count) {
+        if (root.cursor < edge && next >= edge) next = edge
+        else if (root.cursor >= edge && next < edge) next = edge - 1
+      }
+    }
     root.cursor = Math.max(0, Math.min(count - 1, next))
     root.revealCursor()
     // Again once the layout has settled: the list's height is still changing while
