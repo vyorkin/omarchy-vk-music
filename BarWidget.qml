@@ -1775,42 +1775,7 @@ Timer {
   // once it has been laid out, and the keyboard focus only takes on a mapped
   // item. Opening the search view hands the keyboard straight to the field, so
   // typing works without a click.
-  Timer {
-    id: c1
-    interval: 2500
-    repeat: false
-    running: root.opened
-    onTriggered: {
-      root.setPlaylistView("grid")
-      root.view = "browse"
-      root.browseFriends()
-    }
-  }
-
-  Timer {
-    id: c2
-    interval: 9000
-    repeat: false
-    running: root.opened
-    onTriggered: {
-      var out = {}
-      out.друзей = root.filtered(root.friends).length
-      out.недавних = root.filtered(root.people).length
-      out.пунктов = root.cursorItems().length
-      root.cursor = root.filtered(root.friends).length - 1
-      root.moveCursor(root.galleryColumns)
-      out.после_j = root.cursor
-      var r = root.rowAt(root.cursor)
-      out.строка = r === null ? "null" : String(r).split("(")[0]
-      out.выбрана = r && r.selected !== undefined ? r.selected : "нет свойства"
-      root.moveCursor(-root.galleryColumns)
-      out.назад = root.cursor
-      console.log("[vk-music] недавние", JSON.stringify(out))
-      root.cursor = -1
-    }
-  }
-
-  function afterOpen() {
+function afterOpen() {
     console.log("[vk-music] popup layout", JSON.stringify({
       card: [panel.contentWidth, panel.contentHeight],
       body: root.activeBody().implicitHeight,
@@ -1819,13 +1784,6 @@ Timer {
       blocks: root.activeBody().children.length,
       list: [root.activeList().viewHeight, root.activeList().contentHeight],
       shown: [root.suggestionsShown.length, root.resultsShown.length]
-    }))
-    console.log("[vk-music] body", JSON.stringify({
-      extended: root.isExtended(),
-      children: Array.prototype.map.call(root.activeBody().children, function(child, i) {
-        return [i, String(child).split("(")[0].replace("QQuick", ""), Math.round(child.height),
-                Math.round(child.implicitHeight), child.visible, Math.round(child.Layout.preferredHeight) || 0]
-      })
     }))
     // The keyboard belongs to the list when the panel opens. A field of a view that is
     // not showing would otherwise keep it, and a hidden field eats every key it is

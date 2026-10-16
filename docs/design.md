@@ -346,6 +346,11 @@ Three things learned in the move:
   the track repeater sent the reveal to a row far below the viewport, and the row the
   cursor had actually moved to stayed off-screen — the keys looked dead because
   nothing visible changed. `rowAt` now picks the repeater by where the index falls.
+* A probe left in the widget is invisible from the outside: the file parses, the widget
+  loads, the journal is clean — and the panel does something the user never asked for,
+  two seconds after every open. It happened three times, so it is a tool now:
+  `tools/check_widget_source.py` fails when a Timer logs, changes the view or loads a
+  section, and when the `ВРЕМЕННО` marker is still in the file. Run it before deploying.
 * A cleanup script that removes blocks by text matching removes the WRONG blocks, and
   nothing about the result looks wrong: the file still parses, the widget still loads,
   the journal is clean. A probe timer that switches the view was left alive and the
