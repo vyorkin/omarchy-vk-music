@@ -670,6 +670,54 @@ Panel {
   property var personPlaylists: []
   property bool personLoading: false
   property string personQuery: ""
+  // «/» filters the list in front of you rather than searching VK: vim's search
+  // inside the open buffer. It applies to whatever the panel is showing, and it is
+  // only a view of the same data, so clearing it costs nothing.
+  property bool filtering: false
+  property string filter: ""
+
+  function startFilter() {
+    root.filtering = true
+    filterField.forceActiveFocus()
+  }
+
+  function clearFilter() {
+    root.filter = ""
+    root.filtering = false
+    root.focusList()
+  }
+
+  function filterActive() {
+    return root.filter.trim() !== ""
+  }
+
+  function matchesFilter(item) {
+    if (!root.filterActive()) return true
+    if (!item) return false
+    var haystack = String(item.title || "") + " " + String(item.artist || "")
+      + " " + String(item.name || "")
+    return haystack.toLowerCase().indexOf(root.filter.trim().toLowerCase()) >= 0
+  }
+
+  // With a filter on, a row's position in the list on screen is not its position in
+  // the queue or the playlist: everything that acts on a row acts on the item.
+  function indexOfItem(list, item) {
+    if (!list || !item) return -1
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] === item) return i
+    }
+    return -1
+  }
+
+  function filtered(items) {
+    if (!root.filterActive() || !items) return items
+    var out = []
+    for (var i = 0; i < items.length; i++) {
+      if (root.matchesFilter(items[i])) out.push(items[i])
+    }
+    return out
+  }
+
   // A playlist that was opened rather than started: what it holds, and where to
   // come back to.
   property var openPlaylist: null
@@ -731,6 +779,10 @@ Panel {
     root.runSearch(true)
   }
 
+  function focusList() {
+    keys.forceActiveFocus()
+  }
+
   function setSearchMode(mode) {
     if (root.searchMode === mode) return
     root.searchLoading = false
@@ -752,16 +804,16 @@ Panel {
   // needs no kind attached to it.
   function cursorItems() {
     // Whatever view it was opened from, an open playlist is the list on screen.
-    if (root.openPlaylist !== null) return root.openPlaylistTracks
-    if (root.view === "queue") return root.upcoming
+    if (root.openPlaylist !== null) return root.filtered(root.openPlaylistTracks)
+    if (root.view === "queue") return root.filtered(root.upcoming)
     if (root.view === "browse") {
-      if (root.browseSlug === "person") return root.personPlaylists
-      if (root.browseSlug === "friends") return root.friends
-      return root.browseSlug === "radiostations" ? root.stations : root.browseTracks
+      if (root.browseSlug === "person") return root.filtered(root.personPlaylists)
+      if (root.browseSlug === "friends") return root.filtered(root.friends)
+      return root.browseSlug === "radiostations" ? root.stations : root.filtered(root.browseTracks)
     }
     if (root.view === "search") {
-      if (root.searchMode === "playlists") return root.foundPlaylists
-      if (root.resultsShown.length > 0) return root.resultsShown
+      if (root.searchMode === "playlists") return root.filtered(root.foundPlaylists)
+      if (root.resultsShown.length > 0) return root.filtered(root.resultsShown)
       // With an empty field the list on screen is the recent queries.
       if (root._queryLength < 2 && root.history.length > 0) return root.history
       return root.suggestionsShown
@@ -837,12 +889,13 @@ Panel {
     var count = root.cursorCount()
     if (count === 0) return false
     var index = root.cursor < 0 ? 0 : Math.min(root.cursor, count - 1)
+    var item = root.cursorItems()[index]
     if (root.openPlaylist !== null) {
-      root.playPlaylistTrack(index)
+      root.playPlaylistTrack(root.indexOfItem(root.openPlaylistTracks, item))
       return true
     }
     if (root.view === "queue") {
-      root.playQueueAt(root.upcomingStart + index)
+      root.playQueueAt(root.indexOfItem(root.queue, item))
     } else if (root.view === "browse") {
       if (root.browseSlug === "person") root.openPlaylistView(root.personPlaylists[index])
       else if (root.browseSlug === "friends") root.openPerson(root.friends[index].id)
@@ -903,9 +956,13 @@ Panel {
       var summary = root.listSummary(root.upcoming, "трек", "трека", "треков")
       return summary === "" ? "Дальше в очереди" : "Дальше в очереди · " + summary
     }
-    if (root.view === "browse") return root.browseHeader
-    if (root.view === "search") return root.searchHeaderVisible ? root.searchHeader : ""
-    return ""
+    var base = ""
+    if (root.view === "browse") base = root.browseHeader
+    else if (root.view === "search") base = root.searchHeaderVisible ? root.searchHeader : ""
+    if (root.filterActive()) {
+      return (base === "" ? "" : base + " · ") + "фильтр: " + root.filter.trim()
+    }
+    return base
   }
 
   function listAction() {
@@ -1709,8 +1766,9 @@ Panel {
         height: width
         radius: Style.spacing.labelGap
         color: Color.popups.background
-        borderSpec: card.selected
-          ? Border.controlSpec("selected", Color.foreground, Color.accent, Color.urgent)
+        borderSpec: card.selected || cardArea.containsMouse
+          ? Border.controlSpec(card.selected ? "selected" : "hover",
+                               Color.foreground, Color.accent, Color.urgent)
           : Border.none()
 
         Image {
@@ -1757,7 +1815,9 @@ Panel {
     }
 
     MouseArea {
+      id: cardArea
       anchors.fill: parent
+      hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
       onClicked: card.activated()
     }
@@ -1869,9 +1929,11 @@ Panel {
     BorderSurface {
       anchors.fill: parent
       radius: Style.cornerRadius
-      color: Style.selectedFillFor(Color.foreground, Color.accent)
+      color: person.selected
+        ? Style.selectedFillFor(Color.foreground, Color.accent)
+        : Style.normalFillFor(Color.foreground, Color.accent)
       borderSpec: Border.none()
-      visible: person.selected
+      visible: person.selected || personArea.containsMouse
     }
 
     BorderSurface {
@@ -1919,7 +1981,9 @@ Panel {
     }
 
     MouseArea {
+      id: personArea
       anchors.fill: parent
+      hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
       onClicked: person.activated()
     }
@@ -1944,12 +2008,17 @@ Panel {
     readonly property bool playing: trackRow.track !== null
       && root.isPlayingTrack(trackRow.track.key)
 
+    // Two states, two fills: the keyboard cursor takes the selected fill, the
+    // pointer under the mouse the plain one, so a list says both «here is the
+    // keyboard» and «here is the mouse» without the two looking alike.
     BorderSurface {
       anchors.fill: parent
       radius: Style.cornerRadius
-      color: Style.selectedFillFor(Color.foreground, Color.accent)
+      color: trackRow.selected
+        ? Style.selectedFillFor(Color.foreground, Color.accent)
+        : Style.normalFillFor(Color.foreground, Color.accent)
       borderSpec: Border.none()
-      visible: trackRow.selected
+      visible: trackRow.selected || trackArea.containsMouse
     }
 
     Text {
@@ -2013,8 +2082,10 @@ Panel {
     }
 
     MouseArea {
+      id: trackArea
       anchors.fill: parent
       acceptedButtons: Qt.LeftButton | Qt.RightButton
+      hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
       onClicked: function(mouse) {
         if (mouse.button === Qt.RightButton) trackRow.contextRequested()
@@ -2049,9 +2120,11 @@ Panel {
         BorderSurface {
           anchors.fill: parent
           radius: Style.cornerRadius
-          color: Style.selectedFillFor(Color.foreground, Color.accent)
+          color: index === root.cursor
+            ? Style.selectedFillFor(Color.foreground, Color.accent)
+            : Style.normalFillFor(Color.foreground, Color.accent)
           borderSpec: Border.none()
-          visible: index === root.cursor
+          visible: index === root.cursor || rowArea.containsMouse
         }
 
         BorderSurface {
@@ -2120,7 +2193,9 @@ Panel {
         }
 
         MouseArea {
+          id: rowArea
           anchors.fill: parent
+          hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
           onClicked: rows.picked(index)
         }
@@ -2284,11 +2359,11 @@ Panel {
     RowLayout {
       Layout.fillWidth: true
       spacing: Style.space(6)
-      visible: root.listHeading() !== ""
+      visible: root.listHeading() !== "" || root.filtering
 
       Button {
         Layout.alignment: Qt.AlignVCenter
-        visible: root.openPlaylist !== null || root.person !== null
+        visible: !root.filtering && (root.openPlaylist !== null || root.person !== null)
         text: "Назад"
         foreground: root.textColor
         tooltipText: root.openPlaylist !== null ? "К плейлистам" : "К списку людей"
@@ -2306,13 +2381,34 @@ Panel {
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignVCenter
         verticalAlignment: Text.AlignVCenter
+        visible: !root.filtering
         text: root.listHeading()
         foreground: root.dim
       }
 
+      // Vim's «/»: the field appears in the sticky row, the list under it shrinks to
+      // what matches, and Enter hands the keyboard back to the list.
+      TextField {
+        id: filterField
+        Layout.fillWidth: true
+        Layout.alignment: Qt.AlignVCenter
+        visible: root.filtering
+        placeholderText: "Фильтр по списку: название или исполнитель"
+        text: root.filter
+        onTextChanged: root.filter = text
+        onAccepted: {
+          root.filtering = false
+          root.focusList()
+        }
+        Keys.onEscapePressed: function(event) {
+          root.clearFilter()
+          event.accepted = true
+        }
+      }
+
       Button {
         Layout.alignment: Qt.AlignVCenter
-        visible: root.listAction() !== ""
+        visible: !root.filtering && root.listAction() !== ""
         text: root.listAction()
         foreground: root.textColor
         tooltipText: root.listAction() === "Играть" ? "Играть весь плейлист" : "Очистить очередь"
@@ -2330,7 +2426,7 @@ Panel {
     PanelSeparator {
       Layout.fillWidth: true
       foreground: root.textColor
-      visible: root.listHeading() !== ""
+      visible: root.listHeading() !== "" || root.filtering
     }
 
     Flickable {
@@ -2374,13 +2470,13 @@ Panel {
 
         Repeater {
           id: queueRepeater
-          model: root.upcoming
+          model: root.filtered(root.upcoming)
           delegate: TrackRow {
             track: modelData
             position: root.upcomingStart + index + 1
             selected: index === root.cursor
-            onActivated: root.playQueueAt(root.upcomingStart + index)
-            onContextRequested: root.openRowMenu(modelData, root.upcomingStart + index)
+            onActivated: root.playQueueAt(root.indexOfItem(root.queue, modelData))
+            onContextRequested: root.openRowMenu(modelData, root.indexOfItem(root.queue, modelData))
           }
         }
 
@@ -2440,15 +2536,19 @@ Panel {
 
         PlaylistGrid {
           id: browseGrid
-          items: root.browsePlaylists
+          items: root.filtered(root.browsePlaylists)
           visible: root.gridView && items.length > 0
-          onPicked: function(index) { root.openPlaylistView(root.browsePlaylists[index]) }
+          onPicked: function(index) {
+            root.openPlaylistView(root.filtered(root.browsePlaylists)[index])
+          }
         }
 
         PlaylistRows {
           id: browsePlaylistRows
-          items: root.gridView ? [] : root.browsePlaylists
-          onPicked: function(index) { root.openPlaylistView(root.browsePlaylists[index]) }
+          items: root.gridView ? [] : root.filtered(root.browsePlaylists)
+          onPicked: function(index) {
+            root.openPlaylistView(root.filtered(root.browsePlaylists)[index])
+          }
         }
 
         // A RowLayout rather than a Row: a caption in a plain Row sits at the top
@@ -2578,11 +2678,11 @@ Panel {
 
         Repeater {
           id: browseTrackRepeater
-          model: root.browseSlug === "radiostations" ? [] : root.browseTracks
+          model: root.browseSlug === "radiostations" ? [] : root.filtered(root.browseTracks)
           delegate: TrackRow {
             track: modelData
             selected: index === root.cursor
-            onActivated: if (modelData) root.playBrowseTrack(index)
+            onActivated: if (modelData) root.playBrowseTrack(root.indexOfItem(root.browseTracks, modelData))
             onContextRequested: root.openRowMenu(modelData)
           }
         }
@@ -2611,12 +2711,12 @@ Panel {
         // The tracks are a list, not more controls: the line says so.
         Repeater {
           id: playlistTrackRepeater
-          model: root.openPlaylistTracks
+          model: root.filtered(root.openPlaylistTracks)
           delegate: TrackRow {
             track: modelData
             position: index + 1
             selected: index === root.cursor
-            onActivated: root.playPlaylistTrack(index)
+            onActivated: root.playPlaylistTrack(root.indexOfItem(root.openPlaylistTracks, modelData))
             onContextRequested: root.openRowMenu(modelData)
           }
         }
@@ -2702,13 +2802,17 @@ Panel {
           id: searchGrid
           items: root.searchMode === "playlists" ? root.foundPlaylists : []
           visible: root.gridView && items.length > 0
-          onPicked: function(index) { root.openPlaylistView(root.foundPlaylists[index]) }
+          onPicked: function(index) {
+            root.openPlaylistView(root.filtered(root.foundPlaylists)[index])
+          }
         }
 
         PlaylistRows {
           id: searchPlaylistRows
           items: (root.searchMode === "playlists" && !root.gridView) ? root.foundPlaylists : []
-          onPicked: function(index) { root.openPlaylistView(root.foundPlaylists[index]) }
+          onPicked: function(index) {
+            root.openPlaylistView(root.filtered(root.foundPlaylists)[index])
+          }
         }
 
         Repeater {
@@ -2726,11 +2830,11 @@ Panel {
 
         Repeater {
           id: resultRepeater
-          model: root.resultsShown
+          model: root.filtered(root.resultsShown)
           delegate: TrackRow {
             track: modelData
             selected: index === root.cursor
-            onActivated: root.playSearchResult(index)
+            onActivated: root.playSearchResult(root.indexOfItem(root.results, modelData))
             onContextRequested: root.openRowMenu(modelData)
           }
         }
@@ -3544,6 +3648,13 @@ Panel {
       // Enter is not handled here: the panel's key catcher owns it, and two
       // handlers meant the field re-ran the search first, which reset the
       // list selection before Enter could play it.
+      // Esc in the field: the query first, then the panel. The key catcher is
+      // blocked while a field has the keyboard, so the field answers for itself.
+      Keys.onEscapePressed: function(event) {
+        if (root.query.length > 0) root.clearSearch()
+        else root.close()
+        event.accepted = true
+      }
       onTextChanged: {
         if (text !== root.query) root.query = text
         suggestTimer.restart()
@@ -3601,6 +3712,9 @@ Panel {
     PanelKeyCatcher {
       id: keys
       anchors.fill: parent
+      // While the search field has the keyboard, the field owns every key: «j» is a
+      // letter to type there, not a step down the list. The field handles Esc itself.
+      blocked: root.activeField().activeFocus
       // Up and down move the selection instead of the playback: pressing a key
       // to look through a list should not start a track. `n` and `p` below still
       // switch tracks.
@@ -3632,6 +3746,10 @@ Panel {
       // Esc backs out one step at a time: the search it can clear, the popup it
       // closes.
       onCloseRequested: {
+        if (root.filterActive() || root.filtering) {
+          root.clearFilter()
+          return
+        }
         if (root.pendingTrack !== null) {
           root.closeRowMenu()
           return
@@ -3646,9 +3764,8 @@ Panel {
       onTextKey: function(character) {
         if (root.activeField().activeFocus) return
         if (character === "/") {
-          // A search is one keystroke away, as it is in most editors.
-          root.view = "search"
-          root.activeField().forceActiveFocus()
+          // Vim's search: inside the list you are looking at, not a new list.
+          root.startFilter()
           return
         }
         if (character === "n") root.skipNext()

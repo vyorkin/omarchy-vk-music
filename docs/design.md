@@ -308,6 +308,22 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* `containsMouse` is always false without `hoverEnabled`. The track rows had no
+  hover state at all — not a styling choice, a MouseArea that never tracked the
+  pointer. A row now has two fills: the selected one for the keyboard cursor and the
+  plain one under the pointer, so a list answers both «here is the keyboard» and
+  «here is the mouse» without the two looking alike.
+* A field that has the keyboard owns every key. The panel's key catcher translated
+  «j» and «k» into a step down and up the list *before* the search field could see
+  them, so moving by j/k after typing a query did nothing visible and the letters
+  never reached the field. `blocked: root.activeField().activeFocus` hands the
+  keyboard to the field while it is focused, and the field answers Esc itself.
+* «/» belongs to the list in front of you, not to VK. It used to jump to the search
+  view; it now filters what is on screen — the open playlist, the queue, a section,
+  the search results — matching the title, the artist or the name, with the heading
+  saying which filter is on. Because the visible row's position is then not its
+  position in the queue, everything that acts on a row acts on the item
+  (`indexOfItem`), which is what keeps a filtered list from playing the wrong track.
 * A click must have somewhere to show its result. The playlist screen was drawn
   only in the browse view, so a playlist clicked in the search results was fetched,
   remembered and never seen — the click looked dead. The screen now belongs to the
