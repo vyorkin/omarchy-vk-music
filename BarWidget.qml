@@ -407,16 +407,7 @@ Timer {
   // write (about 0.4 ms), so this throttle is only here to keep the mpv commands
   // and the MPRIS updates from flooding: 50 ms is under the threshold where a
   // change feels detached from the hand.
-  Timer {
-    id: wheelWrite
-    interval: 400
-    repeat: false
-    // A wheel notch is a whole action, unlike a drag: the volume is written down
-    // once the wheel stops, so a restart does not lose it.
-    onTriggered: if (root.volumeTarget >= 0) root.setVolume(root.volumeTarget, false)
-  }
-
-  Timer {
+Timer {
     id: liveVolume
     interval: 50
     repeat: false
@@ -432,14 +423,7 @@ Timer {
   // search itself after a longer one. Both are restarted by the next keystroke,
   // so a typed query costs a handful of calls and never a burst — and the search
   // also runs immediately on Enter or on a tap of a suggestion.
-  Timer {
-    id: suggestTimer
-    interval: 250
-    repeat: false
-    onTriggered: root.loadSuggestions()
-  }
-
-  Timer {
+Timer {
     id: searchTimer
     interval: 700
     repeat: false
@@ -1277,25 +1261,34 @@ Timer {
     root.setPreference("playlistView", mode)
   }
 
-  function browseFriends() {
-    root.clearFilterQuiet()
-    root.cursor = -1
-    root.focusList()
-    root.clearBrowseLoading()
-    root._browseSeq = root._browseSeq + 1
-    if (root.browseSlug === "friends" && root.friends.length > 0) return
-    root.browseSlug = "friends"
-    root.browseTitle = "Друзья"
-    root.browseTracks = []
-    root.browsePlaylists = []
-    root.browseNext = ""
-    root.closePerson()
+  // The friends are fetched once and kept: the list barely changes and the panel is
+  // opened far more often than it changes.
+  function loadFriends() {
     if (root.friends.length > 0) return
     root.friendsLoading = true
     root.call([root.cli, "friends"], function(answer) {
       root.friendsLoading = false
       root.friends = (answer && answer.ok && answer.data) ? answer.data : []
     })
+  }
+
+  function browseFriends() {
+    root.clearFilterQuiet()
+    root.cursor = -1
+    root.focusList()
+    root.clearBrowseLoading()
+    root._browseSeq = root._browseSeq + 1
+    // Everything a person's page left behind goes, but by clearing it here rather than
+    // by calling closePerson: that function returns to this list, and two functions
+    // that call each other are a loop, not a pair.
+    root.person = null
+    root.personPlaylists = []
+    root.browseSlug = "friends"
+    root.browseTitle = "Друзья"
+    root.browseTracks = []
+    root.browsePlaylists = []
+    root.browseNext = ""
+    root.loadFriends()
   }
 
   function openPerson(reference) {
@@ -1340,6 +1333,17 @@ Timer {
     root.cursor = -1
     root.person = null
     root.personPlaylists = []
+    // Back to the people the page was opened from. Leaving the slug on «person» with
+    // nobody in it is what made the header say «Человек не найден» after a step back
+    // instead of showing the list again — the page's own «Назад» button had the same
+    // hole.
+    root.browsePlaylists = []
+    root.browseTracks = []
+    root.browseNext = ""
+    root.browseSlug = "friends"
+    root.browseTitle = "Друзья"
+    root.loadFriends()
+    root.focusList()
   }
 
   function loadPlaylistSearch() {

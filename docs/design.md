@@ -346,6 +346,13 @@ Three things learned in the move:
   the track repeater sent the reveal to a row far below the viewport, and the row the
   cursor had actually moved to stayed off-screen — the keys looked dead because
   nothing visible changed. `rowAt` now picks the repeater by where the index falls.
+* Two functions that call each other are a loop, not a pair. Closing a person went back
+  to the people list, and going to the people list closed a person: the pair recursed,
+  the friends came back empty and the header read «Друзья · 0 человек». They share a
+  `loadFriends()` now, and each clears what it needs on its own.
+* Closing a person's page has to change the slug, not only the person: with `browseSlug`
+  left on «person» and nobody in it, the header said «Человек не найден» — a step back
+  that leads to a message about a search that never happened.
 * A probe left in the widget is invisible from the outside: the file parses, the widget
   loads, the journal is clean — and the panel does something the user never asked for,
   two seconds after every open. It happened three times, so it is a tool now:
