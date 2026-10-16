@@ -11,6 +11,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "LucideIcons.js" as Lucide
 
 Panel {
   id: root
@@ -1679,6 +1680,8 @@ Timer {
     BarGlyph {
       visible: root.barShowLike && root.hasTrack && !root.onAir()
       anchors.verticalCenter: parent.verticalCenter
+      name: "heart"
+      filled: root.liked
       icon: root.liked ? "󰋑" : "󰋕"
       iconColor: root.liked ? Color.accent : root.fg
       tooltip: root.liked ? "Убрать из моей музыки" : "В мою музыку"
@@ -1715,6 +1718,7 @@ Timer {
       // The same three glyphs the reference widget shows, in the same shape: previous,
       // play or pause, next — 24 px each, nothing drawn between them.
       BarGlyph {
+        name: "skip-back"
         icon: "󰒮"
         tooltip: "Предыдущий трек"
         onClicked: root.skipPrevious()
@@ -1723,12 +1727,14 @@ Timer {
       BarGlyph {
         // The glyph never turns into a downloader: play stays play, dimmed while the
         // track is being fetched.
+        name: root.playing ? "pause" : "play"
         icon: root.playing ? "󰏤" : "󰐊"
         tooltip: root.playing ? "Пауза" : "Играть"
         onClicked: root.togglePause()
       }
 
       BarGlyph {
+        name: "skip-forward"
         icon: "󰒭"
         tooltip: "Следующий трек"
         onClicked: root.skipNext()
@@ -1915,11 +1921,32 @@ Timer {
   // every other widget for the same pixels.
   component BarGlyph: Item {
     id: glyph
+    // Lucide's name, the way the reference widget asks for its icons: `skip-back`,
+    // `play`, `pause`, `skip-forward`, `heart`. `icon` stays as a fallback glyph from
+    // the icon font for a name the set does not carry.
+    property string name: ""
     property string icon: ""
+    property bool filled: false
+    property real strokeWidth: 2
     property string tooltip: ""
     property color iconColor: root.fg
     signal clicked()
     signal wheeled(var wheel)
+
+    readonly property bool hot: glyphArea.pressed
+    readonly property bool under: glyphArea.containsMouse
+    readonly property color tint: glyph.hot
+      ? Color.accent
+      : (glyph.under ? Qt.lighter(glyph.iconColor, 1.15) : glyph.iconColor)
+    readonly property string tintRgb: "rgb(" + Math.round(glyph.tint.r * 255) + ","
+      + Math.round(glyph.tint.g * 255) + "," + Math.round(glyph.tint.b * 255) + ")"
+    readonly property string body: glyph.name !== "" ? (Lucide.bodies[glyph.name] || "") : ""
+    readonly property string svg: glyph.body === "" ? "" : "data:image/svg+xml;utf8,"
+      + encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="'
+        + (glyph.filled ? glyph.tintRgb : "none")
+        + '" stroke="' + glyph.tintRgb + '" stroke-width="' + glyph.strokeWidth
+        + '" stroke-linecap="round" stroke-linejoin="round">' + glyph.body + "</svg>")
 
     width: Style.space(24)
     height: parent ? parent.height : Style.space(24)
@@ -1928,20 +1955,33 @@ Timer {
     Rectangle {
       anchors.fill: parent
       radius: Style.cornerRadius
-      color: glyphArea.pressed
+      color: glyph.hot
         ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.2)
-        : (glyphArea.containsMouse
+        : (glyph.under
            ? Qt.rgba(glyph.iconColor.r, glyph.iconColor.g, glyph.iconColor.b, 0.08)
            : "transparent")
+    }
+
+    Image {
+      anchors.centerIn: parent
+      width: Style.space(14)
+      height: width
+      visible: glyph.body !== ""
+      smooth: true
+      asynchronous: false
+      fillMode: Image.PreserveAspectFit
+      sourceSize.width: Math.ceil(width * 2)
+      sourceSize.height: Math.ceil(width * 2)
+      opacity: root.loading ? 0.45 : 1.0
+      source: glyph.svg
     }
 
     Text {
       anchors.centerIn: parent
       textFormat: Text.PlainText
+      visible: glyph.body === "" && glyph.icon !== ""
       text: glyph.icon
-      color: glyphArea.pressed
-        ? Color.accent
-        : (glyphArea.containsMouse ? Qt.lighter(glyph.iconColor, 1.15) : glyph.iconColor)
+      color: glyph.tint
       opacity: root.loading ? 0.45 : 1.0
       font.family: bar ? bar.fontFamily : Style.font.family
       font.pixelSize: Style.space(14)

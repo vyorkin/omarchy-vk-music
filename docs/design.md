@@ -252,6 +252,14 @@ clock. The glyph size is the bar's own icon token rather than a panel font, so t
 cannot grow taller than the bar, and the middle glyph still never turns into a download
 icon — it dims while the track is being fetched.
 
+The glyphs themselves are Lucide's own paths, vendored in `LucideIcons.js` (ISC licence,
+v0.468.0, the same set the reference widget uses) and drawn as an SVG data URL with a
+2 px round stroke and no fill — except the heart, which is filled when the track is in
+«Моя музыка». The reference names its icons, so ours are asked for by the same names:
+`skip-back`, `play`, `pause`, `skip-forward`, `heart`. The icon font stays as a fallback
+for a name the set does not carry.
+
+
 ## What the bar row shows
 
 Fourteen preferences, most of them about the row in the bar, taken from the shape
