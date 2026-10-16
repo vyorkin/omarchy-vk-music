@@ -288,9 +288,12 @@ Notes from building it:
 The popup comes in two shapes, chosen in the settings:
 
 * **Compact** — 400x690, the player above the list, the size it has always been.
-* **Extended** — 620x760, the player on the left (a 128 px cover, the seek
-  slider, the transport, a row of shuffle, repeat, "Убрать" and "Очистить") and
-  the list on the right, both under one header.
+* **Extended** — 620x760: the player is one band across the top — a 56 px cover,
+  the title and the artist with the time, then shuffle, repeat, the transport, mute
+  and the volume slider in the same row, with a thin seek line under it — and
+  everything else, the tabs and the list, gets the full width below. A left column
+  holding the player cost the list half the card for no reason; the band is about
+  90 pixels, and the gallery went from three covers across to four.
 
 They are not two popups: they are two arrangements of the same blocks, each block
 a component of its own (`HeaderRow`, `SignInBlock`, `PlayerColumn`, `TabsRow`,
@@ -305,6 +308,10 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* The queue's own actions («Убрать» and «Очистить») lost their place when the
+  player became a band, so they moved to where the queue is: «Очистить» sits in
+  the queue's header, and right-clicking a queue row offers «Играть сейчас» and
+  «Убрать» instead of the two verbs that belong to a row from somewhere else.
 * A component's root must *be* the block, not wrap it. Both `TrackList` and five
   smaller blocks first came out as `component X: RowLayout { RowLayout { ... } }`,
   because the extracted text already began with its own declaration line. The

@@ -662,14 +662,32 @@ Panel {
   // Right-clicking a row offers what can be done with a track without throwing
   // away the queue you are listening to.
   property var pendingTrack: null
+  property int pendingIndex: -1
 
-  function openRowMenu(track) {
+  function openRowMenu(track, queueIndex) {
     if (!track || !track.key) return
     root.pendingTrack = track
+    root.pendingIndex = queueIndex === undefined ? -1 : Number(queueIndex)
   }
 
   function closeRowMenu() {
     root.pendingTrack = null
+    root.pendingIndex = -1
+  }
+
+  // A queue row can be played now or dropped; anything else can be queued.
+  function jumpPending() {
+    var index = root.pendingIndex
+    root.closeRowMenu()
+    if (index < 0) return
+    root.call([root.cli, "jump", String(index)], function() { root.watchForTrack() })
+  }
+
+  function removePending() {
+    var index = root.pendingIndex
+    root.closeRowMenu()
+    if (index < 0) return
+    root.call([root.cli, "queue", "remove", String(index)], function() { root.refresh() })
   }
 
   function queuePendingTrack(next) {
@@ -1137,7 +1155,7 @@ Panel {
   // too small to recognise.
   readonly property string playlistView: String(root.setting("playlistView", root.prefs.playlistView || "list"))
   readonly property bool gridView: root.playlistView === "grid"
-  readonly property int galleryColumns: root.isExtended() ? 3 : 2
+  readonly property int galleryColumns: root.isExtended() ? 4 : 2
 
   readonly property int marqueeSpeed: {
     var value = Number(root.setting("marqueeSpeed", root.prefs.marqueeSpeed))
@@ -1785,17 +1803,23 @@ Panel {
       }
 
       Button {
-        text: "В очередь"
+        text: root.pendingIndex >= 0 ? "Играть сейчас" : "В очередь"
         foreground: root.textColor
-        tooltipText: "Добавить в конец очереди"
-        onClicked: root.queuePendingTrack(false)
+        tooltipText: root.pendingIndex >= 0
+          ? "Перейти к этому треку"
+          : "Добавить в конец очереди"
+        onClicked: if (root.pendingIndex >= 0) root.jumpPending()
+          else root.queuePendingTrack(false)
       }
 
       Button {
-        text: "Следующим"
+        text: root.pendingIndex >= 0 ? "Убрать" : "Следующим"
         foreground: root.textColor
-        tooltipText: "Поставить сразу после текущего трека"
-        onClicked: root.queuePendingTrack(true)
+        tooltipText: root.pendingIndex >= 0
+          ? "Убрать из очереди"
+          : "Поставить сразу после текущего трека"
+        onClicked: if (root.pendingIndex >= 0) root.removePending()
+          else root.queuePendingTrack(true)
       }
 
       Button {
@@ -1874,15 +1898,29 @@ Panel {
           }
         }
 
-        PanelSectionHeader {
-          // The queue is numbered by absolute position, so the header carries the
-          // count and the remaining time: «Дальше в очереди · 96 треков · 5 ч 58 мин».
-          text: {
-            var summary = root.listSummary(root.upcoming, "трек", "трека", "треков")
-            return summary === "" ? "Дальше в очереди" : "Дальше в очереди · " + summary
+        Row {
+          width: parent.width
+          spacing: Style.space(6)
+          visible: root.queue.length > 0
+
+          PanelSectionHeader {
+            // The queue is numbered by absolute position, so the header carries the
+            // count and the remaining time: «Дальше в очереди · 96 треков · 5 ч 58 мин».
+            width: parent.width - queueClear.width - Style.space(6)
+            text: {
+              var summary = root.listSummary(root.upcoming, "трек", "трека", "треков")
+              return summary === "" ? "Дальше в очереди" : "Дальше в очереди · " + summary
+            }
+            foreground: root.dim
           }
-          foreground: root.dim
-          visible: root.upcoming.length > 0
+
+          Button {
+            id: queueClear
+            text: "Очистить"
+            foreground: root.textColor
+            tooltipText: "Очистить очередь"
+            onClicked: root.clearQueue()
+          }
         }
 
         Repeater {
@@ -1895,7 +1933,7 @@ Panel {
             text: modelData ? ((root.upcomingStart + index + 1) + ".  " + modelData.artist + " — " + modelData.title) : ""
             foreground: root.textColor
             onClicked: root.playQueueAt(root.upcomingStart + index)
-            onRightClicked: root.openRowMenu(modelData)
+            onRightClicked: root.openRowMenu(modelData, root.upcomingStart + index)
           }
         }
 
@@ -2599,13 +2637,207 @@ Panel {
     }
   }
 
+  // Album art in the two sizes the popup uses. The buffering indicator lives
+  // here so both sizes keep exactly the same one.
+  component CoverArt: BorderSurface {
+    id: coverArt
+    property real size: Style.space(64)
+
+    width: size
+    height: size
+    radius: Style.spacing.labelGap
+    color: Style.normalFillFor(root.textColor, Color.accent)
+    borderSpec: root.buffering
+      ? Border.none()
+      : Border.controlSpec("normal", root.textColor, Color.accent)
+
+    Image {
+      anchors.fill: parent
+      anchors.margins: Style.space(2)
+      fillMode: Image.PreserveAspectCrop
+      asynchronous: true
+      source: root.onAir()
+        ? String(root.radioValue("logo", ""))
+        : (root.hasTrack && root.trackValue("thumb", "") ? root.trackValue("thumb", "") : "")
+      visible: source !== ""
+    }
+
+    Text {
+      anchors.centerIn: parent
+      visible: !root.hasTrack || !root.trackValue("thumb", "")
+      text: "󰝚"
+      color: root.textColor
+      font.family: Style.font.family
+      font.pixelSize: coverArt.size >= Style.space(100) ? Style.font.displayLarge : Style.font.subtitle
+    }
+
+    Rectangle {
+      anchors.fill: parent
+      radius: parent.radius
+      visible: root.buffering
+      color: Util.alpha(root.panelBackground, 0.82)
+    }
+
+    Text {
+      anchors.centerIn: parent
+      visible: root.buffering && !root.bufferIndeterminate
+      textFormat: Text.PlainText
+      text: Math.round(Math.max(0, root.bufferProgress) * 100) + "%"
+      color: root.textColor
+      font.family: Style.font.family
+      font.pixelSize: coverArt.size >= Style.space(100) ? Style.font.subtitle : Style.font.bodySmall
+      font.bold: true
+    }
+
+    ProgressFrame {
+      anchors.fill: parent
+      visible: root.buffering
+      progress: Math.max(0, root.bufferProgress)
+      indeterminate: root.bufferIndeterminate
+      color: Color.accent
+      cornerRadius: Style.spacing.labelGap
+      thickness: Math.max(2, Style.space(3))
+    }
+  }
+
+  // The wide popup keeps its player to one band at the top: the cover, what it
+  // is playing, and everything that controls it in a single row, with a thin
+  // seek line under it. The list below gets the full width.
+  component PlayerBar: ColumnLayout {
+    id: playerBar
+    spacing: Style.space(4)
+
+    RowLayout {
+      Layout.fillWidth: true
+      spacing: Style.space(8)
+      visible: root.signedIn
+
+      CoverArt {
+        Layout.alignment: Qt.AlignVCenter
+        size: Style.space(56)
+      }
+
+      ColumnLayout {
+        Layout.fillWidth: true
+        Layout.minimumWidth: Style.space(110)
+        Layout.alignment: Qt.AlignVCenter
+        spacing: Style.space(1)
+
+        Text {
+          Layout.fillWidth: true
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          text: root.onAir()
+            ? String(root.radioValue("name", "Радио"))
+            : (root.hasTrack ? root.trackValue("title") : "Ничего не играет")
+          color: root.textColor
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.bold: true
+        }
+
+        Text {
+          Layout.fillWidth: true
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          text: root.onAir()
+            ? "Радио · в эфире"
+            : (root.hasTrack
+               ? (root.trackValue("artist", "") + (root.duration > 0
+                  ? (root.trackValue("artist", "") ? " · " : "") + root.clock(root.displayPosition)
+                    + " / " + root.clock(root.duration)
+                  : ""))
+               : "")
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      Button {
+        visible: !root.onAir()
+        iconText: root.liked ? "󰋑" : "󰋕"
+        foreground: root.liked ? Color.urgent : root.textColor
+        enabled: root.hasTrack
+        opacity: enabled ? 1.0 : 0.4
+        tooltipText: root.liked ? "Убрать из моей музыки" : "В мою музыку"
+        onClicked: root.toggleLike()
+      }
+
+      Button {
+        iconText: "󰒟"
+        foreground: root.shuffled ? Color.accent : root.textColor
+        tooltipText: root.shuffled ? "Перемешивание включено" : "Перемешать"
+        onClicked: root.toggleShuffle()
+      }
+
+      Button {
+        iconText: root.repeatGlyph
+        foreground: root.repeatMode === "off" ? root.textColor : Color.accent
+        tooltipText: root.repeatMode === "off" ? "Повтор выключен"
+          : (root.repeatMode === "one" ? "Повторять трек" : "Повторять очередь")
+        onClicked: root.cycleRepeat()
+      }
+
+      Button {
+        iconText: "󰒮"
+        foreground: root.textColor
+        enabled: root.queue.length > 0
+        opacity: enabled ? 1.0 : 0.4
+        onClicked: root.skipPrevious()
+      }
+
+      Button {
+        iconText: root.playing ? "󰏤" : "󰐊"
+        foreground: root.textColor
+        enabled: root.hasTrack || root.queue.length > 0
+        opacity: !enabled ? 0.4 : (root.loading ? 0.5 : 1.0)
+        onClicked: root.togglePause()
+      }
+
+      Button {
+        iconText: "󰒭"
+        foreground: root.textColor
+        enabled: root.queue.length > 0
+        opacity: enabled ? 1.0 : 0.4
+        onClicked: root.skipNext()
+      }
+
+      Button {
+        iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
+        foreground: root.textColor
+        tooltipText: root.displayVolume <= 0 ? "Включить звук" : "Выключить звук"
+        onClicked: root.toggleMute()
+      }
+
+      PanelSlider {
+        Layout.preferredWidth: Style.space(84)
+        Layout.alignment: Qt.AlignVCenter
+        minimum: 0
+        maximum: 100
+        integer: true
+        value: root.displayVolume
+        bar: root.bar
+        onMoved: function(value) { root.setVolume(value, true) }
+        onReleased: function(value) { root.setVolume(value, false) }
+      }
+    }
+
+    // The seek line: the one control that wants the whole width.
+    PanelSlider {
+      Layout.fillWidth: true
+      visible: root.hasTrack && !root.onAir() && root.duration > 0
+      minimum: 0
+      maximum: Math.max(1, root.duration)
+      value: root.displayPosition
+      bar: root.bar
+      onMoved: function(value) { root.seekLive(value) }
+      onReleased: function(value) { root.seekFinal(value) }
+    }
+  }
+
   component PlayerColumn: ColumnLayout {
     id: playerColumn
-
-    // The extended popup gives the cover twice the room: it is the one thing in
-    // the panel that is worth looking at.
-    property bool wide: false
-    readonly property real coverPixels: wide ? Style.space(128) : Style.space(64)
     spacing: Style.spacing.controlGap
 
   RowLayout {
@@ -2613,70 +2845,9 @@ Panel {
     spacing: Style.space(10)
     visible: root.signedIn
 
-    BorderSurface {
+    CoverArt {
       Layout.alignment: Qt.AlignTop
-      width: playerColumn.coverPixels
-      height: playerColumn.coverPixels
-      radius: Style.spacing.labelGap
-      color: Style.normalFillFor(root.textColor, Color.accent)
-      borderSpec: root.buffering
-        ? Border.none()
-        : Border.controlSpec("normal", root.textColor, Color.accent)
-
-      Image {
-        anchors.fill: parent
-        anchors.margins: Style.space(2)
-        fillMode: Image.PreserveAspectCrop
-        asynchronous: true
-        source: root.onAir()
-          ? String(root.radioValue("logo", ""))
-          : (root.hasTrack && root.trackValue("thumb", "") ? root.trackValue("thumb", "") : "")
-        visible: source !== ""
-      }
-
-      Text {
-        anchors.centerIn: parent
-        visible: !root.hasTrack || !root.trackValue("thumb", "")
-        text: "󰝚"
-        color: root.textColor
-        font.family: Style.font.family
-        font.pixelSize: Style.font.displayLarge
-      }
-
-      // The percentage gets its own surface. Over album art a fixed white on
-      // black reads badly on a bright cover and worse on a dark one; the
-      // scrim is the theme's panel colour, and the label is the panel
-      // foreground, which contrasts with it by construction.
-      Rectangle {
-        anchors.fill: parent
-        radius: parent.radius
-        visible: root.buffering
-        color: Util.alpha(root.panelBackground, 0.82)
-      }
-
-      Text {
-        anchors.centerIn: parent
-        visible: root.buffering && !root.bufferIndeterminate
-        textFormat: Text.PlainText
-        text: Math.round(Math.max(0, root.bufferProgress) * 100) + "%"
-        color: root.textColor
-        font.family: Style.font.family
-        font.pixelSize: Style.font.subtitle
-        font.bold: true
-      }
-
-      // The frame is the same component as in the bar, just larger: one
-      // indicator in both places, drawn on the border the artwork already
-      // has.
-      ProgressFrame {
-        anchors.fill: parent
-        visible: root.buffering
-        progress: Math.max(0, root.bufferProgress)
-        indeterminate: root.bufferIndeterminate
-        color: Color.accent
-        cornerRadius: Style.spacing.labelGap
-        thickness: Math.max(2, Style.space(3))
-      }
+      size: Style.space(64)
     }
 
     ColumnLayout {
@@ -2800,34 +2971,6 @@ Panel {
 
     Item { Layout.fillWidth: true }
   }
-
-    // The queue actions get a row of their own, and only the extended popup has
-    // the room for it: everything else lives in the transport row.
-    RowLayout {
-      Layout.fillWidth: true
-      visible: playerColumn.wide
-      spacing: Style.space(6)
-
-      Item { Layout.fillWidth: true }
-
-      Button {
-        text: "Убрать"
-        foreground: root.textColor
-        enabled: root.hasTrack
-        opacity: enabled ? 1.0 : 0.4
-        tooltipText: "Убрать текущий трек из очереди"
-        onClicked: root.removeCurrentTrack()
-      }
-
-      Button {
-        text: "Очистить"
-        foreground: root.textColor
-        enabled: root.queue.length > 0
-        opacity: enabled ? 1.0 : 0.4
-        tooltipText: "Очистить очередь"
-        onClicked: root.clearQueue()
-      }
-    }
 
   RowLayout {
     Layout.fillWidth: true
@@ -3056,7 +3199,7 @@ Panel {
         HeaderRow { Layout.fillWidth: true }
         PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
         SignInBlock { Layout.fillWidth: true }
-        PlayerColumn { Layout.fillWidth: true; wide: false }
+        PlayerColumn { Layout.fillWidth: true }
         PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
         TabsRow { Layout.fillWidth: true }
         SearchFieldRow { id: compactFieldRow; Layout.fillWidth: true }
@@ -3076,29 +3219,14 @@ Panel {
         HeaderRow { Layout.fillWidth: true }
         PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
         SignInBlock { Layout.fillWidth: true }
+        // The player is a band, not a column: everything the list needs is
+        // underneath it, across the whole card.
+        PlayerBar { Layout.fillWidth: true; visible: root.signedIn }
+        PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
 
-        RowLayout {
-          Layout.fillWidth: true
-          Layout.fillHeight: true
-          spacing: Style.space(14)
-
-          PlayerColumn {
-            wide: true
-            Layout.fillWidth: true
-            Layout.preferredWidth: Style.space(240)
-            Layout.alignment: Qt.AlignTop
-          }
-
-          ColumnLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            spacing: Style.spacing.controlGap
-
-            TabsRow { Layout.fillWidth: true }
-            SearchFieldRow { id: extendedFieldRow; Layout.fillWidth: true }
-            TrackList { id: extendedList }
-          }
-        }
+        TabsRow { Layout.fillWidth: true }
+        SearchFieldRow { id: extendedFieldRow; Layout.fillWidth: true }
+        TrackList { id: extendedList }
 
         HintRow { Layout.fillWidth: true }
         LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
