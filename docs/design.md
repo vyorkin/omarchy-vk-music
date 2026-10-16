@@ -523,6 +523,12 @@ in both popup shapes, and it no longer competes with the header for room.
 
 ## Two views for playlists
 
+The cursor's mark is the same in both views: a selected fill. A row takes it behind
+everything, and so does a card — cover and captions together, with a few pixels of rim
+showing around the picture, which is what makes a card read as one thing rather than a
+picture with a label under it. The cover keeps only the hover border, so the two states
+say two different things instead of overlapping.
+
 People follow the same switch as playlists, because choosing a person is picking a
 face: in the gallery they are cards — the picture in a circle, the name under it, two
 lines for a long one — and in the list they are rows with a small round picture and

@@ -1860,6 +1860,19 @@ Panel {
     // twice: a border alone is easy to miss under a bright picture.
     opacity: cardArea.containsMouse && !card.selected ? 0.82 : 1.0
 
+    // The selected fill goes behind the whole card — cover and captions — which is
+    // exactly what a row in a list does, so the same state looks the same in both
+    // views. A rim of it shows around the picture, which is what makes the card read
+    // as one thing rather than as a picture with a label under it.
+    BorderSurface {
+      anchors.fill: parent
+      anchors.margins: -Style.space(4)
+      radius: Style.cornerRadius
+      color: Style.selectedFillFor(Color.foreground, Color.accent)
+      borderSpec: Border.none()
+      visible: card.selected
+    }
+
     Column {
       id: body
       width: parent.width
@@ -1871,9 +1884,10 @@ Panel {
         height: width
         radius: Style.spacing.labelGap
         color: Color.popups.background
-        borderSpec: card.selected || cardArea.containsMouse
-          ? Border.controlSpec(card.selected ? "selected" : "hover",
-                               Color.foreground, Color.accent, Color.urgent)
+        // The cover keeps only the hover border: selection is the fill behind the
+        // card, and two marks for one state would say nothing extra.
+        borderSpec: cardArea.containsMouse && !card.selected
+          ? Border.controlSpec("hover", Color.foreground, Color.accent, Color.urgent)
           : Border.none()
 
         Image {
@@ -1943,6 +1957,16 @@ Panel {
     // little as well when the pointer is on it.
     opacity: personCardArea.containsMouse && !personCard.selected ? 0.82 : 1.0
 
+    // The same selected fill as a playlist card, for the same reason.
+    BorderSurface {
+      anchors.fill: parent
+      anchors.margins: -Style.space(4)
+      radius: Style.cornerRadius
+      color: Style.selectedFillFor(Color.foreground, Color.accent)
+      borderSpec: Border.none()
+      visible: personCard.selected
+    }
+
     Column {
       id: body
       width: parent.width
@@ -1953,9 +1977,8 @@ Panel {
         height: width
         radius: width / 2
         color: Color.popups.background
-        borderSpec: personCard.selected || personCardArea.containsMouse
-          ? Border.controlSpec(personCard.selected ? "selected" : "hover",
-                               Color.foreground, Color.accent, Color.urgent)
+        borderSpec: personCardArea.containsMouse && !personCard.selected
+          ? Border.controlSpec("hover", Color.foreground, Color.accent, Color.urgent)
           : Border.none()
 
         Image {
