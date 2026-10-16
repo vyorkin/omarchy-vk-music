@@ -1819,6 +1819,104 @@ Panel {
     }
   }
 
+  // A track in a list: its place, its name and its artist on two lines, and its
+  // length on the right. No cover — three hundred thumbnails is a slow list, and
+  // the album art is one line higher in the player. The number is left out where
+  // it means nothing (a search result has no place in a playlist), and the playing
+  // row says so in the accent colour while the cursor keeps the fill.
+  component TrackRow: Item {
+    id: trackRow
+    property var track: null
+    property int position: 0
+    property bool selected: false
+    signal activated()
+    signal contextRequested()
+
+    width: parent ? parent.width : 0
+    height: Style.space(44)
+
+    readonly property bool playing: trackRow.track !== null
+      && root.isPlayingTrack(trackRow.track.key)
+
+    BorderSurface {
+      anchors.fill: parent
+      radius: Style.cornerRadius
+      color: Style.selectedFillFor(Color.foreground, Color.accent)
+      borderSpec: Border.none()
+      visible: trackRow.selected
+    }
+
+    Text {
+      id: positionText
+      width: trackRow.position > 0 ? Style.space(28) : 0
+      visible: trackRow.position > 0
+      anchors.left: parent.left
+      anchors.leftMargin: Style.space(6)
+      anchors.verticalCenter: parent.verticalCenter
+      horizontalAlignment: Text.AlignRight
+      textFormat: Text.PlainText
+      text: trackRow.position > 0 ? String(trackRow.position) : ""
+      color: trackRow.playing ? Color.accent : root.dim
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    Text {
+      id: durationText
+      width: Style.space(42)
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(8)
+      anchors.verticalCenter: parent.verticalCenter
+      horizontalAlignment: Text.AlignRight
+      textFormat: Text.PlainText
+      text: trackRow.track ? root.clock(Number(trackRow.track.duration || 0)) : ""
+      color: trackRow.playing ? Color.accent : root.dim
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    Column {
+      anchors.left: positionText.right
+      anchors.leftMargin: Style.space(6)
+      anchors.right: durationText.left
+      anchors.rightMargin: Style.space(6)
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(1)
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        maximumLineCount: 1
+        text: trackRow.track ? String(trackRow.track.title || "") : ""
+        color: trackRow.playing ? Color.accent : root.textColor
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        maximumLineCount: 1
+        text: trackRow.track ? String(trackRow.track.artist || "") : ""
+        color: trackRow.playing ? Color.accent : root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      acceptedButtons: Qt.LeftButton | Qt.RightButton
+      cursorShape: Qt.PointingHandCursor
+      onClicked: function(mouse) {
+        if (mouse.button === Qt.RightButton) trackRow.contextRequested()
+        else trackRow.activated()
+      }
+    }
+  }
+
   // A playlist as a row: its cover, its name, and how long it is. The cover is the
   // small one VK keeps for exactly this, so a list of thirty rows costs thirty
   // thumbnails rather than thirty covers, and the text sits on two lines so a long
@@ -2169,14 +2267,12 @@ Panel {
         Repeater {
           id: queueRepeater
           model: root.upcoming
-          delegate: Button {
-            width: listColumn.width
-            leftAlign: true
+          delegate: TrackRow {
+            track: modelData
+            position: root.upcomingStart + index + 1
             selected: index === root.cursor
-            text: modelData ? ((root.upcomingStart + index + 1) + ".  " + modelData.artist + " — " + modelData.title) : ""
-            foreground: root.textColor
-            onClicked: root.playQueueAt(root.upcomingStart + index)
-            onRightClicked: root.openRowMenu(modelData, root.upcomingStart + index)
+            onActivated: root.playQueueAt(root.upcomingStart + index)
+            onContextRequested: root.openRowMenu(modelData, root.upcomingStart + index)
           }
         }
 
@@ -2357,20 +2453,11 @@ Panel {
         Repeater {
           id: browseTrackRepeater
           model: root.browseSlug === "radiostations" ? [] : root.browseTracks
-          delegate: Button {
-            width: listColumn.width
-            leftAlign: true
+          delegate: TrackRow {
+            track: modelData
             selected: index === root.cursor
-            text: modelData
-              ? ((root.isPlayingTrack(modelData.key) ? "▶  " : "")
-                 + modelData.artist + " — " + modelData.title)
-              : ""
-            foreground: modelData && root.isPlayingTrack(modelData.key) ? Color.accent : root.textColor
-            onClicked: if (modelData) {
-              if (root.browseSlug === "radiostations") root.playStation(modelData)
-              else root.playBrowseTrack(index)
-            }
-            onRightClicked: if (root.browseSlug !== "radiostations") root.openRowMenu(modelData)
+            onActivated: if (modelData) root.playBrowseTrack(index)
+            onContextRequested: root.openRowMenu(modelData)
           }
         }
 
@@ -2397,17 +2484,12 @@ Panel {
         Repeater {
           id: playlistTrackRepeater
           model: root.openPlaylistTracks
-          delegate: Button {
-            width: listColumn.width
-            leftAlign: true
+          delegate: TrackRow {
+            track: modelData
+            position: index + 1
             selected: index === root.cursor
-            text: modelData
-              ? ((root.isPlayingTrack(modelData.key) ? "▶  " : "")
-                 + (index + 1) + ".  " + modelData.artist + " — " + modelData.title)
-              : ""
-            foreground: modelData && root.isPlayingTrack(modelData.key) ? Color.accent : root.textColor
-            onClicked: root.playPlaylistTrack(index)
-            onRightClicked: root.openRowMenu(modelData)
+            onActivated: root.playPlaylistTrack(index)
+            onContextRequested: root.openRowMenu(modelData)
           }
         }
 
@@ -2517,17 +2599,11 @@ Panel {
         Repeater {
           id: resultRepeater
           model: root.resultsShown
-          delegate: Button {
-            width: listColumn.width
-            leftAlign: true
+          delegate: TrackRow {
+            track: modelData
             selected: index === root.cursor
-            text: modelData
-              ? ((root.isPlayingTrack(modelData.key) ? "▶  " : "")
-                 + modelData.artist + " — " + modelData.title)
-              : ""
-            foreground: modelData && root.isPlayingTrack(modelData.key) ? Color.accent : root.textColor
-            onClicked: root.playSearchResult(index)
-            onRightClicked: root.openRowMenu(modelData)
+            onActivated: root.playSearchResult(index)
+            onContextRequested: root.openRowMenu(modelData)
           }
         }
       }

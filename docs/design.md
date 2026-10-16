@@ -433,7 +433,16 @@ in both popup shapes, and it no longer competes with the header for room.
 
 ## Two views for playlists
 
-A row is not a line of text with a dot in the middle: it carries the playlist's
+A track in a list is a row too, and the same one everywhere it appears — the queue,
+a playlist, a section and a search — because four ways of writing «artist — title»
+was four things to learn. `TrackRow` puts the track's place on the left when it has
+one, the title and the artist on two lines, and the length on the right; the playing
+row is written in the accent colour while the cursor keeps the fill, and a row with
+no place in a playlist simply leaves the number column out. No cover: three hundred
+thumbnails is a slow list, and the album art is already one line higher in the
+player.
+
+A playlist row is not a line of text with a dot in the middle: it carries the playlist's
 cover at 28 pixels, the name on one line and «N треков» in the muted colour under
 it. The cover is the thumbnail VK keeps for exactly this (`photo_68`, then
 `photo_135`), so a page of thirty playlists costs thirty small images rather than
