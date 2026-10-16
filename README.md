@@ -62,6 +62,9 @@ hours, and it can ask for a captcha and an SMS code.
 | Bar, right click | Play / pause |
 | Bar, middle click | Next track |
 | Media keys | Through MPRIS, no configuration needed |
+| Right click on a track row | «В очередь» appends it, «Следующим» puts it right after the current track |
+| Wheel over the bar widget | Volume, five percent a notch |
+| `/` | Jumps into the search field; with it empty, the recent searches are listed |
 | Esc | Clears the search box first; a second press closes the popup |
 | Попап | Two shapes, chosen in ⚙ → Попап: compact (player above the list) and extended (player beside it, with shuffle, repeat and queue actions) |
 | The popup's ⚙ tab | What the bar shows, cover shape, long titles, width, restore, notifications, cache |
@@ -88,6 +91,8 @@ omarchy-vk-music section explore         # one catalog page, with its cursor
 omarchy-vk-music section explore PUlYVA8FWRs   # the next page
 omarchy-vk-music radio                   # the live stations
 omarchy-vk-music play radio 1            # play a station
+omarchy-vk-music queue add <key>       # append to the queue
+omarchy-vk-music queue next <key>      # play right after the current track
 omarchy-vk-music queue remove 3        # drop a queue entry
 omarchy-vk-music queue clear           # empty the queue
 omarchy-vk-music next | previous | pause

@@ -145,6 +145,12 @@ def parse_argv(argv: list[str]) -> dict:
             return {"command": "queue_remove", "index": int(words[1]) if len(words) > 1 else 0}
         if words[0] == "clear":
             return {"command": "queue_clear"}
+        if words[0] in ("add", "next"):
+            keys = [word for word in words[1:] if word]
+            if not keys:
+                raise SystemExit("использование: queue add|next <ключ> [<ключ>...]")
+            command = "queue_add" if words[0] == "add" else "queue_next"
+            return {"command": command, "keys": keys}
     if head == "jump":
         return {"command": "jump", "index": int(words[0]) if words else 0}
     if head == "section":
@@ -153,8 +159,9 @@ def parse_argv(argv: list[str]) -> dict:
             payload["startFrom"] = words[1]
         return payload
     if head == "search":
-        query = " ".join(words)
-        payload = {"command": "search", "query": query}
+        remember = "--remember" in words
+        query = " ".join(word for word in words if word != "--remember")
+        payload = {"command": "search", "query": query, "remember": remember}
         return {"command": "play_search", "query": query} if play_after else payload
     if head == "radio":
         return {"command": "radio"}

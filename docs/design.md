@@ -311,10 +311,50 @@ Three things learned in the move:
   nesting is invisible in the source, but a nested layout has a size of its own:
   the sign-in block took 384 of the popup's pixels and left the list 6. Printing
   every child's height is what found it.
+* Screen coordinates for testing are a moving target: the widget's own width
+  changes with the track, the bar re-centres the widget when it does, and the
+  panel follows the widget. The technique that finally worked was a temporary
+  full-size `MouseArea` inside the floating card logging its local click
+  coordinates — a click that reaches the probe hit the card but not a button, and
+  a click that reaches no probe is a button. Scanning x across the row found the
+  buttons' real rectangle after two rounds of estimating them wrongly from
+  screenshots.
 * The shape is read through a function (`isExtended()`), not a cached property,
   for the reason `onAir()` is: a `readonly property bool` digging into a field of
   a `var` kept its first value, and the card stayed 400 wide after the setting was
   switched until the shell was restarted.
+
+## Adding to the queue, and the right mouse button
+
+The queue used to be whatever the last command made it, so looking something up
+cost you the list you were listening to. Two verbs fix that, and they are the only
+ones that touch a queue without replacing it:
+
+* `queue add <key>` appends to the end (`Player.enqueue`).
+* `queue next <key>` inserts right after the current track (`Player.insert_next`),
+  so the next «next» plays them; with nothing playing yet they simply become the
+  queue.
+
+The popup reaches them by right-clicking a track row — in the queue, in a section
+page, and in the search results, but not on a radio station, which is a stream
+rather than a track. The offer is a small card floating over the panel's bottom
+edge: the track, «В очередь», «Следующим» and a cancel cross. It is anchored to the
+key catcher rather than laid out in the body, so nothing moves when it appears, and
+Esc closes it before it closes the popup.
+
+## The wheel, and a search one keystroke away
+
+The wheel over the bar widget is the volume, five percent a notch, the way most
+bars do it — the same `onWheel` the reference plugin uses. The steps go out live
+and a 400 ms timer writes the value down once the wheel stops, because a notch is a
+whole action rather than part of a drag.
+
+`/` anywhere in the popup opens the search view and puts the cursor in the field.
+With the field empty, the last few committed searches are offered back under
+«Недавние запросы», and the arrows and Enter pick one. Only a search that settled
+is remembered — the debounce means intermediate prefixes never reach the daemon —
+and the list lives in the state file (`searchHistory`, at most eight), read out of
+`status` by the widget.
 
 ## The transport row
 

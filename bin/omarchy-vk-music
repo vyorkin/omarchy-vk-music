@@ -71,6 +71,18 @@ case "$command_name" in
     case "$action" in
       remove) send "$(jq -nc --argjson index "$(number "${2:-0}")" '{command:"queue_remove", index:$index}')" ;;
       clear) send '{"command":"queue_clear"}' ;;
+      add|next)
+        [ $# -gt 0 ] && shift
+        if [ $# -eq 0 ]; then
+          printf 'использование: queue %s <ключ> [<ключ>...]\n' "$action" >&2
+          exit 2
+        fi
+        keys_json="$(printf '%s' "$*" | tr ' ' '\n' | jq -R . | jq -sc .)"
+        command="queue_add"
+        [ "$action" = "next" ] && command="queue_next"
+        send "$(jq -nc --argjson keys "$keys_json" --arg command "$command" \
+          '{command:$command, keys:$keys}')"
+        ;;
       *) send "$C_QUEUE" ;;
     esac
     ;;
@@ -86,7 +98,17 @@ case "$command_name" in
     send "$(jq -nc --arg query "$*" '{command:"suggestions", query:$query}')"
     ;;
   search)
-    send "$(jq -nc --arg query "$*" '{command:"search", query:$query}')"
+    remember=false
+    query=""
+    for word in "$@"; do
+      if [ "$word" = "--remember" ]; then
+        remember=true
+      else
+        query="${query}${query:+ }${word}"
+      fi
+    done
+    send "$(jq -nc --arg query "$query" --argjson remember "$remember" \
+      '{command:"search", query:$query, remember:$remember}')"
     ;;
   section)
     id="${1:-all}"

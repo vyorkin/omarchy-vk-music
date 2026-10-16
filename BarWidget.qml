@@ -395,6 +395,15 @@ Panel {
   // and the MPRIS updates from flooding: 50 ms is under the threshold where a
   // change feels detached from the hand.
   Timer {
+    id: wheelWrite
+    interval: 400
+    repeat: false
+    // A wheel notch is a whole action, unlike a drag: the volume is written down
+    // once the wheel stops, so a restart does not lose it.
+    onTriggered: if (root.volumeTarget >= 0) root.setVolume(root.volumeTarget, false)
+  }
+
+  Timer {
     id: liveVolume
     interval: 50
     repeat: false
@@ -580,6 +589,10 @@ Panel {
     })
   }
 
+  // Recent queries, most recent first, from the daemon's state file. A committed
+  // search is what goes in: the debounce means only settled text is ever sent.
+  readonly property var history: root.status.history || []
+
   function runSearch(force) {
     var text = root.query.trim()
     if (text.length < 2) {
@@ -597,7 +610,7 @@ Panel {
     var seq = root._searchSeq
     root.searchState = "searching"
     root.searchLoading = true
-    root.call([root.cli, "search", text], function(answer) {
+    root.call([root.cli, "search", text, "--remember"], function(answer) {
       if (seq !== root._searchSeq) return
       root.searchLoading = false
       if (answer && answer.ok) {
@@ -606,6 +619,28 @@ Panel {
       } else {
         root.searchState = "typing"
       }
+    })
+  }
+
+  // Right-clicking a row offers what can be done with a track without throwing
+  // away the queue you are listening to.
+  property var pendingTrack: null
+
+  function openRowMenu(track) {
+    if (!track || !track.key) return
+    root.pendingTrack = track
+  }
+
+  function closeRowMenu() {
+    root.pendingTrack = null
+  }
+
+  function queuePendingTrack(next) {
+    var track = root.pendingTrack
+    root.closeRowMenu()
+    if (!track || !track.key) return
+    root.call([root.cli, "queue", next ? "next" : "add", String(track.key)], function() {
+      root.refresh()
     })
   }
 
@@ -631,7 +666,10 @@ Panel {
       return root.browseSlug === "radiostations" ? root.stations : root.browseTracks
     }
     if (root.view === "search") {
-      return root.resultsShown.length > 0 ? root.resultsShown : root.suggestionsShown
+      if (root.resultsShown.length > 0) return root.resultsShown
+      // With an empty field the list on screen is the recent queries.
+      if (root._queryLength < 2 && root.history.length > 0) return root.history
+      return root.suggestionsShown
     }
     return []
   }
@@ -660,9 +698,11 @@ Panel {
         : root.activeList().browseTrackRepeater.itemAt(index)
     }
     if (root.view === "search") {
-      return root.resultsShown.length > 0
-        ? root.activeList().resultRepeater.itemAt(index)
-        : root.activeList().suggestionRepeater.itemAt(index)
+      if (root.resultsShown.length > 0) return root.activeList().resultRepeater.itemAt(index)
+      if (root._queryLength < 2 && root.history.length > 0) {
+        return root.activeList().historyRepeater.itemAt(index)
+      }
+      return root.activeList().suggestionRepeater.itemAt(index)
     }
     return null
   }
@@ -693,7 +733,9 @@ Panel {
       else root.playBrowseTrack(index)
     } else if (root.view === "search") {
       if (root.resultsShown.length > 0) root.playSearchResult(index)
-      else root.searchSuggestion(String(root.suggestionsShown[index]))
+      else if (root._queryLength < 2 && root.history.length > 0) {
+        root.searchSuggestion(String(root.history[index]))
+      } else root.searchSuggestion(String(root.suggestionsShown[index]))
     } else {
       return false
     }
@@ -977,6 +1019,14 @@ Panel {
       if (mouse.button === Qt.MiddleButton) root.skipNext()
       else if (mouse.button === Qt.RightButton && root.hasTrack) root.togglePause()
       else root.toggle()
+    }
+    // The wheel is the volume, as it is on most bars: one notch, five percent.
+    // The steps go out live and the value is written down once the wheel stops.
+    onWheel: function(wheel) {
+      var delta = wheel.angleDelta.y > 0 ? 5 : -5
+      root.setVolume(Math.round(root.displayVolume) + delta, true)
+      wheelWrite.restart()
+      wheel.accepted = true
     }
   }
 
@@ -1297,6 +1347,63 @@ Panel {
   // The popup's list: the queue, a catalog section, the search results or the
   // settings page. It is a component of its own because the extended popup shows
   // it beside the player rather than under it.
+  // What a right-click on a track row offers. It floats over the panel, anchored
+  // to the bottom of the key catcher, so nothing moves when it appears.
+  component RowMenu: BorderSurface {
+    id: rowMenu
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    anchors.margins: Style.space(10)
+    radius: Style.cornerRadius
+    color: Color.popups.background
+    borderSpec: Border.controlSpec("selected", Color.foreground, Color.accent, Color.urgent)
+    padding: Style.spacing.controlGap
+    implicitHeight: menuRow.implicitHeight + rowMenu.contentTopInset + rowMenu.contentBottomInset
+    visible: root.pendingTrack !== null
+
+    RowLayout {
+      id: menuRow
+      x: rowMenu.contentLeftInset
+      y: rowMenu.contentTopInset
+      width: rowMenu.width - rowMenu.contentLeftInset - rowMenu.contentRightInset
+      spacing: Style.space(6)
+
+      Text {
+        Layout.fillWidth: true
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        color: root.textColor
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+        text: root.pendingTrack
+          ? (root.pendingTrack.artist + " — " + root.pendingTrack.title)
+          : ""
+      }
+
+      Button {
+        text: "В очередь"
+        foreground: root.textColor
+        tooltipText: "Добавить в конец очереди"
+        onClicked: root.queuePendingTrack(false)
+      }
+
+      Button {
+        text: "Следующим"
+        foreground: root.textColor
+        tooltipText: "Поставить сразу после текущего трека"
+        onClicked: root.queuePendingTrack(true)
+      }
+
+      Button {
+        iconText: "󰅖"
+        foreground: root.textColor
+        tooltipText: "Отмена"
+        onClicked: root.closeRowMenu()
+      }
+    }
+  }
+
   // One line of key hints under the list, above the loading line, which stays the
   // bottom edge of the card.
   component HintRow: Text {
@@ -1320,6 +1427,7 @@ Panel {
     property alias browseTrackRepeater: browseTrackRepeater
     property alias suggestionRepeater: suggestionRepeater
     property alias resultRepeater: resultRepeater
+    property alias historyRepeater: historyRepeater
 
     Layout.fillWidth: true
     Layout.fillHeight: true
@@ -1380,6 +1488,7 @@ Panel {
             text: modelData ? ((root.upcomingStart + index + 1) + ".  " + modelData.artist + " — " + modelData.title) : ""
             foreground: root.textColor
             onClicked: root.playQueueAt(root.upcomingStart + index)
+            onRightClicked: root.openRowMenu(modelData)
           }
         }
 
@@ -1505,6 +1614,7 @@ Panel {
               if (root.browseSlug === "radiostations") root.playStation(modelData)
               else root.playBrowseTrack(index)
             }
+            onRightClicked: if (root.browseSlug !== "radiostations") root.openRowMenu(modelData)
           }
         }
 
@@ -1527,7 +1637,7 @@ Panel {
         visible: root.view === "search"
 
         Text {
-          visible: root._queryLength < 2
+          visible: root._queryLength < 2 && root.history.length === 0
           width: parent.width
           textFormat: Text.PlainText
           wrapMode: Text.WordWrap
@@ -1535,6 +1645,26 @@ Panel {
           color: root.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
+        }
+
+        // What was searched before, offered back while the field is empty.
+        PanelSectionHeader {
+          text: "Недавние запросы"
+          foreground: root.dim
+          visible: root._queryLength < 2 && root.history.length > 0
+        }
+
+        Repeater {
+          id: historyRepeater
+          model: root._queryLength < 2 ? root.history : []
+          delegate: Button {
+            width: listColumn.width
+            leftAlign: true
+            selected: index === root.cursor
+            text: modelData ? String(modelData) : ""
+            foreground: root.textColor
+            onClicked: if (modelData) root.searchSuggestion(String(modelData))
+          }
         }
 
         PanelSectionHeader {
@@ -1569,6 +1699,7 @@ Panel {
               : ""
             foreground: modelData && root.isPlayingTrack(modelData.key) ? Color.accent : root.textColor
             onClicked: root.playSearchResult(index)
+            onRightClicked: root.openRowMenu(modelData)
           }
         }
       }
@@ -2267,6 +2398,10 @@ Panel {
       // Esc backs out one step at a time: the search it can clear, the popup it
       // closes.
       onCloseRequested: {
+        if (root.pendingTrack !== null) {
+          root.closeRowMenu()
+          return
+        }
         if (root.view === "search" && root.query.length > 0) {
           root.clearSearch()
           root.activeField().forceActiveFocus()
@@ -2276,6 +2411,12 @@ Panel {
       }
       onTextKey: function(character) {
         if (root.activeField().activeFocus) return
+        if (character === "/") {
+          // A search is one keystroke away, as it is in most editors.
+          root.view = "search"
+          root.activeField().forceActiveFocus()
+          return
+        }
         if (character === "n") root.skipNext()
         else if (character === "p") root.skipPrevious()
       }
@@ -2338,6 +2479,9 @@ Panel {
         HintRow { Layout.fillWidth: true }
         LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
       }
+
+      // Last inside the key catcher, so it floats over whichever body is showing.
+      RowMenu { }
     }
   }
 }

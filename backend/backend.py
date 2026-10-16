@@ -124,6 +124,10 @@ LEGACY_PREFERENCES = {
 # enough to be ready, long enough that flipping through tracks fetches nothing.
 PREFETCH_DELAY_S = 4.0
 
+# How many committed searches the popup offers back. Kept small: this is a
+# convenience, not a log.
+SEARCH_HISTORY_LIMIT = 8
+
 # Errors that mean "stop and tell the user", mapped to the message the bar shows.
 HALT_MESSAGES = {
     5: "Сессия VK отклонена. Нужен повторный вход.",
@@ -465,6 +469,9 @@ class Player:
         self._ignore_pause_until = 0.0
         self.playing_from_cache = False
         self.liked_copies: dict[str, str] = {}
+        # Recent queries, most recent first. It lives here because the state file
+        # is here; the widget only reads it out of `status`.
+        self.search_history: list[str] = []
         # Buffering progress, as the interface needs it: `percent` is None while
         # the length is unknown (a stream that is not being cached), which is what
         # tells the widget to draw an indeterminate indicator instead of a bar.
@@ -508,6 +515,9 @@ class Player:
         self.liked_copies = {
             str(key): str(value) for key, value in (stored.get("likedCopies") or {}).items()
         }
+        self.search_history = [
+            str(item) for item in (stored.get("searchHistory") or []) if str(item).strip()
+        ][:SEARCH_HISTORY_LIMIT]
         self.index = int(stored.get("index", -1)) if restored else -1
         self.position = int(stored.get("position", 0) or 0) if self.preferences.get(
             "restorePosition", True
@@ -530,6 +540,7 @@ class Player:
                 "source": self.source,
                 "queue": [track_to_state(track) for track in self.queue],
                 "likedCopies": self.liked_copies,
+                "searchHistory": self.search_history,
                 "index": self.index,
                 "position": self.position,
             }
@@ -971,6 +982,45 @@ class Player:
                     self.index -= 1
             self.save_state()
 
+    def enqueue(self, tracks: Sequence[Track]) -> None:
+        """Put tracks at the end of the queue, leaving what plays alone.
+
+        Until now the queue was whatever the last command made it, so looking
+        something up cost you the list you were listening to.
+        """
+        with self.lock:
+            if not tracks:
+                return
+            self.queue.extend(tracks)
+            self.save_state()
+
+    def insert_next(self, tracks: Sequence[Track]) -> None:
+        """Put tracks right after the current one: the next «next» plays them."""
+        with self.lock:
+            if not tracks:
+                return
+            if self.index < 0 or not self.queue:
+                # Nothing is playing yet, so the tracks simply become the queue.
+                self.queue = list(tracks)
+                self.index = -1
+            else:
+                self.queue[self.index + 1:self.index + 1] = list(tracks)
+            self.save_state()
+
+    def remember_search(self, query: str) -> None:
+        """Keep the last few committed searches, most recent first."""
+        text = " ".join(str(query).split())
+        if len(text) < 2:
+            return
+        with self.lock:
+            lowered = text.casefold()
+            self.search_history = [
+                item for item in self.search_history if item.casefold() != lowered
+            ]
+            self.search_history.insert(0, text)
+            del self.search_history[SEARCH_HISTORY_LIMIT:]
+            self.save_state()
+
     def clear_queue(self) -> None:
         """Empty the queue and stop: the popup's "clear" action."""
         with self.lock:
@@ -1339,6 +1389,7 @@ class Player:
                 if 0 <= self.index + 1 < len(self.queue)
                 else None,
                 "preferences": self.preferences,
+                "history": list(self.search_history),
                 "cache": self.cache.stats(),
                 "session": session_summary(self.record),
             }
@@ -1774,9 +1825,15 @@ class Backend:
     def cmd_section(self, id: str, startFrom: str | None = None) -> dict[str, Any]:
         return self.player.section_items(id, startFrom)
 
-    def cmd_search(self, query: str = "", offset: int | None = None) -> dict[str, Any]:
+    def cmd_search(
+        self, query: str = "", offset: int | None = None, remember: bool = False
+    ) -> dict[str, Any]:
         if not query.strip():
             return {"query": "", "tracks": []}
+        if remember:
+            # Only a committed search is worth remembering. The search-as-you-type
+            # path would otherwise keep every prefix of every word.
+            self.player.remember_search(query)
         return self.player.search_items(query, offset)
 
     def cmd_suggestions(self, query: str = "") -> list[str]:
@@ -1859,15 +1916,7 @@ class Backend:
         whatever a repeated search happens to return. VK resolves the URLs at
         play time from these same keys, so storing them costs nothing.
         """
-        wanted = [str(key) for key in keys if str(key).strip()]
-        if not wanted:
-            raise VkApiError(0, "no track keys given", method="play_keys")
-        client = self.player.client
-        if client is None:
-            raise VkApiError(0, "not signed in", method="play_keys")
-        tracks = self.player.api(lambda: client.audio_get_by_keys(wanted[:100]))
-        if not tracks:
-            raise VkApiError(0, "VK returned nothing for those keys", method="play_keys")
+        tracks = self._tracks_by_keys(keys, "play_keys")
         self.player.play(
             list(tracks),
             index=index,
@@ -1909,6 +1958,29 @@ class Backend:
 
     def cmd_next(self) -> dict[str, Any]:
         self.player.next()
+        return self.player.status()
+
+    def _tracks_by_keys(self, keys: Sequence[str], method: str) -> list[Track]:
+        """Turn track keys into tracks: one `audio.getById` for the whole batch."""
+        wanted = [str(key) for key in keys if str(key).strip()]
+        if not wanted:
+            raise VkApiError(0, "no track keys given", method=method)
+        client = self.player.client
+        if client is None:
+            raise VkApiError(0, "not signed in", method=method)
+        tracks = self.player.api(lambda: client.audio_get_by_keys(wanted[:100]))
+        if not tracks:
+            raise VkApiError(0, "VK returned nothing for those keys", method=method)
+        return list(tracks)
+
+    def cmd_queue_add(self, keys: Sequence[str]) -> dict[str, Any]:
+        """Append tracks to the queue; what is playing keeps playing."""
+        self.player.enqueue(self._tracks_by_keys(keys, "queue_add"))
+        return self.player.status()
+
+    def cmd_queue_next(self, keys: Sequence[str]) -> dict[str, Any]:
+        """Play these right after the current track."""
+        self.player.insert_next(self._tracks_by_keys(keys, "queue_next"))
         return self.player.status()
 
     def cmd_queue_remove(self, index: int = 0) -> dict[str, Any]:
