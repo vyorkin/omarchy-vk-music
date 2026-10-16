@@ -1714,11 +1714,14 @@ Timer {
       visible: root.hasTrack && root.barShowControls
       height: root.implicitHeight
       anchors.verticalCenter: parent.verticalCenter
+      // The reference leaves two pixels between its transport buttons.
+      spacing: Style.space(2)
 
       // The same three glyphs the reference widget shows, in the same shape: previous,
       // play or pause, next — 24 px each, nothing drawn between them.
       BarGlyph {
         name: "skip-back"
+        filled: true
         icon: "󰒮"
         tooltip: "Предыдущий трек"
         onClicked: root.skipPrevious()
@@ -1728,6 +1731,7 @@ Timer {
         // The glyph never turns into a downloader: play stays play, dimmed while the
         // track is being fetched.
         name: root.playing ? "pause" : "play"
+        filled: true
         icon: root.playing ? "󰏤" : "󰐊"
         tooltip: root.playing ? "Пауза" : "Играть"
         onClicked: root.togglePause()
@@ -1735,6 +1739,7 @@ Timer {
 
       BarGlyph {
         name: "skip-forward"
+        filled: true
         icon: "󰒭"
         tooltip: "Следующий трек"
         onClicked: root.skipNext()

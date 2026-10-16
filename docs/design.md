@@ -252,6 +252,10 @@ clock. The glyph size is the bar's own icon token rather than a panel font, so t
 cannot grow taller than the bar, and the middle glyph still never turns into a download
 icon — it dims while the track is being fetched.
 
+The transport glyphs are FILLED — the reference sets `filled: true` on all three of its
+transport buttons, which is what turns Lucide's polygons into solid shapes. Its heart is
+the exception: filled only while the track is in the favourites, outlined otherwise.
+
 The glyphs themselves are Lucide's own paths, vendored in `LucideIcons.js` (ISC licence,
 v0.468.0, the same set the reference widget uses) and drawn as an SVG data URL with a
 2 px round stroke and no fill — except the heart, which is filled when the track is in
