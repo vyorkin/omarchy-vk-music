@@ -62,6 +62,7 @@ hours, and it can ask for a captcha and an SMS code.
 | Bar, right click | Play / pause |
 | Bar, middle click | Next track |
 | Media keys | Through MPRIS, no configuration needed |
+| Попап | Two shapes, chosen in ⚙ → Попап: compact (player above the list) and extended (player beside it, with shuffle, repeat and queue actions) |
 | The popup's ⚙ tab | What the bar shows, cover shape, long titles, width, restore, notifications, cache |
 | `↑` / `↓` in the popup | Move the selection through the list; playback is not touched |
 | `Enter` in the popup | Play the selected row; with nothing selected — play / pause |

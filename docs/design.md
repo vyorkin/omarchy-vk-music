@@ -285,16 +285,36 @@ Notes from building it:
 
 ## Two popups, one set of blocks
 
-The popup's list — the queue, a catalog section, the search results, the settings
-page — is a component of its own (`TrackList`). It has to be: the extended popup
-shows it beside the player instead of under it, and a layout cannot move a block,
-only a component can be placed twice.
+The popup comes in two shapes, chosen in the settings:
 
-Two things learned in the move. A component cannot see the ids around it, so the
-delegate repeaters are handed out through `property alias` — the keyboard cursor
-uses them to scroll the selected row into view. And the component's root must *be*
-the Flickable: a Flickable nested inside another one has no size of its own, and
-the list came out zero pixels tall with the outer one empty.
+* **Compact** — 400x690, the player above the list, the size it has always been.
+* **Extended** — 620x760, the player on the left (a 128 px cover, the seek
+  slider, the transport, a row of shuffle, repeat, "Убрать" and "Очистить") and
+  the list on the right, both under one header.
+
+They are not two popups: they are two arrangements of the same blocks, each block
+a component of its own (`HeaderRow`, `SignInBlock`, `PlayerColumn`, `TabsRow`,
+`SearchFieldRow`, `LoadingLine`, `TrackList`). A layout cannot move a block into
+another column; a component can be instantiated in either one. Only the visible
+shape takes keys, so `activeList()`, `activeField()` and `activeBody()` pick the
+one in use.
+
+Three things learned in the move:
+
+* A component cannot see the ids of the file around it, so the delegate repeaters
+  are handed out through `property alias` — the keyboard cursor uses them to
+  scroll the selected row into view — and the search field is reached the same
+  way, since two of them exist now.
+* A component's root must *be* the block, not wrap it. Both `TrackList` and five
+  smaller blocks first came out as `component X: RowLayout { RowLayout { ... } }`,
+  because the extracted text already began with its own declaration line. The
+  nesting is invisible in the source, but a nested layout has a size of its own:
+  the sign-in block took 384 of the popup's pixels and left the list 6. Printing
+  every child's height is what found it.
+* The shape is read through a function (`isExtended()`), not a cached property,
+  for the reason `onAir()` is: a `readonly property bool` digging into a field of
+  a `var` kept its first value, and the card stayed 400 wide after the setting was
+  switched until the shell was restarted.
 
 ## Queue actions
 
