@@ -308,6 +308,18 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* A hint at the bottom of the card is a hint on top of the last row of every list.
+  The key hints took the place of the title at the top instead, where the panel has
+  space that the content never needs, and the list got its last line back.
+* One column of rows is one cursor. A section shows its playlists and then its
+  tracks as two Repeaters in one column, and the cursor used to cover only the tracks
+  — so k from the first track stopped there instead of reaching the playlist above
+  it. The cursor list is the playlists followed by the tracks, and everything that
+  resolves a row accounts for the offset. The gallery is the exception, because there
+  the cards are the list and the tracks are drawn under them.
+* A cursor belongs to a list, not to a session. Moving between tabs, sections, a
+  person, a playlist or a search mode resets it: the position in the queue has
+  nothing to do with the position in a section.
 * A view preference is not the same as the view. `galleryMode` asked whether the
   playlist view was set to the gallery, which is a setting about playlists — so `j`
   stepped a whole row inside a playlist's tracks and inside the queue, where the

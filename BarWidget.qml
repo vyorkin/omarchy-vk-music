@@ -686,6 +686,7 @@ Panel {
   }
 
   function clearFilter() {
+    root.cursor = -1
     root.filter = ""
     root.filtering = false
     root.filterFocused = false
@@ -790,6 +791,7 @@ Panel {
 
   function setSearchMode(mode) {
     if (root.searchMode === mode) return
+    root.cursor = -1
     root.searchLoading = false
     root.playlistSearchLoading = false
     root.searchMode = mode
@@ -815,12 +817,13 @@ Panel {
       if (root.browseSlug === "person") return root.filtered(root.personPlaylists)
       if (root.browseSlug === "friends") return root.filtered(root.friends)
       if (root.browseSlug === "radiostations") return root.stations
+      var lists = root.filtered(root.browsePlaylists)
       // With the gallery on, the cards in front of you are the playlists, so the
-      // cursor walks those rather than the section's tracks underneath them.
-      if (root.galleryMode && root.browsePlaylists.length > 0) {
-        return root.filtered(root.browsePlaylists)
-      }
-      return root.filtered(root.browseTracks)
+      // cursor walks those rather than the section's tracks underneath them. In the
+      // list view both are rows in one column, so the cursor walks both: k from the
+      // first track reaches the last playlist.
+      if (root.galleryMode) return lists
+      return lists.concat(root.filtered(root.browseTracks))
     }
     if (root.view === "search") {
       if (root.searchMode === "playlists") return root.filtered(root.foundPlaylists)
@@ -834,6 +837,15 @@ Panel {
 
   function cursorCount() {
     return root.cursorItems().length
+  }
+
+  // Where the section's tracks start in the cursor's list: the playlists come first.
+  function browseCursorOffset() {
+    if (root.browseSlug !== "" && root.browseSlug !== "person" && root.browseSlug !== "friends") {
+      if (root.galleryMode) return 0
+      return root.filtered(root.browsePlaylists).length
+    }
+    return 0
   }
 
   function moveCursor(step) {
@@ -852,6 +864,10 @@ Panel {
     if (root.openPlaylist !== null) return root.activeList().playlistTrackRepeater.itemAt(index)
     if (root.view === "queue") return root.activeList().queueRepeater.itemAt(index)
     if (root.view === "browse") {
+      var offset = root.browseCursorOffset()
+      if (offset > 0 && index >= offset) {
+        return root.activeList().browseTrackRepeater.itemAt(index - offset)
+      }
       if (root.galleryMode && root.browseSlug !== "person" && root.browseSlug !== "friends"
           && root.browseSlug !== "radiostations" && root.browsePlaylists.length > 0) {
         return root.activeList().browseGrid.itemAt(index)
@@ -912,7 +928,11 @@ Panel {
     if (root.view === "queue") {
       root.playQueueAt(root.indexOfItem(root.queue, item))
     } else if (root.view === "browse") {
-      if (root.galleryMode && root.browseSlug !== "person" && root.browseSlug !== "friends"
+      var offset = root.browseCursorOffset()
+      if (offset > 0 && index >= offset) {
+        root.playBrowseTrack(root.indexOfItem(root.browseTracks, item))
+      }
+      else if (root.galleryMode && root.browseSlug !== "person" && root.browseSlug !== "friends"
           && root.browseSlug !== "radiostations" && root.browsePlaylists.length > 0) {
         root.openPlaylistView(item)
       }
@@ -1042,6 +1062,7 @@ Panel {
   // Browsing: a catalog section page by page, or the live stations.
   function browseSource(slug) {
     if (!slug || root.browseSlug === slug) return
+    root.cursor = -1
     root.browseSlug = slug
     root.browseTracks = []
     root.browsePlaylists = []
@@ -1138,6 +1159,7 @@ Panel {
     root.clearBrowseLoading()
     root._browseSeq = root._browseSeq + 1
     var seqList = root._browseSeq
+    root.cursor = -1
     root.playlistBackView = root.view
     root.playlistBack = root.browseSlug
     root.openPlaylist = item
@@ -1159,6 +1181,7 @@ Panel {
   }
 
   function closePlaylistView() {
+    root.cursor = -1
     root.clearBrowseLoading()
     root._browseSeq = root._browseSeq + 1
     root.openPlaylist = null
@@ -1188,6 +1211,7 @@ Panel {
   }
 
   function browseFriends() {
+    root.cursor = -1
     root.focusList()
     root.clearBrowseLoading()
     root._browseSeq = root._browseSeq + 1
@@ -1209,6 +1233,7 @@ Panel {
   function openPerson(reference) {
     var text = String(reference || "").trim()
     if (text === "") return
+    root.cursor = -1
     root.clearBrowseLoading()
     root._browseSeq = root._browseSeq + 1
     var seqPerson = root._browseSeq
@@ -1242,6 +1267,7 @@ Panel {
   }
 
   function closePerson() {
+    root.cursor = -1
     root.person = null
     root.personPlaylists = []
   }
@@ -2363,17 +2389,6 @@ Panel {
 
   // One line of key hints under the list, above the loading line, which stays the
   // bottom edge of the card.
-  component HintRow: Text {
-    Layout.fillWidth: true
-    textFormat: Text.PlainText
-    elide: Text.ElideRight
-    color: root.dim
-    font.family: Style.font.family
-    font.pixelSize: Style.font.caption
-    text: root.keyHints
-    visible: root.signedIn
-  }
-
   component TrackList: ColumnLayout {
     id: view
 
@@ -2736,7 +2751,7 @@ Panel {
           model: root.browseSlug === "radiostations" ? [] : root.filtered(root.browseTracks)
           delegate: TrackRow {
             track: modelData
-            selected: index === root.cursor
+            selected: (root.browseCursorOffset() + index) === root.cursor
             onActivated: if (modelData) root.playBrowseTrack(root.indexOfItem(root.browseTracks, modelData))
             onContextRequested: root.openRowMenu(modelData)
           }
@@ -3213,11 +3228,18 @@ Panel {
     Layout.fillWidth: true
     spacing: Style.spacing.controlGap
 
-    PanelSectionHeader {
+    // The key hints live here now, where the title used to be: at the bottom of the
+    // card the row sat on the last track of every list.
+    Text {
       id: header
-      text: "vk music"
-      foreground: root.textColor
+      textFormat: Text.PlainText
+      elide: Text.ElideRight
+      verticalAlignment: Text.AlignVCenter
       Layout.alignment: Qt.AlignVCenter
+      text: root.keyHints
+      color: root.dim
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
     }
 
     Text {
@@ -3636,6 +3658,7 @@ Panel {
       foreground: root.textColor
       selected: root.view === "queue"
       onClicked: {
+        root.cursor = -1
         root.view = "queue"
         root.focusList()
       }
@@ -3646,6 +3669,7 @@ Panel {
       foreground: root.textColor
       selected: root.view === "browse"
       onClicked: {
+        root.cursor = -1
         root.view = "browse"
         root.browseSource(root.browseSlug !== "" ? root.browseSlug : "explore")
         root.focusList()
@@ -3657,6 +3681,7 @@ Panel {
       foreground: root.textColor
       selected: root.view === "search"
       onClicked: {
+        root.cursor = -1
         root.view = "search"
         searchField.forceActiveFocus()
       }
@@ -3667,7 +3692,10 @@ Panel {
       foreground: root.textColor
       selected: root.view === "settings"
       tooltipText: "Настройки"
-      onClicked: root.view = "settings"
+      onClicked: {
+        root.cursor = -1
+        root.view = "settings"
+      }
     }
 
     Item { Layout.fillWidth: true }
@@ -3858,7 +3886,6 @@ Panel {
         TabsRow { Layout.fillWidth: true }
         SearchFieldRow { id: compactFieldRow; Layout.fillWidth: true }
         TrackList { id: compactList }
-        HintRow { Layout.fillWidth: true }
         LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
       }
 
@@ -3881,8 +3908,6 @@ Panel {
         TabsRow { Layout.fillWidth: true }
         SearchFieldRow { id: extendedFieldRow; Layout.fillWidth: true }
         TrackList { id: extendedList }
-
-        HintRow { Layout.fillWidth: true }
         LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
       }
 
