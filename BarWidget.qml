@@ -3231,9 +3231,12 @@ Panel {
     Item { Layout.fillWidth: true }
 
     // Right of the tabs, which is where a view switch belongs: the same place in
-    // both popup shapes, and out of the way of the list's own header.
+    // both popup shapes, and out of the way of the list's own heading. It is about
+    // how a list of PLAYLISTS is drawn, so it has nothing to say inside one: the
+    // tracks of a playlist are tracks, not a gallery or a list to choose between.
     PlaylistViewSwitch {
-      visible: root.view === "browse" || (root.view === "search" && root.searchMode === "playlists")
+      visible: root.openPlaylist === null
+        && (root.view === "browse" || (root.view === "search" && root.searchMode === "playlists"))
     }
   }
 
