@@ -875,6 +875,25 @@ Panel {
 
   // What the list is showing, and what it is doing: the header is the one place
   // that says both, so the list itself never has to claim anything false.
+  // What the sticky row above the list says, and what its right button does: one
+  // place per view instead of one header per list.
+  function listHeading() {
+    if (root.view === "queue") {
+      if (root.queue.length === 0) return ""
+      var summary = root.listSummary(root.upcoming, "трек", "трека", "треков")
+      return summary === "" ? "Дальше в очереди" : "Дальше в очереди · " + summary
+    }
+    if (root.view === "browse") return root.browseHeader
+    if (root.view === "search") return root.searchHeaderVisible ? root.searchHeader : ""
+    return ""
+  }
+
+  function listAction() {
+    if (root.view === "browse" && root.openPlaylist !== null) return "Играть"
+    if (root.view === "queue" && root.queue.length > 0) return "Очистить"
+    return ""
+  }
+
   readonly property string browseHeader: {
     if (root.browseSlug === "playlist") {
       if (root.openPlaylistLoading) return root.openPlaylistTitle + " · загрузка…"
@@ -1952,7 +1971,7 @@ Panel {
     visible: root.signedIn
   }
 
-  component TrackList: Flickable {
+  component TrackList: ColumnLayout {
     id: view
 
     // The keyboard cursor scrolls the selected row into view, and a component
@@ -1968,18 +1987,83 @@ Panel {
     property alias playlistTrackRepeater: playlistTrackRepeater
     property alias searchGrid: searchGrid
     property alias searchPlaylistRows: searchPlaylistRows
+    // The parts of a Flickable the cursor and the diagnostics use, so the list can
+    // be a column with a header that does not scroll.
+    property alias contentY: scroller.contentY
+    property alias contentHeight: scroller.contentHeight
 
     Layout.fillWidth: true
     Layout.fillHeight: true
     visible: root.signedIn
-    clip: true
-    contentWidth: width
-    contentHeight: listColumn.implicitHeight
-    boundsBehavior: Flickable.StopAtBounds
+    spacing: Style.space(4)
+
+    // The heading of whatever the list is showing, out of the scroll: a heading
+    // that slides away with the rows stops being one. One row for every view, with
+    // the way back on the left and the view's own action on the right.
+    RowLayout {
+      Layout.fillWidth: true
+      spacing: Style.space(6)
+      visible: root.listHeading() !== ""
+
+      Button {
+        Layout.alignment: Qt.AlignVCenter
+        visible: root.openPlaylist !== null || root.person !== null
+        text: "Назад"
+        foreground: root.textColor
+        tooltipText: root.openPlaylist !== null ? "К плейлистам" : "К списку людей"
+        onClicked: {
+          if (root.openPlaylist !== null) {
+            root.closePlaylistView()
+            return
+          }
+          root.closePerson()
+          root.browseFriends()
+        }
+      }
+
+      PanelSectionHeader {
+        Layout.fillWidth: true
+        Layout.alignment: Qt.AlignVCenter
+        verticalAlignment: Text.AlignVCenter
+        text: root.listHeading()
+        foreground: root.dim
+      }
+
+      Button {
+        Layout.alignment: Qt.AlignVCenter
+        visible: root.listAction() !== ""
+        text: root.listAction()
+        foreground: root.textColor
+        tooltipText: root.listAction() === "Играть" ? "Играть весь плейлист" : "Очистить очередь"
+        enabled: root.listAction() === "Играть"
+          ? root.openPlaylistTracks.length > 0
+          : root.queue.length > 0
+        opacity: enabled ? 1.0 : 0.4
+        onClicked: {
+          if (root.listAction() === "Играть") root.playPlaylistTrack(0)
+          else root.clearQueue()
+        }
+      }
+    }
+
+    PanelSeparator {
+      Layout.fillWidth: true
+      foreground: root.textColor
+      visible: root.listHeading() !== ""
+    }
+
+    Flickable {
+      id: scroller
+      Layout.fillWidth: true
+      Layout.fillHeight: true
+      clip: true
+      contentWidth: width
+      contentHeight: listColumn.implicitHeight
+      boundsBehavior: Flickable.StopAtBounds
 
     Column {
       id: listColumn
-      width: view.width
+      width: scroller.width
       spacing: Style.space(4)
 
       // Queue: the sources that fill it, then the next few tracks.
@@ -2005,41 +2089,6 @@ Panel {
               onClicked: if (modelData) root.playSection(modelData.id, modelData.title)
             }
           }
-        }
-
-        RowLayout {
-          width: parent.width
-          height: implicitHeight
-          spacing: Style.space(6)
-          visible: root.queue.length > 0
-
-          PanelSectionHeader {
-            // The queue is numbered by absolute position, so the header carries the
-            // count and the remaining time: «Дальше в очереди · 96 треков · 5 ч 58 мин».
-            Layout.fillWidth: true
-            Layout.alignment: Qt.AlignVCenter
-            verticalAlignment: Text.AlignVCenter
-            text: {
-              var summary = root.listSummary(root.upcoming, "трек", "трека", "треков")
-              return summary === "" ? "Дальше в очереди" : "Дальше в очереди · " + summary
-            }
-            foreground: root.dim
-          }
-
-          Button {
-            id: queueClear
-            Layout.alignment: Qt.AlignVCenter
-            text: "Очистить"
-            foreground: root.textColor
-            tooltipText: "Очистить очередь"
-            onClicked: root.clearQueue()
-          }
-        }
-
-        PanelSeparator {
-          width: parent.width
-          foreground: root.textColor
-          visible: root.queue.length > 0
         }
 
         Repeater {
@@ -2127,40 +2176,6 @@ Panel {
         // of the line while the buttons sit in the middle of it, and the two never
         // look aligned. The caption takes the free width, so whatever follows it
         // ends up against the right edge.
-        RowLayout {
-          width: parent.width
-          height: implicitHeight
-          spacing: Style.space(6)
-          visible: root.browseHeader !== "" || root.person !== null
-
-          Button {
-            id: backButton
-            Layout.alignment: Qt.AlignVCenter
-            visible: root.person !== null
-            text: "Назад"
-            foreground: root.textColor
-            tooltipText: "К списку людей"
-            onClicked: {
-              root.closePerson()
-              root.browseFriends()
-            }
-          }
-
-          PanelSectionHeader {
-            Layout.fillWidth: true
-            Layout.alignment: Qt.AlignVCenter
-            verticalAlignment: Text.AlignVCenter
-            text: root.browseHeader
-            foreground: root.dim
-          }
-        }
-
-        PanelSeparator {
-          width: parent.width
-          foreground: root.textColor
-          visible: root.person !== null
-        }
-
         Text {
           width: parent.width
           textFormat: Text.PlainText
@@ -2303,44 +2318,7 @@ Panel {
         spacing: Style.space(4)
         visible: root.view === "browse" && root.openPlaylist !== null
 
-        RowLayout {
-          width: parent.width
-          height: implicitHeight
-          spacing: Style.space(6)
-
-          Button {
-            Layout.alignment: Qt.AlignVCenter
-            text: "Назад"
-            foreground: root.textColor
-            tooltipText: "К плейлистам"
-            onClicked: root.closePlaylistView()
-          }
-
-          PanelSectionHeader {
-            Layout.fillWidth: true
-            Layout.alignment: Qt.AlignVCenter
-            verticalAlignment: Text.AlignVCenter
-            text: root.browseHeader
-            foreground: root.dim
-          }
-
-          Button {
-            Layout.alignment: Qt.AlignVCenter
-            text: "Играть"
-            foreground: root.textColor
-            enabled: root.openPlaylistTracks.length > 0
-            opacity: enabled ? 1.0 : 0.4
-            tooltipText: "Играть весь плейлист"
-            onClicked: root.playPlaylistTrack(0)
-          }
-        }
-
         // The tracks are a list, not more controls: the line says so.
-        PanelSeparator {
-          width: parent.width
-          foreground: root.textColor
-        }
-
         Repeater {
           id: playlistTrackRepeater
           model: root.openPlaylistTracks
@@ -2789,6 +2767,7 @@ Panel {
         }
       }
 
+    }
     }
   }
 

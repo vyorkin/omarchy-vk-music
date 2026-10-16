@@ -308,6 +308,13 @@ Three things learned in the move:
   are handed out through `property alias` — the keyboard cursor uses them to
   scroll the selected row into view — and the search field is reached the same
   way, since two of them exist now.
+* A heading inside the scroll stops being a heading. Every view's header row lived
+  in the list's own column, so it slid away with the rows — and for the settings
+  page, which is the longest thing in the panel, it meant losing the only thing that
+  says where you are. `TrackList` is a `ColumnLayout` now: the heading, the way
+  back and the view's action are one row above a Flickable, and the cursor still
+  reaches into it through `contentY` and `contentHeight` aliases. Measured with the
+  list scrolled to 400: the row's y is still 0.
 * A caption in a plain `Row` is not aligned with buttons: a Row places every child
   at its top, and a `PanelSectionHeader` is a `Text` whose own height is smaller
   than a button's, so the caption floats above the row's centre line. The three
