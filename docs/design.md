@@ -356,6 +356,43 @@ is remembered — the debounce means intermediate prefixes never reach the daemo
 and the list lives in the state file (`searchHistory`, at most eight), read out of
 `status` by the widget.
 
+## Other people's playlists
+
+VK's audio API no longer exposes bookmarks (`fave.getUsers` and
+`bookmarks.getBookmarks` answer «Unknown method passed» on 5.131, 5.199 and 5.282,
+while `fave.getPhotos` works), and a community's playlists are refused with error
+15. Everything else is open, and was checked live before anything was built:
+
+* `audio.searchPlaylists` searches playlists by name — «джаз» answers 5998 of them,
+  each with a cover, a length, a listener count and the `access_key` that makes it
+  playable by somebody who does not own it.
+* `audio.getPlaylists(owner_id=…)` lists any user's playlists: three for a friend,
+  322 for a stranger picked out of the search results.
+* `audio.get(owner_id, album_id, access_key)` plays them, which is the same call
+  the plugin already made for its own playlists.
+
+So the plugin offers four ways in — the playlist search, the friend list, any
+person by link, id or screen name, and its own playlists in the gallery — and keeps
+a local list of recently opened people (`recentPeople` in the state file, eight of
+them) as the stand-in for the bookmarks VK will not hand over. A pasted link is
+parsed for a profile (`vk.com/id213706100`, `@durov`, `durov`, `213706100`) or a
+playlist link, from which the owner is taken.
+
+## Two views for playlists
+
+Playlists are shown as a gallery of covers or as rows, and one setting chooses for
+every list of playlists — a section's own, a person's, or a search's. It is
+`playlistView`, switched by two small buttons in the header of the list and
+remembered like any other preference. The gallery puts two covers across the narrow
+popup and three across the wide one (`galleryColumns`), with the name and the length
+under each cover; the rows print the same two facts as text.
+
+Both are the same component pair (`PlaylistGrid` / `PlaylistRows`) fed the same
+array, so a new place that shows playlists is one instantiation rather than a new
+layout. The gallery is the one place the plugin shows images it does not need:
+covers load asynchronously, and a missing one leaves the frame with a music glyph
+rather than an empty hole.
+
 ## The scrolling label, and why it stops at both ends
 
 A long title scrolls, and the first version scrolled it *past* the clip: the text

@@ -165,6 +165,14 @@ def parse_argv(argv: list[str]) -> dict:
         return {"command": "play_search", "query": query} if play_after else payload
     if head == "radio":
         return {"command": "radio"}
+    if head == "playlists":
+        return {"command": "playlist_search", "query": " ".join(words)}
+    if head == "friends":
+        return {"command": "friends"}
+    if head == "person":
+        if not words:
+            raise SystemExit("использование: person <ссылка | id | имя>")
+        return {"command": "person", "query": " ".join(words)}
     if head == "suggestions":
         return {"command": "suggestions", "query": " ".join(words)}
     if head == "seek":

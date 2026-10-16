@@ -63,6 +63,8 @@ hours, and it can ask for a captcha and an SMS code.
 | Bar, middle click | Next track |
 | Media keys | Through MPRIS, no configuration needed |
 | ⚙ → «Строка в баре» | Length, speed and pause of the scrolling title, cover shape, and which parts of the row are shown |
+| ⚙ → «Вид плейлистов» | Gallery of covers or rows; the same switch sits in the header of the list |
+| Обзор → «Друзья» | The friend list, plus anyone opened by link (`vk.com/id…`, `@name`, an id) and the people opened recently |
 | Right click on a track row | «В очередь» appends it, «Следующим» puts it right after the current track |
 | Wheel over the bar widget | Volume, five percent a notch |
 | `/` | Jumps into the search field; with it empty, the recent searches are listed |
@@ -92,6 +94,9 @@ omarchy-vk-music section explore         # one catalog page, with its cursor
 omarchy-vk-music section explore PUlYVA8FWRs   # the next page
 omarchy-vk-music radio                   # the live stations
 omarchy-vk-music play radio 1            # play a station
+omarchy-vk-music playlists джаз         # other people's playlists
+omarchy-vk-music friends               # the friend list
+omarchy-vk-music person vk.com/id213706100   # someone's playlists
 omarchy-vk-music queue add <key>       # append to the queue
 omarchy-vk-music queue next <key>      # play right after the current track
 omarchy-vk-music queue remove 3        # drop a queue entry

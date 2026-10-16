@@ -71,14 +71,23 @@ Panel {
   readonly property var suggestionsShown: root._queryLength < 2 ? [] : (root.resultsShowing
     ? (root.results.length === 0 ? root.suggestions : [])
     : root.suggestions)
-  readonly property string searchHeader: root._queryLength < 2 ? ""
-    : (root.searchState === "searching" ? "Ищу…"
-      : (root.resultsShowing
-        ? (root.results.length > 0
-          ? ("Найдено " + root.results.length
-             + (root.tracksSpan(root.results) === "" ? "" : " · " + root.tracksSpan(root.results)))
-          : (root.suggestionsShown.length > 0 ? "Ничего не найдено. Похожее:" : "Ничего не найдено"))
-        : "Подсказки"))
+  readonly property string searchHeader: {
+    if (root._queryLength < 2) return ""
+    // A playlist search answers in playlists, so its heading counts those.
+    if (root.searchMode === "playlists") {
+      if (root.playlistSearchLoading) return "Ищу…"
+      var found = root.foundPlaylists.length
+      if (found === 0) return "Плейлисты не найдены"
+      return "Найдено " + found + " " + root.plural(found, "плейлист", "плейлиста", "плейлистов")
+    }
+    if (root.searchState === "searching") return "Ищу…"
+    if (!root.resultsShowing) return "Подсказки"
+    if (root.results.length === 0) {
+      return root.suggestionsShown.length > 0 ? "Ничего не найдено. Похожее:" : "Ничего не найдено"
+    }
+    var span = root.tracksSpan(root.results)
+    return "Найдено " + root.results.length + (span === "" ? "" : " · " + span)
+  }
   // The popup answers to five keys and nothing on screen says so. Esc is the one
   // that means two things, so the hint follows the query.
   readonly property string keyHints: (root.view === "search" && root.query.length > 0)
@@ -592,12 +601,25 @@ Panel {
   // Recent queries, most recent first, from the daemon's state file. A committed
   // search is what goes in: the debounce means only settled text is ever sent.
   readonly property var history: root.status.history || []
+  // People whose playlists were opened before: the local stand-in for VK's
+  // bookmarks, which its API no longer exposes.
+  readonly property var people: root.status.people || []
 
   function runSearch(force) {
     var text = root.query.trim()
     if (text.length < 2) {
       root.results = []
+      root.foundPlaylists = []
       root.searchState = "typing"
+      return
+    }
+    // One box, two kinds of answer: a playlist search is the same request to a
+    // different VK method, so everything else about searching stays the same.
+    if (root.searchMode === "playlists") {
+      if (!force && text === root._searchedQuery && root.foundPlaylists.length > 0) return
+      root._searchedQuery = text
+      root.searchState = "results"
+      root.loadPlaylistSearch()
       return
     }
     // Typing a letter and deleting it again should not cost a second search, and
@@ -621,6 +643,21 @@ Panel {
       }
     })
   }
+
+  // People and their playlists: the friend list, anyone opened by link or name,
+  // and whatever the playlist search found. VK's own bookmarks API is gone, so
+  // «Недавние» — the people opened before — stands in for «закладки».
+  property var friends: []
+  property bool friendsLoading: false
+  property var person: null
+  property var personPlaylists: []
+  property bool personLoading: false
+  property string personQuery: ""
+  property var foundPlaylists: []
+  property int foundPlaylistsTotal: 0
+  property bool playlistSearchLoading: false
+  // «Треки» or «Плейлисты»: one search box, two kinds of answer.
+  property string searchMode: "tracks"
 
   // Right-clicking a row offers what can be done with a track without throwing
   // away the queue you are listening to.
@@ -650,6 +687,13 @@ Panel {
     root.runSearch(true)
   }
 
+  function setSearchMode(mode) {
+    if (root.searchMode === mode) return
+    root.searchMode = mode
+    root.cursor = -1
+    if (root.query.trim().length >= 2) root.runSearch(true)
+  }
+
   function clearSearch() {
     root.query = ""
     root.results = []
@@ -663,9 +707,12 @@ Panel {
   function cursorItems() {
     if (root.view === "queue") return root.upcoming
     if (root.view === "browse") {
+      if (root.browseSlug === "person") return root.personPlaylists
+      if (root.browseSlug === "friends") return root.friends
       return root.browseSlug === "radiostations" ? root.stations : root.browseTracks
     }
     if (root.view === "search") {
+      if (root.searchMode === "playlists") return root.foundPlaylists
       if (root.resultsShown.length > 0) return root.resultsShown
       // With an empty field the list on screen is the recent queries.
       if (root._queryLength < 2 && root.history.length > 0) return root.history
@@ -693,11 +740,22 @@ Panel {
     if (index < 0) return null
     if (root.view === "queue") return root.activeList().queueRepeater.itemAt(index)
     if (root.view === "browse") {
+      if (root.browseSlug === "person") {
+        return root.gridView
+          ? root.activeList().browseGrid.itemAt(index)
+          : root.activeList().browsePlaylistRows.itemAt(index)
+      }
+      if (root.browseSlug === "friends") return root.activeList().friendRepeater.itemAt(index)
       return root.browseSlug === "radiostations"
         ? root.activeList().stationRepeater.itemAt(index)
         : root.activeList().browseTrackRepeater.itemAt(index)
     }
     if (root.view === "search") {
+      if (root.searchMode === "playlists") {
+        return root.gridView
+          ? root.activeList().searchGrid.itemAt(index)
+          : root.activeList().searchPlaylistRows.itemAt(index)
+      }
       if (root.resultsShown.length > 0) return root.activeList().resultRepeater.itemAt(index)
       if (root._queryLength < 2 && root.history.length > 0) {
         return root.activeList().historyRepeater.itemAt(index)
@@ -729,10 +787,13 @@ Panel {
     if (root.view === "queue") {
       root.playQueueAt(root.upcomingStart + index)
     } else if (root.view === "browse") {
-      if (root.browseSlug === "radiostations") root.playStation(root.stations[index])
+      if (root.browseSlug === "person") root.playPlaylist(root.personPlaylists[index])
+      else if (root.browseSlug === "friends") root.openPerson(root.friends[index].id)
+      else if (root.browseSlug === "radiostations") root.playStation(root.stations[index])
       else root.playBrowseTrack(index)
     } else if (root.view === "search") {
-      if (root.resultsShown.length > 0) root.playSearchResult(index)
+      if (root.searchMode === "playlists") root.playPlaylist(root.foundPlaylists[index])
+      else if (root.resultsShown.length > 0) root.playSearchResult(index)
       else if (root._queryLength < 2 && root.history.length > 0) {
         root.searchSuggestion(String(root.history[index]))
       } else root.searchSuggestion(String(root.suggestionsShown[index]))
@@ -770,6 +831,18 @@ Panel {
   // that says both, so the list itself never has to claim anything false.
   readonly property string browseHeader: {
     if (root.browseSlug === "") return ""
+    if (root.browseSlug === "person") {
+      if (root.personLoading) return "Открываю…"
+      var mine = root.personPlaylists.length
+      if (!root.person) return "Человек не найден"
+      return String(root.person.name || "Человек")
+        + (mine === 0 ? " · пусто" : " · " + mine + " " + root.plural(mine, "плейлист", "плейлиста", "плейлистов"))
+    }
+    if (root.browseSlug === "friends") {
+      if (root.friendsLoading) return "Друзья · загрузка…"
+      var count = root.friends.length
+      return "Друзья · " + count + " " + root.plural(count, "человек", "человека", "человек")
+    }
     if (root.browseSlug === "radiostations") {
       if (root.browseLoading) return "Радио · загрузка…"
       var stations = root.stations.length
@@ -881,6 +954,80 @@ Panel {
     ], function() { root.watchForTrack() })
   }
 
+  function setPlaylistView(mode) {
+    root.setPreference("playlistView", mode)
+  }
+
+  function browseFriends() {
+    if (root.browseSlug === "friends" && root.friends.length > 0) return
+    root.browseSlug = "friends"
+    root.browseTitle = "Друзья"
+    root.browseTracks = []
+    root.browsePlaylists = []
+    root.browseNext = ""
+    root.closePerson()
+    if (root.friends.length > 0) return
+    root.friendsLoading = true
+    root.call([root.cli, "friends"], function(answer) {
+      root.friendsLoading = false
+      root.friends = (answer && answer.ok && answer.data) ? answer.data : []
+    })
+  }
+
+  function openPerson(reference) {
+    var text = String(reference || "").trim()
+    if (text === "") return
+    root.personLoading = true
+    root.person = null
+    root.personPlaylists = []
+    root.browseSlug = "person"
+    root.browseTracks = []
+    root.browseNext = ""
+    root.browseTitle = "Человек"
+    root.call([root.cli, "person", text], function(answer) {
+      root.personLoading = false
+      if (answer && answer.ok && answer.data) {
+        root.person = answer.data.person || null
+        root.personPlaylists = answer.data.playlists || []
+        // The same list feeds the gallery and the rows: one place decides what a
+        // person's page shows.
+        root.browsePlaylists = root.personPlaylists
+        root.browseTitle = root.person ? String(root.person.name || "Человек") : "Человек"
+      } else {
+        root.notice = "Человек не найден"
+      }
+    })
+  }
+
+  function openPersonFromField() {
+    root.openPerson(root.personQuery)
+  }
+
+  function closePerson() {
+    root.person = null
+    root.personPlaylists = []
+  }
+
+  function loadPlaylistSearch() {
+    var text = root.query.trim()
+    if (text.length < 2) {
+      root.foundPlaylists = []
+      root.foundPlaylistsTotal = 0
+      return
+    }
+    root.playlistSearchLoading = true
+    root.call([root.cli, "playlists", text], function(answer) {
+      root.playlistSearchLoading = false
+      if (answer && answer.ok && answer.data) {
+        root.foundPlaylists = answer.data.playlists || []
+        root.foundPlaylistsTotal = Number(answer.data.total || 0)
+      } else {
+        root.foundPlaylists = []
+        root.foundPlaylistsTotal = 0
+      }
+    })
+  }
+
   function playSearchResult(index) {
     // Hand the backend the keys of the results the user is looking at: one
     // `audio.getById` instead of a repeated search, and the queue is exactly
@@ -983,6 +1130,13 @@ Panel {
     var value = Number(root.setting("marqueePauseMs", root.prefs.marqueePauseMs))
     return isNaN(value) ? 1600 : Math.max(0, Math.min(6000, value))
   }
+  // Playlists look the same wherever they appear: covers in a gallery, or rows.
+  // Three across the wide popup, two across the narrow one, so a cover is never
+  // too small to recognise.
+  readonly property string playlistView: String(root.setting("playlistView", root.prefs.playlistView || "list"))
+  readonly property bool gridView: root.playlistView === "grid"
+  readonly property int galleryColumns: root.isExtended() ? 3 : 2
+
   readonly property int marqueeSpeed: {
     var value = Number(root.setting("marqueeSpeed", root.prefs.marqueeSpeed))
     return isNaN(value) ? 70 : Math.max(10, Math.min(300, value))
@@ -1369,6 +1523,161 @@ Panel {
   // The popup's list: the queue, a catalog section, the search results or the
   // settings page. It is a component of its own because the extended popup shows
   // it beside the player rather than under it.
+  // A playlist in the gallery: the cover, its name, how long it is. The accent
+  // frame is the keyboard cursor, the way the fill is on a row.
+  component PlaylistCard: Item {
+    id: card
+    property var item: null
+    property real cellWidth: 100
+    property bool selected: false
+    signal activated()
+
+    width: cellWidth
+    // The Column lays itself out; the MouseArea sits beside it, because a
+    // positioner refuses to lay out an anchored child.
+    height: body.implicitHeight
+
+    Column {
+      id: body
+      width: parent.width
+      spacing: Style.space(3)
+
+      // The accent frame is the keyboard cursor, the way the fill is on a row.
+      BorderSurface {
+        width: parent.width
+        height: width
+        radius: Style.spacing.labelGap
+        color: Color.popups.background
+        borderSpec: card.selected
+          ? Border.controlSpec("selected", Color.foreground, Color.accent, Color.urgent)
+          : Border.none()
+
+        Image {
+          anchors.fill: parent
+          anchors.margins: Style.space(2)
+          source: card.item ? String(card.item.cover || "") : ""
+          fillMode: Image.PreserveAspectCrop
+          asynchronous: true
+          visible: String(card.item ? card.item.cover || "" : "") !== ""
+        }
+
+        Text {
+          anchors.centerIn: parent
+          visible: !(card.item && card.item.cover)
+          text: "󰝚"
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.displayLarge
+        }
+      }
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        maximumLineCount: 1
+        text: card.item ? String(card.item.title || "") : ""
+        color: root.textColor
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        text: card.item && card.item.count
+          ? (Number(card.item.count) + " " + root.plural(Number(card.item.count), "трек", "трека", "треков"))
+          : ""
+        color: root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      cursorShape: Qt.PointingHandCursor
+      onClicked: card.activated()
+    }
+  }
+
+  // The same list of playlists as rows, for people who would rather read names.
+  component PlaylistRows: Column {
+    id: rows
+    property var items: []
+    signal picked(int index)
+
+    function itemAt(index) { return rowRepeater.itemAt(index) }
+
+    width: parent ? parent.width : 0
+    spacing: Style.space(4)
+
+    Repeater {
+      id: rowRepeater
+      model: rows.items
+      delegate: Button {
+        width: rows.width
+        leftAlign: true
+        selected: index === root.cursor
+        text: modelData
+          ? (String(modelData.title || "")
+             + (modelData.count
+                ? "  ·  " + modelData.count + " " + root.plural(Number(modelData.count), "трек", "трека", "треков")
+                : ""))
+          : ""
+        foreground: root.textColor
+        onClicked: rows.picked(index)
+      }
+    }
+  }
+
+  // And the gallery: the same items, as covers.
+  component PlaylistGrid: Grid {
+    id: grid
+    property var items: []
+    readonly property real cellWidth: (width - spacing * (columns - 1)) / Math.max(1, columns)
+    signal picked(int index)
+
+    function itemAt(index) { return cellRepeater.itemAt(index) }
+
+    width: parent ? parent.width : 0
+    columns: root.galleryColumns
+    spacing: Style.space(6)
+
+    Repeater {
+      id: cellRepeater
+      model: grid.items
+      delegate: PlaylistCard {
+        item: modelData
+        cellWidth: grid.cellWidth
+        selected: index === root.cursor
+        onActivated: grid.picked(index)
+      }
+    }
+  }
+
+  // Gallery or rows: two small buttons in the header, one remembered setting.
+  component PlaylistViewSwitch: Row {
+    spacing: Style.space(4)
+
+    Button {
+      iconText: "󰕳"
+      foreground: root.textColor
+      selected: root.gridView
+      tooltipText: "Галерея обложек"
+      onClicked: root.setPlaylistView("grid")
+    }
+
+    Button {
+      iconText: "󰉹"
+      foreground: root.textColor
+      selected: !root.gridView
+      tooltipText: "Список"
+      onClicked: root.setPlaylistView("list")
+    }
+  }
+
   // What a right-click on a track row offers. It floats over the panel, anchored
   // to the bottom of the key catcher, so nothing moves when it appears.
   component RowMenu: BorderSurface {
@@ -1450,6 +1759,10 @@ Panel {
     property alias suggestionRepeater: suggestionRepeater
     property alias resultRepeater: resultRepeater
     property alias historyRepeater: historyRepeater
+    property alias browseGrid: browseGrid
+    property alias browsePlaylistRows: browsePlaylistRows
+    property alias searchGrid: searchGrid
+    property alias searchPlaylistRows: searchPlaylistRows
 
     Layout.fillWidth: true
     Layout.fillHeight: true
@@ -1554,40 +1867,57 @@ Panel {
                 onClicked: if (modelData) root.browseSource(root.sourceSlug(modelData))
               }
             }
-          }
-        }
 
-        Flickable {
-          width: parent.width
-          height: playlistRow.height
-          contentWidth: playlistRow.width
-          clip: true
-          visible: root.browsePlaylists.length > 0
-          boundsBehavior: Flickable.StopAtBounds
-
-          Row {
-            id: playlistRow
-            spacing: Style.space(6)
-
-            Repeater {
-              model: root.browsePlaylists
-              delegate: Button {
-                text: modelData ? String(modelData.title || "") : ""
-                tooltipText: modelData
-                  ? (String(modelData.title || "")
-                     + (modelData.count ? " · " + modelData.count + " треков" : ""))
-                  : ""
-                foreground: root.textColor
-                onClicked: if (modelData) root.playPlaylist(modelData)
-              }
+            Button {
+              text: "Друзья"
+              foreground: root.textColor
+              selected: root.browseSlug === "friends" || root.browseSlug === "person"
+              tooltipText: "Плейлисты друзей и любого человека по ссылке"
+              onClicked: root.browseFriends()
             }
           }
         }
 
-        PanelSectionHeader {
-          text: root.browseHeader
-          foreground: root.dim
-          visible: root.browseHeader !== ""
+        PlaylistGrid {
+          id: browseGrid
+          items: root.browsePlaylists
+          visible: root.gridView && items.length > 0
+          onPicked: function(index) { root.playPlaylist(root.browsePlaylists[index]) }
+        }
+
+        PlaylistRows {
+          id: browsePlaylistRows
+          items: root.gridView ? [] : root.browsePlaylists
+          onPicked: function(index) { root.playPlaylist(root.browsePlaylists[index]) }
+        }
+
+        Row {
+          width: parent.width
+          spacing: Style.space(6)
+          visible: root.browseHeader !== "" || root.person !== null
+
+          Button {
+            id: backButton
+            visible: root.person !== null
+            text: "Назад"
+            foreground: root.textColor
+            tooltipText: "К списку людей"
+            onClicked: {
+              root.closePerson()
+              root.browseFriends()
+            }
+          }
+
+          PanelSectionHeader {
+            width: parent.width - (backButton.visible ? backButton.width + Style.space(6) : 0) - viewSwitch.width - Style.space(6)
+            text: root.browseHeader
+            foreground: root.dim
+          }
+
+          PlaylistViewSwitch {
+            id: viewSwitch
+            visible: root.browsePlaylists.length > 0
+          }
         }
 
         Text {
@@ -1599,6 +1929,85 @@ Panel {
           color: root.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
+        }
+
+        // Friends: a photo and a name each, plus a field for anyone else. The
+        // people opened before are listed too, since VK's bookmarks API is gone.
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+          visible: root.browseSlug === "friends"
+
+          Row {
+            width: parent.width
+            spacing: Style.space(6)
+
+            TextField {
+              id: personField
+              width: parent.width - personGo.width - Style.space(6)
+              placeholderText: "Ссылка, id или имя друга"
+              text: root.personQuery
+              onTextChanged: root.personQuery = text
+              onAccepted: root.openPersonFromField()
+            }
+
+            Button {
+              id: personGo
+              text: "Открыть"
+              foreground: root.textColor
+              enabled: root.personQuery.trim() !== ""
+              opacity: enabled ? 1.0 : 0.4
+              onClicked: root.openPersonFromField()
+            }
+          }
+
+          PanelSectionHeader {
+            text: "Друзья"
+            foreground: root.dim
+            visible: root.friends.length > 0
+          }
+
+          Repeater {
+            id: friendRepeater
+            model: root.friends
+            delegate: Button {
+              width: listColumn.width
+              leftAlign: true
+              selected: index === root.cursor
+              text: modelData ? String(modelData.name || "") : ""
+              foreground: root.textColor
+              onClicked: if (modelData) root.openPerson(String(modelData.id))
+            }
+          }
+
+          PanelSectionHeader {
+            text: "Недавние"
+            foreground: root.dim
+            visible: root.people.length > 0
+          }
+
+          Repeater {
+            id: recentPeopleRepeater
+            model: root.people
+            delegate: Button {
+              width: listColumn.width
+              leftAlign: true
+              text: modelData ? String(modelData.name || "") : ""
+              foreground: root.textColor
+              onClicked: if (modelData) root.openPerson(String(modelData.id))
+            }
+          }
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            visible: !root.friendsLoading && root.friends.length === 0 && root.people.length === 0
+            text: "Список друзей пуст. Вставь ссылку на человека — например vk.com/id213706100."
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+          }
         }
 
         Repeater {
@@ -1658,6 +2067,30 @@ Panel {
         spacing: Style.space(4)
         visible: root.view === "search"
 
+        // One box, two kinds of answer.
+        Row {
+          width: parent.width
+          spacing: Style.space(4)
+          visible: root.signedIn
+
+          Button {
+            text: "Треки"
+            foreground: root.textColor
+            selected: root.searchMode === "tracks"
+            onClicked: root.setSearchMode("tracks")
+          }
+
+          Button {
+            text: "Плейлисты"
+            foreground: root.textColor
+            selected: root.searchMode === "playlists"
+            tooltipText: "Искать плейлисты других людей"
+            onClicked: root.setSearchMode("playlists")
+          }
+
+          PlaylistViewSwitch { visible: root.searchMode === "playlists" }
+        }
+
         Text {
           visible: root._queryLength < 2 && root.history.length === 0
           width: parent.width
@@ -1693,6 +2126,19 @@ Panel {
           text: root.searchHeader
           foreground: root.dim
           visible: root.searchHeaderVisible
+        }
+
+        PlaylistGrid {
+          id: searchGrid
+          items: root.searchMode === "playlists" ? root.foundPlaylists : []
+          visible: root.gridView && items.length > 0
+          onPicked: function(index) { root.playPlaylist(root.foundPlaylists[index]) }
+        }
+
+        PlaylistRows {
+          id: searchPlaylistRows
+          items: (root.searchMode === "playlists" && !root.gridView) ? root.foundPlaylists : []
+          onPicked: function(index) { root.playPlaylist(root.foundPlaylists[index]) }
         }
 
         Repeater {

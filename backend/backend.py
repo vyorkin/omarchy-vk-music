@@ -31,6 +31,8 @@ from audio_cache import AudioCache, CacheError, cleanup_stray_temp
 from vk_api import (
     WEB_APP_ID,
     WEB_USER_AGENT,
+    Person,
+    Playlist,
     Track,
     VkApiError,
     VkClient,
@@ -103,6 +105,9 @@ DEFAULT_PREFERENCES: dict[str, Any] = {
     # fast it moves (pixels a second). Both are the user's taste, not ours.
     "marqueePauseMs": 1600,
     "marqueeSpeed": 70,
+    # How playlists are drawn: as a gallery of covers or as rows. One setting for
+    # every list of playlists, since they are the same thing in different places.
+    "playlistView": "list",
     # "off" or "all": a desktop notification when the track changes on its own.
     "notifications": "off",
     # Which popup to open: "compact" (the small one) or "extended".
@@ -116,6 +121,7 @@ PREFERENCE_ENUMS: dict[str, tuple[str, ...]] = {
     "longTitleMode": ("truncate", "scroll"),
     "notifications": ("off", "all"),
     "popupView": ("compact", "extended"),
+    "playlistView": ("list", "grid"),
 }
 
 # Preferences that existed before and what they mean now.
@@ -131,6 +137,11 @@ PREFETCH_DELAY_S = 4.0
 # How many committed searches the popup offers back. Kept small: this is a
 # convenience, not a log.
 SEARCH_HISTORY_LIMIT = 8
+
+# How many people the popup remembers, and how long a friend list is trusted.
+# Both keep the plugin from asking VK the same question twice.
+PEOPLE_HISTORY_LIMIT = 8
+FRIENDS_TTL = 600.0
 
 # Errors that mean "stop and tell the user", mapped to the message the bar shows.
 HALT_MESSAGES = {
@@ -490,6 +501,10 @@ class Player:
         # Recent queries, most recent first. It lives here because the state file
         # is here; the widget only reads it out of `status`.
         self.search_history: list[str] = []
+        # People whose playlists were opened, most recent first: VK's own
+        # bookmarks API is gone, so this is what stands in for «закладки».
+        self.recent_people: list[dict[str, Any]] = []
+        self._friends_cache: tuple[float, list[Person]] | None = None
         # Buffering progress, as the interface needs it: `percent` is None while
         # the length is unknown (a stream that is not being cached), which is what
         # tells the widget to draw an indeterminate indicator instead of a bar.
@@ -536,6 +551,11 @@ class Player:
         self.search_history = [
             str(item) for item in (stored.get("searchHistory") or []) if str(item).strip()
         ][:SEARCH_HISTORY_LIMIT]
+        self.recent_people = [
+            dict(item)
+            for item in (stored.get("recentPeople") or [])
+            if isinstance(item, Mapping) and item.get("id")
+        ][:PEOPLE_HISTORY_LIMIT]
         self.index = int(stored.get("index", -1)) if restored else -1
         self.position = int(stored.get("position", 0) or 0) if self.preferences.get(
             "restorePosition", True
@@ -559,6 +579,7 @@ class Player:
                 "queue": [track_to_state(track) for track in self.queue],
                 "likedCopies": self.liked_copies,
                 "searchHistory": self.search_history,
+                "recentPeople": self.recent_people,
                 "index": self.index,
                 "position": self.position,
             }
@@ -679,6 +700,66 @@ class Player:
     def search_items(self, query: str, offset: int | None = None) -> dict[str, Any]:
         tracks = self.api(lambda: self.client.search(query, offset=offset))  # type: ignore[union-attr]
         return {"query": query, "tracks": [track_to_state(track) for track in tracks]}
+
+    def playlist_search(self, query: str, offset: int | None = None) -> dict[str, Any]:
+        """Search other people's playlists by name."""
+        if not str(query).strip():
+            return {"query": "", "playlists": [], "total": 0}
+        playlists, total = self.api(
+            lambda: self.client.search_playlists(str(query), offset=offset or 0)
+        )
+        return {
+            "query": query,
+            "playlists": [playlist.to_dict() for playlist in playlists],
+            "total": total,
+        }
+
+    def friends_list(self) -> list[Person]:
+        """The friend list, trusted for ten minutes: it changes slowly."""
+        now = time.monotonic()
+        if self._friends_cache and now - self._friends_cache[0] < FRIENDS_TTL:
+            return self._friends_cache[1]
+        people = self.api(lambda: self.client.friends())
+        self._friends_cache = (now, list(people))
+        return list(people)
+
+    def person(self, query: str) -> dict[str, Any]:
+        """Open somebody's playlists: a friend, a stranger, a link, an id.
+
+        The friend list already knows its own people, so a name that matches one is
+        answered from there; everything else goes to `users.get`, which resolves
+        screen names as happily as it does ids.
+        """
+        reference = parse_person_reference(query)
+        if not reference:
+            raise VkApiError(0, "пустая ссылка", method="person")
+        person: Person | None = None
+        for candidate in self.friends_list():
+            if reference.casefold() in {candidate.screen_name.casefold(), str(candidate.id)}:
+                person = candidate
+                break
+        if person is None:
+            found = self.api(lambda: self.client.users(reference))
+            if not found:
+                raise VkApiError(0, f"человек не найден: {query}", method="person")
+            person = found[0]
+        playlists = self.api(lambda: self.client.audio_playlists(person.id, count=100))
+        self.remember_person(person)
+        return {
+            "person": person.to_dict(),
+            "playlists": [playlist.to_dict() for playlist in playlists],
+        }
+
+    def remember_person(self, person: Person) -> None:
+        """Keep the last few people whose playlists were opened."""
+        with self.lock:
+            entry = person.to_dict()
+            self.recent_people = [
+                item for item in self.recent_people if int(item.get("id", 0)) != person.id
+            ]
+            self.recent_people.insert(0, entry)
+            del self.recent_people[PEOPLE_HISTORY_LIMIT:]
+            self.save_state()
 
     def resolve_url(self, track: Track) -> str:
         """Always ask for the URL at play time: stored URLs are short-lived."""
@@ -1408,9 +1489,39 @@ class Player:
                 else None,
                 "preferences": self.preferences,
                 "history": list(self.search_history),
+                "people": list(self.recent_people),
                 "cache": self.cache.stats(),
                 "session": session_summary(self.record),
             }
+
+
+def parse_person_reference(text: str) -> str:
+    """What to hand to `users.get` for a pasted link, screen name or id.
+
+    Accepts what a person actually copies out of a browser: a profile link
+    (`https://vk.com/id213706100`, `vk.com/durov`), an `@name`, a bare screen name
+    or a number, and a playlist link — for which the owner id is what matters,
+    since the playlist itself is opened from the person's list.
+    """
+    value = str(text or "").strip()
+    if not value:
+        return ""
+    value = value.split("?")[0].split("#")[0].rstrip("/")
+    if "//" in value:
+        value = value.split("//", 1)[1]
+        value = value.split("/", 1)[1] if "/" in value else ""
+    # A playlist link in either of the shapes VK hands out.
+    for marker in ("music/playlist/", "audio_playlist"):
+        if marker in value:
+            tail = value.split(marker, 1)[1]
+            owner = tail.replace("%2F", "_").replace("%2f", "_").split("_")[0]
+            return owner.lstrip("-") or ""
+    if "/" in value:
+        value = value.rstrip("/").split("/")[-1]
+    value = value.lstrip("@").strip()
+    if value.startswith("id") and value[2:].isdigit():
+        return value[2:]
+    return value
 
 
 def session_summary(record: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -1853,6 +1964,18 @@ class Backend:
             # path would otherwise keep every prefix of every word.
             self.player.remember_search(query)
         return self.player.search_items(query, offset)
+
+    def cmd_playlist_search(self, query: str = "", offset: int | None = None) -> dict[str, Any]:
+        return self.player.playlist_search(query, offset)
+
+    def cmd_friends(self) -> list[dict[str, Any]]:
+        """Everyone on the friend list, plus the people opened recently."""
+        people = self.player.friends_list()
+        return [person.to_dict() for person in people]
+
+    def cmd_person(self, query: str = "") -> dict[str, Any]:
+        """Somebody's playlists, by link, screen name, id or friend's name."""
+        return self.player.person(query)
 
     def cmd_suggestions(self, query: str = "") -> list[str]:
         if not query.strip():

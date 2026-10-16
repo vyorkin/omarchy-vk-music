@@ -97,6 +97,17 @@ case "$command_name" in
   suggestions)
     send "$(jq -nc --arg query "$*" '{command:"suggestions", query:$query}')"
     ;;
+  playlists)
+    send "$(jq -nc --arg query "$*" '{command:"playlist_search", query:$query}')"
+    ;;
+  friends) send '{"command":"friends"}' ;;
+  person)
+    if [ -z "${1:-}" ]; then
+      printf 'использование: person <ссылка | id | имя>\n' >&2
+      exit 2
+    fi
+    send "$(jq -nc --arg query "$*" '{command:"person", query:$query}')"
+    ;;
   search)
     remember=false
     query=""

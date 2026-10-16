@@ -258,6 +258,12 @@ class Playlist:
     count: int
     access_key: str = ""
     description: str = ""
+    # The gallery needs a cover, and the card is worth two numbers: how long the
+    # playlist is (count) and how many people listen to it.
+    cover: str = ""
+    plays: int = 0
+    followers: int = 0
+    main_color: str = ""
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -272,16 +278,55 @@ class Playlist:
             count=int(item.get("count", 0) or 0),
             access_key=str(item.get("access_key") or ""),
             description=str(item.get("description") or ""),
+            cover=_extract_cover(item),
+            plays=int(item.get("plays", 0) or 0),
+            followers=int(item.get("followers", 0) or 0),
+            main_color=str(item.get("main_color") or ""),
             raw=item,
         )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "key": self.key,
+            "owner_id": self.owner_id,
+            "playlist_id": self.playlist_id,
             "title": self.title,
             "count": self.count,
+            "cover": self.cover,
+            "plays": self.plays,
+            "followers": self.followers,
+            # The widget plays a playlist by handing this back, so it has to travel.
+            "access_key": self.access_key,
             "has_access_key": bool(self.access_key),
         }
+
+
+@dataclass(frozen=True)
+class Person:
+    """A VK user, as far as the plugin cares: id, name, small photo.
+
+    Friends arrive from `friends.get` and anyone else from `users.get` after their
+    link or screen name has been resolved, so one shape serves both lists.
+    """
+
+    id: int
+    name: str
+    photo: str = ""
+    screen_name: str = ""
+
+    @classmethod
+    def from_item(cls, item: Mapping[str, Any]) -> "Person":
+        first = str(item.get("first_name", ""))
+        last = str(item.get("last_name", ""))
+        return cls(
+            id=int(item.get("id", 0) or 0),
+            name=(first + " " + last).strip() or str(item.get("screen_name") or item.get("id")),
+            photo=_person_photo(item),
+            screen_name=str(item.get("screen_name") or ""),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"id": self.id, "name": self.name, "photo": self.photo}
 
 
 @dataclass(frozen=True)
@@ -363,6 +408,32 @@ def _extract_thumb(item: Mapping[str, Any]) -> str:
         if not isinstance(candidate, Mapping):
             continue
         for size in ("photo_1200", "photo_600", "photo_300", "photo_270", "photo_68"):
+            value = candidate.get(size)
+            if value:
+                return str(value)
+    return ""
+
+
+def _person_photo(item: Mapping[str, Any]) -> str:
+    """A user's picture: unlike a playlist's, the sizes sit on the item itself."""
+    for size in ("photo_200", "photo_100", "photo_max", "photo_50"):
+        value = item.get(size)
+        if value:
+            return str(value)
+    return ""
+
+
+def _extract_cover(item: Mapping[str, Any]) -> str:
+    """A playlist's cover.
+
+    Playlists arrive in two shapes: `photo` for anything from `audio.*`, and
+    `thumb` for the catalog's own blocks. Both carry the same size keys, which is
+    why one helper reads them.
+    """
+    for candidate in (item.get("photo"), item.get("thumb")):
+        if not isinstance(candidate, Mapping):
+            continue
+        for size in ("photo_600", "photo_300", "photo_270", "photo_1200", "photo_135", "photo_68"):
             value = candidate.get(size)
             if value:
                 return str(value)
@@ -700,6 +771,38 @@ class VkClient:
             "audio.getPlaylists", owner_id=owner_id, count=count, offset=offset
         )
         return _playlists_from(response)
+
+    def search_playlists(
+        self, query: str, *, count: int = 30, offset: int = 0
+    ) -> tuple[list[Playlist], int]:
+        """Search other people's playlists by name.
+
+        Verified live: `audio.searchPlaylists` answers with `count` and `items`,
+        and each item carries its cover, its length, its listener count and the
+        `access_key` that makes it playable without owning it.
+        """
+        response = self.call(
+            "audio.searchPlaylists", q=query, count=count, offset=offset
+        )
+        total = 0
+        if isinstance(response, Mapping):
+            try:
+                total = int(response.get("count", 0) or 0)
+            except (TypeError, ValueError):
+                total = 0
+        return _playlists_from(response), total
+
+    def friends(self, *, count: int = 200) -> list[Person]:
+        """Everyone on my friend list, by name."""
+        response = self.call("friends.get", count=count, order="name", fields="photo_100")
+        items = response.get("items") if isinstance(response, Mapping) else None
+        return [Person.from_item(item) for item in (items or []) if isinstance(item, Mapping)]
+
+    def users(self, ids: str) -> list[Person]:
+        """Resolve ids or screen names into people, for a pasted link."""
+        response = self.call("users.get", user_ids=ids, fields="photo_100")
+        items = response if isinstance(response, list) else []
+        return [Person.from_item(item) for item in items if isinstance(item, Mapping)]
 
     def audio_playlist_tracks(
         self, owner_id: int, playlist_id: int, *, access_key: str = "", count: int = 100
