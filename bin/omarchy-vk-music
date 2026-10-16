@@ -101,6 +101,19 @@ case "$command_name" in
     send "$(jq -nc --arg query "$*" '{command:"playlist_search", query:$query}')"
     ;;
   friends) send '{"command":"friends"}' ;;
+  playlist)
+    if [ $# -lt 2 ]; then
+      printf 'использование: playlist <owner_id> <playlist_id> [access_key] [название...]\n' >&2
+      exit 2
+    fi
+    owner="$(number "$1")"; shift
+    list="$(number "$1")"; shift
+    access=""
+    if [ $# -gt 0 ]; then access="$1"; shift; fi
+    send "$(jq -nc --argjson ownerId "$owner" --argjson playlistId "$list" \
+      --arg accessKey "$access" --arg title "$*" \
+      '{command:"playlist_tracks", ownerId:$ownerId, playlistId:$playlistId, accessKey:$accessKey, title:$title}')"
+    ;;
   person)
     if [ -z "${1:-}" ]; then
       printf 'использование: person <ссылка | id | имя>\n' >&2

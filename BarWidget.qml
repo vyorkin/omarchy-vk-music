@@ -653,6 +653,12 @@ Panel {
   property var personPlaylists: []
   property bool personLoading: false
   property string personQuery: ""
+  // A playlist that was opened rather than started: what it holds, and where to
+  // come back to.
+  property var openPlaylist: null
+  property var openPlaylistTracks: []
+  property bool openPlaylistLoading: false
+  property string playlistBack: ""
   property var foundPlaylists: []
   property int foundPlaylistsTotal: 0
   property bool playlistSearchLoading: false
@@ -725,6 +731,7 @@ Panel {
   function cursorItems() {
     if (root.view === "queue") return root.upcoming
     if (root.view === "browse") {
+      if (root.openPlaylist !== null) return root.openPlaylistTracks
       if (root.browseSlug === "person") return root.personPlaylists
       if (root.browseSlug === "friends") return root.friends
       return root.browseSlug === "radiostations" ? root.stations : root.browseTracks
@@ -758,6 +765,7 @@ Panel {
     if (index < 0) return null
     if (root.view === "queue") return root.activeList().queueRepeater.itemAt(index)
     if (root.view === "browse") {
+      if (root.openPlaylist !== null) return root.activeList().playlistTrackRepeater.itemAt(index)
       if (root.browseSlug === "person") {
         return root.gridView
           ? root.activeList().browseGrid.itemAt(index)
@@ -805,7 +813,8 @@ Panel {
     if (root.view === "queue") {
       root.playQueueAt(root.upcomingStart + index)
     } else if (root.view === "browse") {
-      if (root.browseSlug === "person") root.playPlaylist(root.personPlaylists[index])
+      if (root.openPlaylist !== null) root.playPlaylistTrack(index)
+      else if (root.browseSlug === "person") root.openPlaylistView(root.personPlaylists[index])
       else if (root.browseSlug === "friends") root.openPerson(root.friends[index].id)
       else if (root.browseSlug === "radiostations") root.playStation(root.stations[index])
       else root.playBrowseTrack(index)
@@ -848,6 +857,14 @@ Panel {
   // What the list is showing, and what it is doing: the header is the one place
   // that says both, so the list itself never has to claim anything false.
   readonly property string browseHeader: {
+    if (root.browseSlug === "playlist") {
+      if (root.openPlaylistLoading) return root.openPlaylistTitle + " · загрузка…"
+      var held = root.openPlaylistTracks.length
+      if (held === 0) return root.openPlaylistTitle + " · пусто"
+      var span = root.tracksSpan(root.openPlaylistTracks)
+      return root.openPlaylistTitle + " · " + held + " "
+        + root.plural(held, "трек", "трека", "треков") + (span === "" ? "" : " · " + span)
+    }
     if (root.browseSlug === "") return ""
     if (root.browseSlug === "person") {
       if (root.personLoading) return "Открываю…"
@@ -970,6 +987,58 @@ Panel {
       root.cli, "play", "playlist", String(playlist.owner_id), String(playlist.playlist_id),
       String(playlist.access_key || ""), String(playlist.title || "")
     ], function() { root.watchForTrack() })
+  }
+
+  readonly property string openPlaylistTitle: root.openPlaylist
+    ? String(root.openPlaylist.title || "Плейлист")
+    : ""
+
+  // Opening a playlist is not the same as playing it: the tracks are fetched and
+  // shown, and the click that plays one of them builds the queue from exactly
+  // this list.
+  function openPlaylistView(item) {
+    if (!item) return
+    var owner = Number(item.owner_id || 0)
+    var list = Number(item.playlist_id || 0)
+    if (!(owner !== 0 && list > 0)) return
+    root.playlistBack = root.browseSlug
+    root.openPlaylist = item
+    root.openPlaylistTracks = []
+    root.openPlaylistLoading = true
+    root.browseSlug = "playlist"
+    var args = [root.cli, "playlist", String(owner), String(list)]
+    if (item.access_key) args.push(String(item.access_key))
+    if (item.title) args.push(String(item.title))
+    root.call(args, function(answer) {
+      root.openPlaylistLoading = false
+      if (answer && answer.ok && answer.data) {
+        root.openPlaylistTracks = answer.data.tracks || []
+      } else {
+        root.notice = "Не удалось открыть плейлист"
+      }
+    })
+  }
+
+  function closePlaylistView() {
+    root.openPlaylist = null
+    root.openPlaylistTracks = []
+    root.openPlaylistLoading = false
+    root.browseSlug = root.playlistBack !== "" ? root.playlistBack : "explore"
+  }
+
+  function playPlaylistTrack(index) {
+    var keys = []
+    for (var i = 0; i < root.openPlaylistTracks.length; i++) {
+      var key = String(root.openPlaylistTracks[i].key || "")
+      if (key !== "") keys.push(key)
+    }
+    if (keys.length === 0) return
+    var args = [root.cli, "play", "keys"].concat(keys)
+    args.push("--index")
+    args.push(String(index))
+    args.push("--title")
+    args.push(root.openPlaylistTitle)
+    root.call(args, function() { root.watchForTrack() })
   }
 
   function setPlaylistView(mode) {
@@ -1857,6 +1926,7 @@ Panel {
     property alias historyRepeater: historyRepeater
     property alias browseGrid: browseGrid
     property alias browsePlaylistRows: browsePlaylistRows
+    property alias playlistTrackRepeater: playlistTrackRepeater
     property alias searchGrid: searchGrid
     property alias searchPlaylistRows: searchPlaylistRows
 
@@ -1953,7 +2023,7 @@ Panel {
       Column {
         width: parent.width
         spacing: Style.space(4)
-        visible: root.view === "browse"
+        visible: root.view === "browse" && root.openPlaylist === null
 
         // The sections do not fit side by side, and wrapping them would
         // cost a row of height: the row scrolls instead.
@@ -1995,13 +2065,13 @@ Panel {
           id: browseGrid
           items: root.browsePlaylists
           visible: root.gridView && items.length > 0
-          onPicked: function(index) { root.playPlaylist(root.browsePlaylists[index]) }
+          onPicked: function(index) { root.openPlaylistView(root.browsePlaylists[index]) }
         }
 
         PlaylistRows {
           id: browsePlaylistRows
           items: root.gridView ? [] : root.browsePlaylists
-          onPicked: function(index) { root.playPlaylist(root.browsePlaylists[index]) }
+          onPicked: function(index) { root.openPlaylistView(root.browsePlaylists[index]) }
         }
 
         Row {
@@ -2022,14 +2092,9 @@ Panel {
           }
 
           PanelSectionHeader {
-            width: parent.width - (backButton.visible ? backButton.width + Style.space(6) : 0) - viewSwitch.width - Style.space(6)
+            width: parent.width - (backButton.visible ? backButton.width + Style.space(6) : 0)
             text: root.browseHeader
             foreground: root.dim
-          }
-
-          PlaylistViewSwitch {
-            id: viewSwitch
-            visible: root.browsePlaylists.length > 0
           }
         }
 
@@ -2168,6 +2233,69 @@ Panel {
         }
       }
 
+      // One playlist, opened: its tracks, with a way back and a way to play the
+      // whole thing. Clicking a track queues the playlist from that track.
+      Column {
+        width: parent.width
+        spacing: Style.space(4)
+        visible: root.view === "browse" && root.openPlaylist !== null
+
+        Row {
+          width: parent.width
+          spacing: Style.space(6)
+
+          Button {
+            text: "Назад"
+            foreground: root.textColor
+            tooltipText: "К плейлистам"
+            onClicked: root.closePlaylistView()
+          }
+
+          PanelSectionHeader {
+            width: parent.width - Style.space(200)
+            text: root.browseHeader
+            foreground: root.dim
+          }
+
+          Button {
+            text: "Играть"
+            foreground: root.textColor
+            enabled: root.openPlaylistTracks.length > 0
+            opacity: enabled ? 1.0 : 0.4
+            tooltipText: "Играть весь плейлист"
+            onClicked: root.playPlaylistTrack(0)
+          }
+        }
+
+        Repeater {
+          id: playlistTrackRepeater
+          model: root.openPlaylistTracks
+          delegate: Button {
+            width: listColumn.width
+            leftAlign: true
+            selected: index === root.cursor
+            text: modelData
+              ? ((root.isPlayingTrack(modelData.key) ? "▶  " : "")
+                 + (index + 1) + ".  " + modelData.artist + " — " + modelData.title)
+              : ""
+            foreground: modelData && root.isPlayingTrack(modelData.key) ? Color.accent : root.textColor
+            onClicked: root.playPlaylistTrack(index)
+            onRightClicked: root.openRowMenu(modelData)
+          }
+        }
+
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          wrapMode: Text.WordWrap
+          visible: root.openPlaylistLoading && root.openPlaylistTracks.length === 0
+          text: "Открываю плейлист…"
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+        }
+      }
+
       // Search: suggestions while typing, results once a search has run.
       Column {
         width: parent.width
@@ -2194,8 +2322,6 @@ Panel {
             tooltipText: "Искать плейлисты других людей"
             onClicked: root.setSearchMode("playlists")
           }
-
-          PlaylistViewSwitch { visible: root.searchMode === "playlists" }
         }
 
         Text {
@@ -2239,13 +2365,13 @@ Panel {
           id: searchGrid
           items: root.searchMode === "playlists" ? root.foundPlaylists : []
           visible: root.gridView && items.length > 0
-          onPicked: function(index) { root.playPlaylist(root.foundPlaylists[index]) }
+          onPicked: function(index) { root.openPlaylistView(root.foundPlaylists[index]) }
         }
 
         PlaylistRows {
           id: searchPlaylistRows
           items: (root.searchMode === "playlists" && !root.gridView) ? root.foundPlaylists : []
-          onPicked: function(index) { root.playPlaylist(root.foundPlaylists[index]) }
+          onPicked: function(index) { root.openPlaylistView(root.foundPlaylists[index]) }
         }
 
         Repeater {
@@ -3050,6 +3176,12 @@ Panel {
     }
 
     Item { Layout.fillWidth: true }
+
+    // Right of the tabs, which is where a view switch belongs: the same place in
+    // both popup shapes, and out of the way of the list's own header.
+    PlaylistViewSwitch {
+      visible: root.view === "browse" || (root.view === "search" && root.searchMode === "playlists")
+    }
   }
 
   component SearchFieldRow: RowLayout {

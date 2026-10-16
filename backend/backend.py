@@ -2114,6 +2114,25 @@ class Backend:
             raise VkApiError(0, "VK returned nothing for those keys", method=method)
         return list(tracks)
 
+    def cmd_playlist_tracks(
+        self, ownerId: int, playlistId: int, accessKey: str = "", title: str = ""
+    ) -> dict[str, Any]:
+        """What a playlist holds, without starting it.
+
+        A click on a playlist should open it rather than replace what is playing:
+        the tracks are needed either way, so the popup asks for them and plays the
+        one that is chosen instead.
+        """
+        tracks = self.player.api(  # type: ignore[union-attr]
+            lambda: self.player.client.audio_playlist_tracks(
+                int(ownerId), int(playlistId), access_key=str(accessKey)
+            )
+        )
+        return {
+            "title": title,
+            "tracks": [track_to_state(track) for track in tracks],
+        }
+
     def cmd_queue_add(self, keys: Sequence[str]) -> dict[str, Any]:
         """Append tracks to the queue; what is playing keeps playing."""
         self.player.enqueue(self._tracks_by_keys(keys, "queue_add"))

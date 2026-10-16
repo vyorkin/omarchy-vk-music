@@ -169,6 +169,16 @@ def parse_argv(argv: list[str]) -> dict:
         return {"command": "playlist_search", "query": " ".join(words)}
     if head == "friends":
         return {"command": "friends"}
+    if head == "playlist":
+        if len(words) < 2:
+            raise SystemExit("использование: playlist <owner_id> <playlist_id> [access_key] [название...]")
+        return {
+            "command": "playlist_tracks",
+            "ownerId": int(words[0]),
+            "playlistId": int(words[1]),
+            "accessKey": words[2] if len(words) > 2 else "",
+            "title": " ".join(words[3:]),
+        }
     if head == "person":
         if not words:
             raise SystemExit("использование: person <ссылка | id | имя>")

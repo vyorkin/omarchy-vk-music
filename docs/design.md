@@ -393,6 +393,22 @@ them) as the stand-in for the bookmarks VK will not hand over. A pasted link is
 parsed for a profile (`vk.com/id213706100`, `@durov`, `durov`, `213706100`) or a
 playlist link, from which the owner is taken.
 
+## Opening a playlist is not playing it
+
+A click on a playlist used to replace the queue with its tracks, which meant the
+only way to look inside one was to start listening to it. It now opens the
+playlist: the tracks are fetched (`cmd_playlist_tracks`, the same
+`audio.get(owner_id, album_id, access_key)` the player uses), shown as a numbered
+list with the playing track marked, and the header carries a «Назад» and an
+«Играть» — so playing the whole thing is still one click, and starting from the
+fourth track is a click on the fourth track. That click sends the visible keys to
+`play keys`, so the queue becomes exactly the list on screen, the way search
+results already worked.
+
+The view switch moved in the same round: gallery and list buttons now sit at the
+right end of the tab row rather than beside each list's header. One place, the same
+in both popup shapes, and it no longer competes with the header for room.
+
 ## Two views for playlists
 
 Playlists are shown as a gallery of covers or as rows, and one setting chooses for

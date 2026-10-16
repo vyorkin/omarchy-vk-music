@@ -63,7 +63,8 @@ hours, and it can ask for a captcha and an SMS code.
 | Bar, middle click | Next track |
 | Media keys | Through MPRIS, no configuration needed |
 | ⚙ → «Строка в баре» | Length, speed and pause of the scrolling title, cover shape, and which parts of the row are shown |
-| ⚙ → «Вид плейлистов» | Gallery of covers or rows; the same switch sits in the header of the list |
+| ⚙ → «Вид плейлистов» | Gallery of covers or rows; the same two buttons sit at the right of the tab row |
+| Clicking a playlist | Opens its tracks rather than starting it; «Играть» plays it all, a row starts from there |
 | Обзор → «Люди» | First entry in the source row: the friend list with photos, a field for a link, id or friend's name, and the people opened recently. Clicking anyone opens their playlists |
 | Right click on a track row | «В очередь» appends it, «Следующим» puts it right after the current track |
 | Wheel over the bar widget | Volume, five percent a notch |

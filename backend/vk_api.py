@@ -805,8 +805,10 @@ class VkClient:
         return [Person.from_item(item) for item in items if isinstance(item, Mapping)]
 
     def audio_playlist_tracks(
-        self, owner_id: int, playlist_id: int, *, access_key: str = "", count: int = 100
+        self, owner_id: int, playlist_id: int, *, access_key: str = "", count: int = 300
     ) -> list[Track]:
+        # 300 rather than 100: playlists of three hundred tracks are ordinary, and
+        # one call answers them.
         return self.audio_get(
             owner_id,
             count=count,
