@@ -545,6 +545,14 @@ in both popup shapes, and it no longer competes with the header for room.
 
 ## Two views for playlists
 
+The same holds for people: the friends and the people opened recently are one list on
+screen, so the cursor walks both, and a grid's cards know their offset in it — the
+recent cards must not light up for the friends' indices.
+
+Cards also keep their captions inside themselves: text that touches the edge of the
+surface it sits on reads as a layout accident. And the rounding is small — `Style.space(6)`
+rather than the theme's `cornerRadius`, which on a tall card turns a fill into a pill.
+
 The cursor walks what is on screen, and in a section that is both kinds of thing: one
 column of playlists and then tracks in the list view, a grid of cards with the same
 tracks under it in the gallery. So one offset describes both, and a step down from the

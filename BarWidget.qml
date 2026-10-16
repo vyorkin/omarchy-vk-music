@@ -293,15 +293,7 @@ Panel {
   // Poll fast enough that the ring grows in more than three steps: a download
   // lasts about three seconds, and one status call costs a couple of
   // milliseconds over the socket.
-  Timer {
-    id: pollTimer
-    interval: (root.buffering || root._watching) ? 250 : (root.playing ? 1000 : 5000)
-    running: true
-    repeat: true
-    onTriggered: root.refresh()
-  }
-
-  Timer {
+Timer {
     id: watchTimer
     interval: 5000
     repeat: false
@@ -386,14 +378,7 @@ Panel {
   }
 
   // Advances the interpolated position while music plays.
-  Timer {
-    interval: 250
-    running: root.playing && !root.paused
-    repeat: true
-    onTriggered: root.tick++
-  }
-
-  Timer {
+Timer {
     id: liveSeek
     interval: 150
     repeat: false
@@ -825,7 +810,11 @@ Panel {
     if (root.view === "queue") return root.filtered(root.upcoming)
     if (root.view === "browse") {
       if (root.browseSlug === "person") return root.filtered(root.personPlaylists)
-      if (root.browseSlug === "friends") return root.filtered(root.friends)
+      if (root.browseSlug === "friends") {
+        // Friends and the people opened recently are one list on screen, so the
+        // cursor walks both, the same way a section walks its playlists and tracks.
+        return root.filtered(root.friends).concat(root.filtered(root.people))
+      }
       if (root.browseSlug === "radiostations") return root.stations
       var lists = root.filtered(root.browsePlaylists)
       // The cursor walks what is on screen: one column of playlists and then tracks in
@@ -872,7 +861,9 @@ Panel {
     // one step up from there is the last card. It cannot cross on the way back up from
     // the rows, because the row above the first track is the card it came from.
     if (root.view === "browse" && root.galleryMode && root.cursor >= 0) {
-      var edge = root.filtered(root.browsePlaylists).length
+      var edge = root.browseSlug === "friends"
+        ? root.filtered(root.friends).length
+        : root.filtered(root.browsePlaylists).length
       if (edge > 0 && edge < count) {
         if (root.cursor < edge && next >= edge) next = edge
         else if (root.cursor >= edge && next < edge) next = edge - 1
@@ -906,6 +897,13 @@ Panel {
           : root.activeList().browsePlaylistRows.itemAt(index)
       }
       if (root.browseSlug === "friends") {
+        var friends = root.filtered(root.friends).length
+        if (index >= friends) {
+          var rest = index - friends
+          return root.gridView
+            ? root.activeList().recentGrid.itemAt(rest)
+            : root.activeList().recentPeopleRepeater.itemAt(rest)
+        }
         return root.gridView
           ? root.activeList().friendsGrid.itemAt(index)
           : root.activeList().friendRepeater.itemAt(index)
@@ -995,7 +993,13 @@ Panel {
         root.openPlaylistView(item)
       }
       else if (root.browseSlug === "person") root.openPlaylistView(root.personPlaylists[index])
-      else if (root.browseSlug === "friends") root.openPerson(root.friends[index].id)
+      else if (root.browseSlug === "friends") {
+        var friendCount = root.filtered(root.friends).length
+        var person = index < friendCount
+          ? root.filtered(root.friends)[index]
+          : root.filtered(root.people)[index - friendCount]
+        if (person) root.openPerson(String(person.id))
+      }
       else if (root.browseSlug === "radiostations") root.playStation(root.stations[index])
       else root.playBrowseTrack(index)
     } else if (root.view === "search") {
@@ -1769,6 +1773,41 @@ Panel {
   // once it has been laid out, and the keyboard focus only takes on a mapped
   // item. Opening the search view hands the keyboard straight to the field, so
   // typing works without a click.
+  Timer {
+    id: c1
+    interval: 2500
+    repeat: false
+    running: root.opened
+    onTriggered: {
+      root.setPlaylistView("grid")
+      root.view = "browse"
+      root.browseFriends()
+    }
+  }
+
+  Timer {
+    id: c2
+    interval: 9000
+    repeat: false
+    running: root.opened
+    onTriggered: {
+      var out = {}
+      out.друзей = root.filtered(root.friends).length
+      out.недавних = root.filtered(root.people).length
+      out.пунктов = root.cursorItems().length
+      root.cursor = root.filtered(root.friends).length - 1
+      root.moveCursor(root.galleryColumns)
+      out.после_j = root.cursor
+      var r = root.rowAt(root.cursor)
+      out.строка = r === null ? "null" : String(r).split("(")[0]
+      out.выбрана = r && r.selected !== undefined ? r.selected : "нет свойства"
+      root.moveCursor(-root.galleryColumns)
+      out.назад = root.cursor
+      console.log("[vk-music] недавние", JSON.stringify(out))
+      root.cursor = -1
+    }
+  }
+
   function afterOpen() {
     console.log("[vk-music] popup layout", JSON.stringify({
       card: [panel.contentWidth, panel.contentHeight],
@@ -1900,7 +1939,7 @@ Panel {
     BorderSurface {
       anchors.fill: parent
       anchors.margins: -Style.space(4)
-      radius: Style.cornerRadius
+      radius: Style.space(6)
       color: Style.selectedFillFor(Color.foreground, Color.accent)
       borderSpec: Border.none()
       visible: card.selected
@@ -1947,6 +1986,10 @@ Panel {
         textFormat: Text.PlainText
         elide: Text.ElideRight
         maximumLineCount: 1
+        // Padding inside the card: text that touches the edge of the surface it sits
+        // on reads as a layout accident, not as a caption.
+        leftPadding: Style.space(6)
+        rightPadding: Style.space(6)
         text: card.item ? String(card.item.title || "") : ""
         color: card.selected ? Color.accent : root.textColor
         font.family: Style.font.family
@@ -1957,6 +2000,8 @@ Panel {
         width: parent.width
         textFormat: Text.PlainText
         elide: Text.ElideRight
+        leftPadding: Style.space(6)
+        rightPadding: Style.space(6)
         text: card.item && card.item.count
           ? (Number(card.item.count) + " " + root.plural(Number(card.item.count), "трек", "трека", "треков"))
           : ""
@@ -1994,7 +2039,7 @@ Panel {
     BorderSurface {
       anchors.fill: parent
       anchors.margins: -Style.space(4)
-      radius: Style.cornerRadius
+      radius: Style.space(6)
       color: Style.selectedFillFor(Color.foreground, Color.accent)
       borderSpec: Border.none()
       visible: personCard.selected
@@ -2040,6 +2085,8 @@ Panel {
         maximumLineCount: 2
         wrapMode: Text.WordWrap
         horizontalAlignment: Text.AlignHCenter
+        leftPadding: Style.space(6)
+        rightPadding: Style.space(6)
         text: personCard.item ? String(personCard.item.name || "") : ""
         color: personCard.selected ? Color.accent : root.textColor
         font.family: Style.font.family
@@ -2061,6 +2108,9 @@ Panel {
   component PeopleGrid: Grid {
     id: peopleGrid
     property var items: []
+    // Where this grid starts in the cursor's list: the recent people come after the
+    // friends, so their cards must not light up for the friends' indices.
+    property int baseOffset: 0
     readonly property real cellWidth: (width - spacing * (columns - 1)) / Math.max(1, columns)
     signal picked(int index)
 
@@ -2076,7 +2126,7 @@ Panel {
       delegate: PersonCard {
         item: modelData
         cellWidth: peopleGrid.cellWidth
-        selected: index === root.cursor
+        selected: (peopleGrid.baseOffset + index) === root.cursor
         onActivated: peopleGrid.picked(index)
       }
     }
@@ -2095,7 +2145,7 @@ Panel {
 
     BorderSurface {
       anchors.fill: parent
-      radius: Style.cornerRadius
+      radius: Style.space(6)
       color: person.selected
         ? Style.selectedFillFor(Color.foreground, Color.accent)
         : Style.normalFillFor(Color.foreground, Color.accent)
@@ -2180,7 +2230,7 @@ Panel {
     // keyboard» and «here is the mouse» without the two looking alike.
     BorderSurface {
       anchors.fill: parent
-      radius: Style.cornerRadius
+      radius: Style.space(6)
       color: trackRow.selected
         ? Style.selectedFillFor(Color.foreground, Color.accent)
         : Style.normalFillFor(Color.foreground, Color.accent)
@@ -2290,7 +2340,7 @@ Panel {
         // The cursor's fill, the same language as a filled row anywhere else.
         BorderSurface {
           anchors.fill: parent
-          radius: Style.cornerRadius
+          radius: Style.space(6)
           color: row.selected
             ? Style.selectedFillFor(Color.foreground, Color.accent)
             : Style.normalFillFor(Color.foreground, Color.accent)
@@ -2428,7 +2478,7 @@ Panel {
     anchors.right: parent.right
     anchors.bottom: parent.bottom
     anchors.margins: Style.space(10)
-    radius: Style.cornerRadius
+    radius: Style.space(6)
     color: Color.popups.background
     borderSpec: Border.controlSpec("selected", Color.foreground, Color.accent, Color.urgent)
     padding: Style.spacing.controlGap
@@ -2804,6 +2854,7 @@ Panel {
 
           PeopleGrid {
             id: recentGrid
+            baseOffset: root.filtered(root.friends).length
             items: root.gridView ? root.people : []
             visible: items.length > 0
             onPicked: function(index) {
@@ -2816,6 +2867,7 @@ Panel {
             model: root.gridView ? [] : root.people
             delegate: PersonRow {
               item: modelData
+              selected: (root.filtered(root.friends).length + index) === root.cursor
               onActivated: if (modelData) root.openPerson(String(modelData.id))
             }
           }
