@@ -65,7 +65,7 @@ hours, and it can ask for a captcha and an SMS code.
 | `Space` in the popup | Play / pause |
 | `N` / `P` in the popup | Next / previous |
 | Typing in Поиск | Suggestions after a pause, results after a longer one, `Enter` at once |
-| Tab Обзор | Sections (Главная, Моя музыка, Обзор, Радио, Обновления), their playlists and tracks, `Ещё` for the next page |
+| Tab Обзор | Sections (Главная, Моя музыка, Обзор, Радио, Обновления), their playlists and tracks, `Ещё` for the next page; a line runs while a section loads, and the header says what is loading |
 | A station in Обзор → Радио | Live stream: the bar shows the station, the popup has no timeline to seek in |
 
 ## Commands

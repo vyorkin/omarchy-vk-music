@@ -1,2 +1,3 @@
 module vkmusic
 ProgressFrame 1.0 ../../../ProgressFrame.qml
+ProgressLine 1.0 ../../../ProgressLine.qml

@@ -39,6 +39,13 @@ Panel {
   property var browsePlaylists: []
   property string browseNext: ""
   property var stations: []
+  // A list that is being fetched is not an empty list: without these the popup
+  // showed "Пусто" and "Очередь пуста" while the answer was still on its way.
+  property bool browseLoading: false
+  property bool browseMoreLoading: false
+  property bool queueLoading: false
+  property bool searchLoading: false
+  property double sourcesLoadedAt: 0
   property string query: ""
   property string busy: ""
   property string errorText: ""
@@ -451,12 +458,18 @@ Panel {
   }
 
   function loadQueue() {
+    root.queueLoading = root.queue.length === 0
     call([root.cli, "queue"], function(answer) {
+      root.queueLoading = false
       if (answer && answer.ok) root.queue = answer.data
     })
   }
 
   function loadSources() {
+    // Opening the popup used to ask for these every time, and each answer queued
+    // behind the others; they barely change, so once per ten minutes is plenty.
+    if (root.sources.length > 0 && Date.now() - root.sourcesLoadedAt < 600000) return
+    root.sourcesLoadedAt = Date.now()
     call([root.cli, "sections"], function(answer) {
       if (answer && answer.ok) root.sources = answer.data
     })
@@ -499,8 +512,10 @@ Panel {
     root._searchSeq = root._searchSeq + 1
     var seq = root._searchSeq
     root.searchState = "searching"
+    root.searchLoading = true
     root.call([root.cli, "search", text], function(answer) {
       if (seq !== root._searchSeq) return
+      root.searchLoading = false
       if (answer && answer.ok) {
         root.results = answer.data.tracks || []
         root.searchState = "results"
@@ -537,8 +552,50 @@ Panel {
     call([root.cli, "play", "section", id, "0", "--title", title], function() { root.watchForTrack() })
   }
 
+  // Russian counts a noun three ways; a section header that says "1 треков" is
+  // worse than saying nothing.
+  function plural(count, one, few, many) {
+    var value = Math.abs(Number(count) || 0) % 100
+    if (value > 10 && value < 20) return many
+    value = value % 10
+    if (value === 1) return one
+    if (value >= 2 && value <= 4) return few
+    return many
+  }
+
+  // What the list is showing, and what it is doing: the header is the one place
+  // that says both, so the list itself never has to claim anything false.
+  readonly property string browseHeader: {
+    if (root.browseSlug === "") return ""
+    if (root.browseSlug === "radiostations") {
+      if (root.browseLoading) return "Радио · загрузка…"
+      var stations = root.stations.length
+      return "Радио · " + (stations === 0
+        ? "пусто"
+        : stations + " " + root.plural(stations, "станция", "станции", "станций"))
+    }
+    var title = root.browseTitle !== "" ? root.browseTitle : (root.sectionTitle(root.browseSlug) || "Раздел")
+    if (root.browseLoading) return title + " · загрузка…"
+    var tracks = root.browseTracks.length
+    var lists = root.browsePlaylists.length
+    if (tracks === 0 && lists === 0) return title + " · пусто"
+    if (tracks === 0) {
+      return title + " · " + lists + " " + root.plural(lists, "плейлист", "плейлиста", "плейлистов")
+    }
+    return title + " · " + tracks + " " + root.plural(tracks, "трек", "трека", "треков")
+  }
+
   // The sections come as opaque ids with a friendly slug inside the url. The
   // backend accepts either, and the url is what lets the UI label them.
+  // The section's own name, known from the section list before its page arrives:
+  // "Раздел · загрузка…" tells the user nothing about what is loading.
+  function sectionTitle(slug) {
+    for (var i = 0; i < root.sources.length; i++) {
+      if (root.sourceSlug(root.sources[i]) === slug) return String(root.sources[i].title || "")
+    }
+    return ""
+  }
+
   function sourceSlug(section) {
     if (!section) return ""
     var match = String(section.url || "").match(/section=([a-z]+)/)
@@ -554,15 +611,19 @@ Panel {
     root.browseNext = ""
     root.browseTitle = ""
     if (slug === "radiostations") {
-      if (root.stations.length === 0) {
-        root.call([root.cli, "radio"], function(answer) {
-          if (answer && answer.ok) root.stations = answer.data || []
-        })
-      }
+      if (root.stations.length > 0) return
+      root.browseLoading = true
+      root.call([root.cli, "radio"], function(answer) {
+        if (root.browseSlug === slug) root.browseLoading = false
+        if (answer && answer.ok) root.stations = answer.data || []
+      })
       return
     }
+    root.browseLoading = true
     root.call([root.cli, "section", slug], function(answer) {
-      if (answer && answer.ok && root.browseSlug === slug) root.adoptSection(answer.data)
+      if (root.browseSlug !== slug) return
+      root.browseLoading = false
+      if (answer && answer.ok) root.adoptSection(answer.data)
     })
   }
 
@@ -577,11 +638,14 @@ Panel {
   // «Ещё»: the sections are paged by a cursor, the tracks are appended to the
   // list the user is already looking at.
   function browseMore() {
-    if (root.browseNext === "") return
+    if (root.browseNext === "" || root.browseMoreLoading) return
     var slug = root.browseSlug
     var cursor = root.browseNext
+    root.browseMoreLoading = true
     root.call([root.cli, "section", slug, cursor], function(answer) {
-      if (!answer || !answer.ok || root.browseSlug !== slug) return
+      if (root.browseSlug !== slug) return
+      root.browseMoreLoading = false
+      if (!answer || !answer.ok) return
       var page = answer.data || {}
       root.browseTracks = root.browseTracks.concat(page.tracks || [])
       root.browsePlaylists = root.browsePlaylists.concat(page.playlists || [])
@@ -1304,8 +1368,15 @@ Panel {
                 }
               }
 
+              ProgressLine {
+                width: parent.width
+                thickness: Math.max(2, Style.space(2))
+                color: Color.accent
+                visible: root.queueLoading
+              }
+
               Text {
-                visible: root.queue.length === 0
+                visible: root.queue.length === 0 && !root.queueLoading
                 textFormat: Text.PlainText
                 text: "Очередь пуста. Начни с «Моя музыка»."
                 color: root.dim
@@ -1374,6 +1445,21 @@ Panel {
                 }
               }
 
+              PanelSectionHeader {
+                text: root.browseHeader
+                foreground: root.dim
+                visible: root.browseHeader !== ""
+              }
+
+              // Where the missing rows will appear: at the top of an empty list,
+              // and above the row that asks for the next page.
+              ProgressLine {
+                width: parent.width
+                thickness: Math.max(2, Style.space(2))
+                color: Color.accent
+                visible: root.browseLoading
+              }
+
               Text {
                 width: parent.width
                 textFormat: Text.PlainText
@@ -1406,21 +1492,19 @@ Panel {
                 }
               }
 
-              Text {
+              ProgressLine {
                 width: parent.width
-                textFormat: Text.PlainText
-                visible: root.browseSlug !== "" && root.browseSlug !== "radiostations"
-                  && root.browseTracks.length === 0 && root.browsePlaylists.length === 0
-                text: "Пусто"
-                color: root.dim
-                font.family: Style.font.family
-                font.pixelSize: Style.font.bodySmall
+                thickness: Math.max(2, Style.space(2))
+                color: Color.accent
+                visible: root.browseMoreLoading
               }
 
               Button {
                 width: listColumn.width
                 leftAlign: true
                 visible: root.browseNext !== ""
+                enabled: !root.browseMoreLoading
+                opacity: enabled ? 1.0 : 0.5
                 text: "Ещё"
                 foreground: root.textColor
                 onClicked: root.browseMore()
@@ -1448,6 +1532,13 @@ Panel {
                 text: root.searchHeader
                 foreground: root.dim
                 visible: root.searchHeaderVisible
+              }
+
+              ProgressLine {
+                width: parent.width
+                thickness: Math.max(2, Style.space(2))
+                color: Color.accent
+                visible: root.searchLoading
               }
 
               Repeater {

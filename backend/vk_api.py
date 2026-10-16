@@ -413,6 +413,7 @@ class VkClient:
         self.timeout = timeout
         self.device_id = device_id
         self.session = session or requests.Session()
+        self._sections_cache: tuple[float, list[Section]] | None = None
         self.session.headers.update({"User-Agent": user_agent})
         self._min_interval = max(min_interval, 0.0)
         self._jitter = max(jitter, 0.0)
@@ -540,8 +541,19 @@ class VkClient:
 
     # -- catalog -----------------------------------------------------------
 
+    # The five sections are the same list for minutes, and every friendly-slug
+    # lookup asks for them: without this, opening the popup cost one request per
+    # lookup on top of the section being opened, and they queue behind the
+    # pacing, which is a second or two of waiting for nothing.
+    SECTIONS_TTL = 300.0
+
     def sections(self, *, owner_id: int | None = None, need_blocks: bool = False) -> list[Section]:
         """`catalog.getAudio`: the section list, without blocks."""
+        cacheable = owner_id is None and not need_blocks
+        if cacheable:
+            cached = self._sections_cache
+            if cached is not None and time.monotonic() < cached[0]:
+                return list(cached[1])
         response = self.call(
             "catalog.getAudio",
             owner_id=owner_id,
@@ -549,7 +561,10 @@ class VkClient:
         )
         catalog = response.get("catalog") if isinstance(response, Mapping) else None
         if isinstance(catalog, Mapping):
-            return [Section.from_item(item) for item in catalog.get("sections") or []]
+            result = [Section.from_item(item) for item in catalog.get("sections") or []]
+            if cacheable:
+                self._sections_cache = (time.monotonic() + self.SECTIONS_TTL, result)
+            return result
         return []
 
     def catalog_home(

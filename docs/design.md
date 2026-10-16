@@ -238,6 +238,36 @@ the download itself and mpv's load, and only the split says which one is to
 blame. In practice the download dominates, and now that starting a track clears
 mpv's pause, the sound follows the download by about 0.2 s.
 
+## Lists that are loading
+
+A list that is being fetched is not an empty list, and the popup used to say it
+was: «Пусто» under a section, «Очередь пуста» on the first open, and «Ничего не
+найдено» while a search was still running. All three are claims about the data
+that nobody can make yet.
+
+What replaced them:
+
+* **A header that says what the list is and what it is doing.** «Обзор ·
+  загрузка…» becomes «Обзор · 52 трека» (or «· 12 плейлистов», or «· пусто» once
+  that is true), and the section name is known before the page arrives — it comes
+  from the section list, not from the answer. A Russian count needs all three
+  forms, so a small `plural()` picks «трек / трека / треков».
+* **A line that runs.** `ProgressLine` is the frame's language for an unknown
+  length: a bright piece travelling along a faint track. It is placed where the
+  missing rows will appear — at the top of an empty list, and above the «Ещё» row
+  when a further page is on its way — so it marks a place rather than pretending
+  to be content.
+* The same treatment in search (the header already said «Ищу…») and in the queue
+  on the first open.
+
+The wait itself was worth cutting, and measuring it was the only way to see why
+it was 2–3 seconds: opening the popup asked for the queue, the section list, the
+home blocks and the section page, and the daemon's pacing queues API calls one
+behind another. Two caches remove most of it — the section list is cached in the
+client for five minutes (every friendly-slug lookup used to refetch it), and the
+widget fetches the sections and playlists at most once per ten minutes instead of
+on every open.
+
 ## Browsing, and radio as a stream
 
 The **Обзор** tab is a browser: the five catalog sections (`catalog.getAudio`)
@@ -332,6 +362,7 @@ automatically.
 | Playing a search result | queues the keys of the results on screen, one `audio.getById`, no second search |
 | Browsing sections and their playlists | works; `Ещё` appends the next page |
 | Radio | 100 live stations play as streams; the bar and MPRIS show the station |
+| Loading states in lists | the area says it is loading instead of claiming to be empty; `ProgressLine` and the pixel check behind it |
 
 The queue and the position survive a restart, but playback does **not** resume
 by itself at login: the bar shows the track that was playing, paused, and one
@@ -382,6 +413,16 @@ click continues it.
   `...` made every emit raise `SignatureBodyMismatchError` and no consumer ever
   saw a `Seeked`. It returns the position now, and the bus shows `Seeked` with
   the expected microseconds.
+* **A false state is worse than no state.** Three places reported emptiness
+  while they were fetching, because emptiness and "not yet known" were the same
+  value. The rule taken from it: while something is loading, the interface says
+  so in the place where the answer will appear.
+* **`omarchy restart shell` can race and leave no shell at all.** The new
+  instance starts first and refuses ("An instance of this configuration is
+  already running"), then the old one exits on the IPC request, and nothing is
+  left running — the bar disappears. `omarchy-shell shell ping` after every
+  restart is what tells the two cases apart; the journal alone shows only the
+  refusal.
 * **A cached `readonly property` that reads a field inside a `var` goes stale.**
   `readonly property bool onRadio: root.radio.name !== undefined && …` stayed
   false while the object was demonstrably there, and so did the `!== null` form
