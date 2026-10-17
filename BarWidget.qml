@@ -772,6 +772,32 @@ Timer {
   // one pair for what is being looked at, one for where it comes from. The key catcher
   // turns h and l into cursor moves, but a shifted letter is not «h», so these arrive
   // as plain text keys and cannot be confused with navigation.
+  // Running through the tabs must not fire a request per tab: the load waits until the
+  // panel has settled on the section view for a moment. Short enough that stopping on
+  // the tab feels instant, long enough that a burst of keypresses costs one request.
+  property string _pendingBrowse: ""
+
+  function scheduleBrowse(slug) {
+    if (slug === "") return
+    root._pendingBrowse = slug
+    browseDelay.restart()
+  }
+
+  Timer {
+    id: browseDelay
+    interval: 350
+    repeat: false
+    onTriggered: {
+      var slug = root._pendingBrowse
+      root._pendingBrowse = ""
+      // The view may have moved on while the timer ran: a request for a list nobody is
+      // looking at is exactly the traffic this exists to avoid.
+      if (slug === "" || root.view !== "browse") return
+      if (slug === "friends") root.browseFriends()
+      else root.browseSource(slug)
+    }
+  }
+
   function cycleView(step) {
     var views = ["queue", "browse", "search", "settings"]
     var index = views.indexOf(root.view)
@@ -779,7 +805,7 @@ Timer {
     var next = views[(index + step + views.length) % views.length]
     root.view = next
     root.cursor = -1
-    if (next === "browse" && root.browseSlug === "") root.browseSource("explore")
+    if (next === "browse" && root.browseSlug === "") root.scheduleBrowse("explore")
     root.focusList()
   }
 
@@ -792,8 +818,7 @@ Timer {
     var index = slugs.indexOf(current)
     if (index < 0) index = 0
     var next = slugs[(index + step + slugs.length) % slugs.length]
-    if (next === "friends") root.browseFriends()
-    else root.browseSource(next)
+    root.scheduleBrowse(next)
   }
 
   function setSearchMode(mode) {
@@ -2754,6 +2779,10 @@ Timer {
 
     Column {
       id: listColumn
+      // Air above the first row even when the heading above is empty: otherwise a
+      // selected row's fill touches the selected tab's fill and the two read as one.
+      Item { width: 1; height: Style.space(10) }
+
       width: scroller.width
       spacing: Style.space(4)
 
@@ -3920,7 +3949,7 @@ Timer {
       onClicked: {
         root.cursor = -1
         root.view = "browse"
-        root.browseSource(root.browseSlug !== "" ? root.browseSlug : "explore")
+        root.scheduleBrowse(root.browseSlug !== "" ? root.browseSlug : "explore")
         root.focusList()
       }
     }
@@ -4153,7 +4182,7 @@ Timer {
         PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
         TabsRow { Layout.fillWidth: true }
         SearchFieldRow { id: compactFieldRow; Layout.fillWidth: true }
-        TrackList { id: compactList; Layout.topMargin: Style.space(10) }
+        TrackList { id: compactList; Layout.topMargin: Style.space(14) }
         LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
       }
 
@@ -4175,7 +4204,7 @@ Timer {
 
         TabsRow { Layout.fillWidth: true }
         SearchFieldRow { id: extendedFieldRow; Layout.fillWidth: true }
-        TrackList { id: extendedList; Layout.topMargin: Style.space(10) }
+        TrackList { id: extendedList; Layout.topMargin: Style.space(14) }
         LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
       }
 

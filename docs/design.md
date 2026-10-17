@@ -346,6 +346,16 @@ Three things learned in the move:
   the track repeater sent the reveal to a row far below the viewport, and the row the
   cursor had actually moved to stayed off-screen — the keys looked dead because
   nothing visible changed. `rowAt` now picks the repeater by where the index falls.
+* Running through the tabs must not cost a request per tab: that is a burst that looks
+  like a robot and spends traffic nobody asked for. A section load from a tab or from
+  ⇧H/⇧L goes through `scheduleBrowse`, which waits 350 ms and then checks that the
+  panel is still on the section view — a load for a list nobody is looking at is exactly
+  the traffic the delay exists to avoid. A click on a source chip still loads at once:
+  the pointer is on the chip the user chose.
+* Air above a list is not decoration. A selected fill reaches past its row, and a
+  selected tab's fill reaches down; with nothing between them the two read as one
+  shape. The list keeps a fixed 10 px spacer at the top of its column, so the gap does
+  not depend on whether a heading happens to be visible.
 * Keys, and which pair does what: `[` and `]` walk the tabs (queue, section, search,
   settings) and `⇧H`/`⇧L` walk the sources of the section view. The second pair is free
   because the key catcher turns an unshifted h and l into cursor moves, while a shifted

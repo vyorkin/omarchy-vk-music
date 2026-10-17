@@ -17,7 +17,10 @@ import sys
 from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parent.parent / "BarWidget.qml"
-SUSPECT = ("console.log(", "setPlaylistView(", 'root.view = "', "browseSource(", "browseFriends(", "openPerson(")
+# A timer that logs, switches the view or overrides the playlist representation is a
+# probe. A timer that loads a section after a delay is not: `browseDelay` exists so that
+# running through the tabs costs one request instead of one per tab.
+SUSPECT = ("console.log(", "setPlaylistView(", 'root.view = "')
 
 
 def timer_blocks(text):
