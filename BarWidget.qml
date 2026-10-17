@@ -7,6 +7,7 @@
 // driven from a terminal while debugging.
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -3737,6 +3738,18 @@ Timer {
       ? Border.none()
       : Border.controlSpec("normal", root.textColor, Color.accent)
 
+    // A rounded frame around a square picture reads as an accident: the frame's corners
+    // show the background, the picture's do not. The picture is masked by a rounded
+    // rectangle of the same radius, so frame and cover are one shape.
+    Rectangle {
+      id: coverMask
+      width: coverArt.width - Style.space(4)
+      height: coverArt.height - Style.space(4)
+      radius: Math.max(0, coverArt.radius - Style.space(2))
+      visible: false
+      layer.enabled: true
+    }
+
     Image {
       anchors.fill: parent
       anchors.margins: Style.space(2)
@@ -3746,6 +3759,11 @@ Timer {
         ? String(root.radioValue("logo", ""))
         : (root.hasTrack && root.trackValue("thumb", "") ? root.trackValue("thumb", "") : "")
       visible: source !== ""
+      layer.enabled: true
+      layer.effect: MultiEffect {
+        maskEnabled: true
+        maskSource: coverMask
+      }
     }
 
     Text {

@@ -269,6 +269,11 @@ v0.468.0, the same set the reference widget uses) and drawn as an SVG data URL w
 for a name the set does not carry.
 
 
+The cover in the band is a rounded frame around a square picture, and the two did not
+agree: the frame's corners showed the background while the picture's did not. The picture
+is masked by a rounded rectangle of the same radius now (`MultiEffect` with `maskEnabled`,
+the mask itself never drawn), so the frame and the cover are one shape.
+
 Every track row carries a heart as well, at its right end: filled when the track is in
 «Моя музыка», outlined when it is not, and a left click toggles it without disturbing
 playback. VK keeps a copy of a track in each list it appears in, so the panel remembers
