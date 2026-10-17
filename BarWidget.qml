@@ -29,6 +29,24 @@ Panel {
     return I18n.translate(root.language, text)
   }
 
+  // The daemon answers in prose, in Russian, because that is what its own CLI and the
+  // journal show. The panel translates it by looking the sentence up as a key, and the
+  // two sentences the daemon builds around a value are recognised by their shape.
+  function tm(message) {
+    var text = String(message || "")
+    if (text === "") return ""
+    var known = root.t(text)
+    if (known !== text) return known
+    var person = text.match(/^человек не найден: (.*)$/)
+    if (person) return root.t("Человек не найден")
+    var skipped = text.match(/^Пропущен трек «(.*)»: (.*)$/)
+    if (skipped) return root.t("Пропущен трек") + " «" + skipped[1] + "»: " + root.tm(skipped[2])
+    return text
+  }
+
+  // The halt reason is prose from the daemon as well.
+  readonly property string haltText: root.tm(String(root.status.halted || ""))
+
   property var status: ({})
   property var queue: []
   property var playlists: []
@@ -243,7 +261,7 @@ Panel {
   // painted with the urgent colour.
   readonly property string statusText: {
     if (root.errorText !== "") return root.errorText
-    if (root.halted !== "") return root.halted
+    if (root.halted !== "") return root.haltText
     if (root.notice !== "") return root.notice
     if (!root.signedIn) return root.t("нет входа")
     // Buffering is not text: the ring around the cover says it, in place, and
@@ -344,7 +362,8 @@ Timer {
           if (answer && answer.ok) {
             root.errorText = ""
           } else if (answer && answer.error) {
-            root.errorText = String(answer.error.message || answer.error.code || root.t("ошибка"))
+            root.errorText = root.tm(String(answer.error.message || answer.error.code || ""))
+            if (root.errorText === "") root.errorText = root.t("ошибка")
           } else if (raw !== "") {
             root.errorText = raw
           } else {
@@ -1651,7 +1670,7 @@ Timer {
     cursorShape: Qt.PointingHandCursor
     onEntered: if (root.bar) root.bar.showTooltip(root, root.errorText !== ""
       ? ("vk music: " + root.errorText)
-      : (root.halted !== "" ? root.halted : (root.hasTrack
+      : (root.halted !== "" ? root.haltText : (root.hasTrack
         ? (root.trackValue("title") + (root.trackValue("artist", "") ? " — " + root.trackValue("artist", "") : ""))
         : "vk music")))
     onExited: if (root.bar) root.bar.hideTooltip(root)

@@ -284,6 +284,12 @@ a fallback — every key carries all seven languages, and a check over the file 
 Ukrainian three, English, German, Spanish and French two, Japanese and Chinese one. The
 callers keep passing the Russian three, and each language maps its own groups onto them.
 
+The daemon still answers in Russian prose, because its CLI and the journal are read by a
+human too. The panel translates it with `tm()`: a whole sentence is looked up as a key,
+and the two sentences the daemon builds around a value — «человек не найден: <query>» and
+«Пропущен трек «<label>»: <reason>» — are recognised by their shape, so a dynamic message
+translates around its own value instead of staying Russian.
+
 What is NOT translated: the daemon's own messages — «Список пуст», the halt reasons, VK's
 error text. They reach the widget as Russian sentences. Translating them means the
 backend returning codes instead of prose, which is a change of its own.

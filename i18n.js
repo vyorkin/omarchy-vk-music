@@ -205,6 +205,14 @@ T["VK is rate limiting: wait a few minutes"] = { en: "VK is rate limiting: wait 
 T["VK rejected the token"] = { en: "VK rejected the token", de: "VK hat das Token abgelehnt", es: "VK rechazó el token", fr: "VK a rejeté le jeton", ja: "VKがトークンを拒否しました", zh: "VK 拒绝了令牌", uk: "VK відхилив токен" }
 T["у станции нет ссылки на поток"] = { en: "This station has no stream", de: "Dieser Sender hat keinen Stream", es: "Esta emisora no tiene emisión", fr: "Cette station n'a pas de flux", ja: "この局にはストリームがありません", zh: "该电台没有流", uk: "У станції немає посилання на потік" }
 
+T["Сессия VK отклонена. Нужен повторный вход."] = { en: "VK rejected the session. Sign in again.", de: "VK hat die Sitzung abgelehnt. Melde dich erneut an.", es: "VK rechazó la sesión. Inicia sesión de nuevo.", fr: "VK a rejeté la session. Reconnectez-vous.", ja: "VKがセッションを拒否しました。再ログインしてください。", zh: "VK 拒绝了会话。请重新登录。", uk: "Сесію VK відхилено. Потрібен повторний вхід." }
+T["VK включил ограничение на запросы. Плагин остановлен."] = { en: "VK is rate limiting. The plugin has stopped.", de: "VK begrenzt Anfragen. Das Plugin ist angehalten.", es: "VK limita las peticiones. El plugin se ha detenido.", fr: "VK limite les requêtes. Le plugin est arrêté.", ja: "VKが制限中です。プラグインを停止しました。", zh: "VK 正在限流。插件已停止。", uk: "VK увімкнув обмеження запитів. Плагін зупинено." }
+T["VK требует капчу. Плагин остановлен."] = { en: "VK wants a captcha. The plugin has stopped.", de: "VK verlangt ein Captcha. Das Plugin ist angehalten.", es: "VK pide un captcha. El plugin se ha detenido.", fr: "VK demande un captcha. Le plugin est arrêté.", ja: "VKがキャプチャを要求しています。プラグインを停止しました。", zh: "VK 要求验证码。插件已停止。", uk: "VK вимагає капчу. Плагін зупинено." }
+T["Пропущен трек"] = { en: "Track skipped", de: "Titel übersprungen", es: "Pista omitida", fr: "Titre ignoré", ja: "曲をスキップ", zh: "已跳过曲目", uk: "Пропущено трек" }
+T["нет ссылки на поток"] = { en: "no stream link", de: "kein Stream-Link", es: "sin enlace de emisión", fr: "aucun lien de flux", ja: "ストリームのリンクがありません", zh: "没有流链接", uk: "немає посилання на потік" }
+T["пустая ссылка"] = { en: "empty link", de: "leerer Link", es: "enlace vacío", fr: "lien vide", ja: "リンクが空です", zh: "链接为空", uk: "порожнє посилання" }
+T["Поиск"] = { en: "Search", de: "Suche", es: "Búsqueda", fr: "Recherche", ja: "検索", zh: "搜索", uk: "Пошук" }
+
 // The string in the chosen language, or the key itself when this language has no line
 // for it: a half-translated panel stays readable.
 function translate(language, key) {
