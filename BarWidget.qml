@@ -2499,7 +2499,10 @@ Timer {
       anchors.left: parent.left
       anchors.leftMargin: Style.space(10)
       anchors.verticalCenter: parent.verticalCenter
-      horizontalAlignment: Text.AlignHCenter
+      // Flush left, not centred: a centred glyph sits ten pixels deeper than a flush one,
+      // and the row's two side paddings then look nothing alike. The column is a fixed
+      // width, so the cover stays on its line whatever the number is.
+      horizontalAlignment: Text.AlignLeft
       textFormat: Text.PlainText
       // A playing row shows the play glyph where its number would be.
       text: trackRow.playing ? "▶" : (trackRow.position > 0 ? String(trackRow.position) : "")
