@@ -1737,16 +1737,7 @@ Timer {
 
     // Liking from the bar, without opening the popup: the same glyph target as the
     // transport, with the accent colour standing for «it is in my music».
-    BarGlyph {
-      visible: root.barShowLike && root.hasTrack && !root.onAir()
-      anchors.verticalCenter: parent.verticalCenter
-      name: "heart"
-      filled: root.liked
-      icon: root.liked ? "󰋑" : "󰋕"
-      iconColor: root.liked ? Color.accent : root.fg
-      tooltip: root.liked ? "Убрать из моей музыки" : "В мою музыку"
-      onClicked: root.toggleLike()
-    }
+
 
     // A small urgent dot is the whole error report in the bar; the text stays
     // readable and the popup carries the reason.
@@ -1804,6 +1795,19 @@ Timer {
         tooltip: "Следующий трек"
         onClicked: root.skipNext()
       }
+    }
+
+    // The heart sits after the transport, at the right end: it is not a control of the
+    // sound, it is a statement about the track.
+    BarGlyph {
+      visible: root.barShowLike && root.hasTrack && !root.onAir()
+      anchors.verticalCenter: parent.verticalCenter
+      name: "heart"
+      filled: root.liked
+      icon: root.liked ? "󰋑" : "󰋕"
+      iconColor: root.liked ? Color.accent : root.fg
+      tooltip: root.liked ? "Убрать из моей музыки" : "В мою музыку"
+      onClicked: root.toggleLike()
     }
   }
 

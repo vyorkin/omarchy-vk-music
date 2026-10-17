@@ -357,6 +357,11 @@ Three things learned in the move:
   panel is still on the section view — a load for a list nobody is looking at is exactly
   the traffic the delay exists to avoid. A click on a source chip still loads at once:
   the pointer is on the chip the user chose.
+* `Layout.fillHeight: true` inside a Row inflates the ROW, not the child. Putting it on
+  the heart's wrapper turned an 82 px band into most of the card, squashed the seek slider
+  and made its knob a fat black dot — and the mistake is already in this document from
+  the collapsed-list round. A control in a row wants `Layout.alignment: Qt.AlignVCenter`
+  and a preferred height, never `fillHeight`.
 * Air above a list is not decoration. A selected fill reaches past its row, and a
   selected tab's fill reaches down; with nothing between them the two read as one
   shape. The list keeps a fixed 10 px spacer at the top of its column, so the gap does
