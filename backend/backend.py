@@ -1569,6 +1569,17 @@ def _import_dbus() -> Any:
     return MessageBus, PropertyAccess, ServiceInterface, dbus_property, method, dbus_signal, Variant
 
 
+def _mpris_segment(value: object) -> str:
+    """A D-Bus object path segment holds letters, digits and underscores only.
+
+    VK's track keys start with a minus sign for anything a community owns, and one minus
+    was enough to make every publish raise SignatureBodyMismatchError — which killed the
+    whole MPRIS interface and, with it, every client that asks a player to pause itself.
+    """
+    clean = "".join(ch if (ch.isalnum() or ch == "_") else "_" for ch in str(value or ""))
+    return clean or "none"
+
+
 class MprisBridge:
     """Exports `org.mpris.MediaPlayer2` on a private asyncio loop."""
 
@@ -1775,7 +1786,7 @@ class MprisBridge:
             def Metadata(self) -> "a{sv}":  # type: ignore
                 state = self.state()
                 metadata: dict[str, Any] = {
-                    "mpris:trackid": Variant("o", f"/org/mpris/MediaPlayer2/track/{state['trackId'] or 'none'}"),
+                    "mpris:trackid": Variant("o", f"/org/mpris/MediaPlayer2/track/{_mpris_segment(state['trackId'])}"),
                     "xesam:title": Variant("s", state["title"]),
                     "xesam:artist": Variant(
                         "as", [a["name"] for a in state["artists"] if a.get("name")]

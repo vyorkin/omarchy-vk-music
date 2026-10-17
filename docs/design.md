@@ -269,6 +269,13 @@ v0.468.0, the same set the reference widget uses) and drawn as an SVG data URL w
 for a name the set does not carry.
 
 
+The MPRIS track id is built from VK's track key, and a key starts with a minus sign for
+anything a community owns. A D-Bus object path segment allows letters, digits and
+underscores only, so one minus made every publish raise `SignatureBodyMismatchError` — the
+whole interface failed at export, and clients that ask a player to pause itself, a
+dictation tool among them, waited on a name that answered nothing. The key is sanitised
+before it becomes a path.
+
 The cover in the BAR is twenty pixels, and that is why its frame looked wrong: a
 four-pixel corner is a fifth of a twenty-pixel picture, so the frame's rounding and the
 picture's square corners read as two shapes fighting. Its rounding is proportional now —
