@@ -2899,6 +2899,11 @@ Timer {
           }
         }
 
+        // Air between the section chips and the first card: the selected fill reaches a
+        // few pixels up and a selected chip's fill reaches down, so the column's four
+        // pixels of spacing made the two read as one shape.
+        Item { width: 1; height: Style.space(14) }
+
         PlaylistGrid {
           id: browseGrid
           items: root.filtered(root.browsePlaylists)
