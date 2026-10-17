@@ -272,7 +272,17 @@ for a name the set does not carry.
 The cover in the band is a rounded frame around a square picture, and the two did not
 agree: the frame's corners showed the background while the picture's did not.
 
-Two ways to make a picture follow a rounded shape were tried and both failed here.
+Making the picture follow the rounded shape is not achievable with what works here, and
+three attempts settled it. `Rectangle { radius; clip: true }` does not clip to the radius
+— measured on a 52 px red square whose corner stayed red. `MultiEffect` with `maskEnabled`
+renders nothing in the offscreen harness and changed nothing in the shell.
+`OpacityMask` with `ShaderEffectSource { hideSource: true }` does not render offscreen
+either, so it cannot be verified before shipping.
+
+So the frame is a MAT rather than an outline: the theme's own surface with a six-pixel
+even margin around the picture, and the frame's rounded corners read as the mat's corners.
+A two-pixel gap is what looked like a picture pasted onto a frame; six pixels reads as a
+border someone chose.
 `Rectangle { radius; clip: true }` does not clip to the radius — `clip` is always
 rectangular, measured on a 52 px red square whose corner stayed red. A shader mask
 (`MultiEffect` / `OpacityMask`) renders nothing in the offscreen harness, and the first

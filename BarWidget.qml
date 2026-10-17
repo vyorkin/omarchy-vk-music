@@ -3732,11 +3732,12 @@ Timer {
 
     width: size
     height: size
-    // A picture cannot be clipped to a rounded shape in plain QML (`clip` is always
-    // rectangular, and a shader mask was not reliable here), so the radius is small
-    // enough that a square picture inside a rounded frame reads as one shape rather than
-    // as a picture pasted onto a frame.
-    radius: Style.space(3)
+    // A picture cannot be clipped to a rounded shape here: `clip` is always rectangular
+    // (measured), and a shader mask renders nothing offscreen and did nothing in the
+    // shell. So the frame is a mat instead of an outline: a visible, even margin of the
+    // theme's own surface around the picture, with the frame's rounded corners reading as
+    // the mat's corners. Two pixels of gap is what looked like a mistake.
+    radius: Style.spacing.labelGap
     color: Style.normalFillFor(root.textColor, Color.accent)
     borderSpec: root.buffering
       ? Border.none()
@@ -3744,7 +3745,7 @@ Timer {
 
     Image {
       anchors.fill: parent
-      anchors.margins: Style.space(1)
+      anchors.margins: Style.space(6)
       fillMode: Image.PreserveAspectCrop
       asynchronous: true
       source: root.onAir()
