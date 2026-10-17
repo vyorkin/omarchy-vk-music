@@ -810,6 +810,9 @@ Timer {
     if (root.openPlaylist !== null) return false
     if (root.view === "browse") {
       if (root.browseSlug === "radiostations") return false
+      // People are drawn as cards or as rows as well, so the switch means the same
+      // thing on the friends page and on a person's page as it does for playlists.
+      if (root.browseSlug === "friends" || root.browseSlug === "person") return true
       return root.filtered(root.browsePlaylists).length > 0
     }
     if (root.view === "search") return root.searchMode === "playlists"

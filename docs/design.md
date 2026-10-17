@@ -394,6 +394,9 @@ Three things learned in the move:
   show and the switch would be a control that changes nothing — worse than absent, since
   it promises a view that does not exist. `playlistsShown` gates both the switch and the
   keys, the same rule the switch already followed for an opened playlist.
+  Its first version asked only for playlists, which hid the switch on the friends page —
+  where people are cards or rows, the very same choice. The condition is «this list has
+  two representations», not «this list contains playlists».
 * A key that silently does nothing reads as a broken key. ⇧H and ⇧L switch sections,
   which only means something in the section view — on any other tab they returned early
   and the panel ignored the press. They take the panel to the section view first now.
