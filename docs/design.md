@@ -355,7 +355,11 @@ Three things learned in the move:
   like a robot and spends traffic nobody asked for. A section load from a tab or from
   ⇧H/⇧L goes through `scheduleBrowse`, which waits 350 ms and then checks that the
   panel is still on the section view — a load for a list nobody is looking at is exactly
-  the traffic the delay exists to avoid. A click on a source chip still loads at once:
+  the traffic the delay exists to avoid. The window is 600 ms because that is longer
+  than a person's own repeat: at 350 ms a load could begin between two keypresses and
+  spend traffic on a tab that was already left. Measured with a log on every daemon call:
+  six tab presses in a row issue no section request at all. A click on a source chip
+  still loads at once:
   the pointer is on the chip the user chose.
 * A fix that reports "ok" is not a fix. Last round's replacement for exactly this
   `fillHeight` matched a block that had already changed and moved the heart instead of

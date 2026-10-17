@@ -785,7 +785,12 @@ Timer {
 
   Timer {
     id: browseDelay
-    interval: 350
+    // Long enough that passing through a tab never starts a request — a person pressing
+    // the key again does it in 250-450 ms, so a shorter window let the load begin
+    // between two presses and spend traffic on a tab that was already left. Short
+    // enough that stopping on the tab still feels immediate, especially since the load
+    // itself takes a couple of seconds.
+    interval: 600
     repeat: false
     onTriggered: {
       var slug = root._pendingBrowse
