@@ -389,6 +389,11 @@ Three things learned in the move:
   selected tab's fill reaches down; with nothing between them the two read as one
   shape. The list keeps a fixed 10 px spacer at the top of its column, so the gap does
   not depend on whether a heading happens to be visible.
+* A representation switch belongs where there is something with two representations.
+  «Моя музыка» is a hundred tracks and not one playlist, so the gallery has nothing to
+  show and the switch would be a control that changes nothing — worse than absent, since
+  it promises a view that does not exist. `playlistsShown` gates both the switch and the
+  keys, the same rule the switch already followed for an opened playlist.
 * A key that silently does nothing reads as a broken key. ⇧H and ⇧L switch sections,
   which only means something in the section view — on any other tab they returned early
   and the panel ignored the press. They take the panel to the section view first now.

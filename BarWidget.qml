@@ -803,6 +803,19 @@ Timer {
     }
   }
 
+  // A representation switch only means something where there is something with two
+  // representations. «Моя музыка» is a hundred tracks and not a single playlist, so the
+  // gallery has nothing to show there and both the switch and its keys must be silent.
+  readonly property bool playlistsShown: {
+    if (root.openPlaylist !== null) return false
+    if (root.view === "browse") {
+      if (root.browseSlug === "radiostations") return false
+      return root.filtered(root.browsePlaylists).length > 0
+    }
+    if (root.view === "search") return root.searchMode === "playlists"
+    return false
+  }
+
   // The section the panel is on, counting a scheduled one: the chip lights up the
   // moment the key is pressed, even though the load waits.
   function effectiveBrowse() {
@@ -4033,8 +4046,9 @@ Timer {
     // how a list of PLAYLISTS is drawn, so it has nothing to say inside one: the
     // tracks of a playlist are tracks, not a gallery or a list to choose between.
     PlaylistViewSwitch {
-      visible: root.openPlaylist === null
-        && (root.view === "browse" || (root.view === "search" && root.searchMode === "playlists"))
+      // Only where something has two representations: «Моя музыка» is a hundred tracks
+      // and no playlists, so neither the switch nor its keys may claim otherwise.
+      visible: root.playlistsShown
     }
   }
 
@@ -4153,10 +4167,15 @@ Timer {
         // read top to bottom, and stepping one card sideways was never the useful
         // direction. «g» does the other half, from the text keys below.
         if (dy === 0 && dx > 0) {
-          root.setPlaylistView("list")
+          if (root.playlistsShown) root.setPlaylistView("list")
           return
         }
-        if (dx !== 0) return
+        // Left still steps to the previous card: one key was taken for the switch, and
+        // taking both would leave the gallery with no sideways movement at all.
+        if (dy === 0 && dx < 0) {
+          if (root.galleryMode) root.moveCursor(dx)
+          return
+        }
         if (dy !== 0) root.moveCursor(root.galleryMode ? dy * root.galleryColumns : dy)
       }
       // Tab hands the keyboard to the list and puts the cursor on its first item —
@@ -4210,7 +4229,7 @@ Timer {
         if (root.activeField().activeFocus) return
         if (character === "]") { root.cycleView(1); return }
         if (character === "[") { root.cycleView(-1); return }
-        if (character === "g") { root.setPlaylistView("grid"); return }
+        if (character === "g") { if (root.playlistsShown) root.setPlaylistView("grid"); return }
         if (character === "L") { root.cycleSource(1); return }
         if (character === "H") { root.cycleSource(-1); return }
         if (character === "/") {
