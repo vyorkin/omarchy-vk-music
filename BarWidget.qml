@@ -894,7 +894,7 @@ Timer {
     var next = views[(index + step + views.length) % views.length]
     root.view = next
     root.cursor = -1
-    if (next === "browse" && root.browseSlug === "") root.scheduleBrowse("explore")
+    if (next === "browse" && root.browseSlug === "") root.scheduleBrowse("friends")
     root.focusList()
   }
 
@@ -4128,7 +4128,7 @@ Timer {
       onClicked: {
         root.cursor = -1
         root.view = "browse"
-        root.scheduleBrowse(root.browseSlug !== "" ? root.browseSlug : "explore")
+        root.scheduleBrowse(root.browseSlug !== "" ? root.browseSlug : "friends")
         root.focusList()
       }
     }
