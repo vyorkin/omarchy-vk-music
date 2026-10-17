@@ -283,7 +283,11 @@ Panel {
     ? Color.popups.background
     : Color.background
 
-  readonly property int upcomingStart: Number(status.index === undefined ? -1 : status.index) + 1
+  // The queue starts AT the current track, not after it: a list that hides the row you
+  // are listening to cannot show that it is playing, and the playing row is the one place
+  // the pill and the play glyph exist to be seen.
+  readonly property int upcomingStart:
+    Math.max(0, Number(status.index === undefined ? -1 : status.index))
 
   // The upcoming few tracks, taken from the queue the service already holds.
   readonly property var upcoming: {

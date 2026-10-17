@@ -720,6 +720,11 @@ in both popup shapes, and it no longer competes with the header for room.
 
 ## Two views for playlists
 
+The queue starts AT the current track rather than after it. A list that hides the row you
+are listening to cannot show that it is playing — and the pill and the play glyph exist to
+be seen on exactly that row. Everything the list says about a place number stays absolute,
+so the track you are on is still number 8 of 8.
+
 The same holds for people: the friends and the people opened recently are one list on
 screen, so the cursor walks both, and a grid's cards know their offset in it — the
 recent cards must not light up for the friends' indices.
