@@ -400,11 +400,10 @@ Three things learned in the move:
 * A key that silently does nothing reads as a broken key. ⇧H and ⇧L switch sections,
   which only means something in the section view — on any other tab they returned early
   and the panel ignored the press. They take the panel to the section view first now.
-* `g` and `l` choose how playlists are drawn — gallery or rows. `g` arrives as a text
-  key, `l` does not: the catcher maps an unshifted «l» to a sideways cursor step, so the
-  switch is taken there instead. The cost is that one card at a time to the right is no
-  longer reachable, which is no loss: a gallery is read top to bottom, and j/k already
-  move a whole row.
+* `m` toggles the representation — gallery or rows — wherever both exist. It was briefly
+  `g` and `l`, and `l` was the mistake: it is the same finger that walks a gallery, and a
+  key that sometimes moves the cursor and sometimes rearranges the panel cannot be
+  learned. Navigation keeps hjkl whole; the switch has one key of its own.
 * Keys, and which pair does what: `[` and `]` walk the tabs (queue, section, search,
   settings) and `⇧H`/`⇧L` walk the sources of the section view. The second pair is free
   because the key catcher turns an unshifted h and l into cursor moves, while a shifted

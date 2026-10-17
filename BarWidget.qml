@@ -93,7 +93,7 @@ Panel {
   // that means two things, so the hint follows the query.
   readonly property string keyHints: {
     if (root.activeField().activeFocus) return "Enter искать · Tab к списку · Esc выйти из поля"
-    return "Space пауза · jk выбор · Enter играть · / фильтр · g l вид · [ ] вкладки · ⇧H ⇧L раздел · Esc закрыть"
+    return "Space пауза · jk выбор · Enter играть · / фильтр · m вид · [ ] вкладки · ⇧H ⇧L раздел · Esc закрыть"
   }
 
   // The heading is worth its line only when there is something under it: while
@@ -4166,16 +4166,11 @@ Timer {
       // to look through a list should not start a track. `n` and `p` below still
       // switch tracks.
       onMoveRequested: function(dx, dy) {
-        // «l» chooses how playlists are drawn rather than stepping right: a gallery is
-        // read top to bottom, and stepping one card sideways was never the useful
-        // direction. «g» does the other half, from the text keys below.
-        if (dy === 0 && dx > 0) {
-          if (root.playlistsShown) root.setPlaylistView("list")
-          return
-        }
-        // Left still steps to the previous card: one key was taken for the switch, and
-        // taking both would leave the gallery with no sideways movement at all.
-        if (dy === 0 && dx < 0) {
+        // hjkl is navigation and nothing else. Taking «l» for the representation switch
+        // was a mistake: it is the same finger that walks a gallery, and a key that
+        // sometimes moves and sometimes rearranges the panel cannot be learned. The
+        // switch has its own key, «m».
+        if (dx !== 0) {
           if (root.galleryMode) root.moveCursor(dx)
           return
         }
@@ -4232,7 +4227,12 @@ Timer {
         if (root.activeField().activeFocus) return
         if (character === "]") { root.cycleView(1); return }
         if (character === "[") { root.cycleView(-1); return }
-        if (character === "g") { if (root.playlistsShown) root.setPlaylistView("grid"); return }
+        // One key for the representation, a toggle: «m» switches between the gallery
+        // and the list wherever both exist.
+        if (character === "m") {
+          if (root.playlistsShown) root.setPlaylistView(root.gridView ? "list" : "grid")
+          return
+        }
         if (character === "L") { root.cycleSource(1); return }
         if (character === "H") { root.cycleSource(-1); return }
         if (character === "/") {
