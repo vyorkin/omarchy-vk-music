@@ -269,6 +269,25 @@ v0.468.0, the same set the reference widget uses) and drawn as an SVG data URL w
 for a name the set does not carry.
 
 
+## Languages
+
+The panel speaks seven languages — English (the default), German, Spanish, French,
+Japanese, Chinese and Ukrainian — and the language is a preference, switched in the
+settings with a row of chips and stored like every other one.
+
+The strings live in `i18n.js`, keyed by the Russian literals the code was written with.
+That has one property worth the ugliness: a key with no translation falls back to itself,
+so a half-translated panel stays readable instead of showing empty labels. English is not
+a fallback — every key carries all seven languages, and a check over the file asserts it.
+
+`plural(count, one, few, many)` asks the language how many forms it has: Russian and
+Ukrainian three, English, German, Spanish and French two, Japanese and Chinese one. The
+callers keep passing the Russian three, and each language maps its own groups onto them.
+
+What is NOT translated: the daemon's own messages — «Список пуст», the halt reasons, VK's
+error text. They reach the widget as Russian sentences. Translating them means the
+backend returning codes instead of prose, which is a change of its own.
+
 ## What the bar row shows
 
 Fourteen preferences, most of them about the row in the bar, taken from the shape

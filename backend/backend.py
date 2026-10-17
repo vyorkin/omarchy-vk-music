@@ -112,6 +112,9 @@ DEFAULT_PREFERENCES: dict[str, Any] = {
     "notifications": "off",
     # Which popup to open: "compact" (the small one) or "extended".
     "popupView": "compact",
+    # The interface language. English is the default; the widget translates its own
+    # strings and leaves the rest of the daemon's messages to the fallback.
+    "language": "en",
 }
 
 # Values a preference may take, for the ones that are not simple booleans. A
@@ -121,6 +124,7 @@ PREFERENCE_ENUMS: dict[str, tuple[str, ...]] = {
     "longTitleMode": ("truncate", "scroll"),
     "notifications": ("off", "all"),
     "popupView": ("compact", "extended"),
+    "language": ("en", "de", "es", "fr", "ja", "zh", "uk"),
     "playlistView": ("list", "grid"),
 }
 
