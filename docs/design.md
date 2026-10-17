@@ -298,7 +298,10 @@ the things that act on the sound, not after them.
 
 The panel speaks eight languages — English (the default), German, Spanish, French,
 Japanese, Chinese, Ukrainian and Russian — and the language is a preference, switched in the
-settings with a row of chips and stored like every other one.
+settings with a dropdown and stored like every other one. A row of chips was the first
+attempt and it does not hold: eight names in their own spellings are wider than the panel,
+and a row that scrolls sideways is a row most people never finish. The dropdown shows the
+language in use and puts the others behind one click.
 
 The strings live in `i18n.js`, keyed by the Russian literals the code was written with — which is also why Russian is
 the one language whose values are the keys themselves.

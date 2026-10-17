@@ -3346,24 +3346,15 @@ Timer {
         spacing: Style.spacing.controlGap
         visible: root.view === "settings"
 
-        PanelSectionHeader { text: root.t("Язык"); foreground: root.dim }
-
-        // Seven names do not need a dropdown: they fit one row, and a row of chips is
-        // one click instead of two.
-        Row {
+        // Eight names never fit one row, and a row that scrolls is a row nobody scrolls.
+        // One line with the current language, the rest behind a click.
+        Dropdown {
           width: parent.width
-          spacing: Style.space(6)
-
-          Repeater {
-            model: I18n.LANGUAGES
-
-            delegate: Button {
-              text: modelData.name
-              foreground: root.textColor
-              selected: root.language === modelData.code
-              onClicked: root.setPreference("language", modelData.code)
-            }
-          }
+          label: root.t("Язык")
+          value: root.language
+          options: I18n.LANGUAGES.map(function(entry) { return { value: entry.code, label: entry.name } })
+          foreground: root.textColor
+          onChanged: function(value) { root.setPreference("language", value) }
         }
 
         PanelSeparator { Layout.fillWidth: true; foreground: root.textColor }
