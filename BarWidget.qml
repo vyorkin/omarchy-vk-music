@@ -323,10 +323,20 @@ Panel {
     }))
   }
 
-  // Poll fast enough that the ring grows in more than three steps: a download
-  // lasts about three seconds, and one status call costs a couple of
-  // milliseconds over the socket.
-Timer {
+  // The poll is the only thing that makes «playing» mean anything outside a button press:
+  // the bar's glyph, its time and the seek slider all come from it. Fast while a track is
+  // being fetched or a change is being watched, one second while it plays, slow when idle.
+  Timer {
+    id: pollTimer
+    interval: root.buffering || root._watching ? 250 : (root.playing ? 1000 : 5000)
+    repeat: true
+    running: true
+    triggeredOnStart: true
+    onTriggered: root.refresh()
+  }
+
+  // A change is watched closely for a moment; after that the poll goes back to its rhythm.
+  Timer {
     id: watchTimer
     interval: 5000
     repeat: false

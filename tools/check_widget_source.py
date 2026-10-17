@@ -54,6 +54,11 @@ def main():
                 first = next(l.strip() for l in block.split("\n")[1:4] if l.strip())
                 failures.append(f"BarWidget.qml:{line}: a Timer carries {marker!r} — that is a probe ({first})")
 
+    # The poll is the widget's only source of truth for playback state; it has been lost
+    # to a careless cleanup once already, and everything in the bar went stale.
+    if "id: pollTimer" not in text:
+        failures.append("BarWidget.qml: the poll timer is missing — the bar cannot show playback state")
+
     if "ВРЕМЕННО" in text:
         line = text[: text.index("ВРЕМЕННО")].count("\n") + 1
         failures.append(f"BarWidget.qml:{line}: the temporary marker is still in the file")
