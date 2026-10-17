@@ -293,6 +293,11 @@ marks. Where they meet, the cursor wins — a wash you cannot select over would 
 that lies. The accent text on that row stays: the wash says «here», the colour says
 «this one is sounding».
 
+The row is a grid, not a chain: the place column is a fixed 28 px whether or not this row
+has a number, so every cover in every list — the queue, a section, a playlist, the search
+results — sits on one vertical line. The row's side padding is the same 10 px on both
+sides, which is what the selected pill shows off.
+
 A row is laid out the way the players people come from lay theirs out: the place number,
 a small cover, the title over «artist · album», the length, and the heart. The playing row
 sits on a plain rounded pill with a play glyph where its number would be, and its title is

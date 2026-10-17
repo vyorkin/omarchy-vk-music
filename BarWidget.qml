@@ -2492,14 +2492,14 @@ Timer {
 
     Text {
       id: positionText
-      // The column exists for the number, and for the play glyph when there is no
-      // number — a playlist row has no place, but the playing one still needs its mark.
-      width: (trackRow.position > 0 || trackRow.playing) ? Style.space(28) : 0
-      visible: trackRow.position > 0 || trackRow.playing
+      // Fixed width whether or not this row has a place: it keeps every cover in every
+      // list on one vertical line, and it gives the play glyph somewhere to sit that is
+      // the same somewhere as a number.
+      width: Style.space(28)
       anchors.left: parent.left
-      anchors.leftMargin: Style.space(6)
+      anchors.leftMargin: Style.space(10)
       anchors.verticalCenter: parent.verticalCenter
-      horizontalAlignment: Text.AlignRight
+      horizontalAlignment: Text.AlignHCenter
       textFormat: Text.PlainText
       // A playing row shows the play glyph where its number would be.
       text: trackRow.playing ? "▶" : (trackRow.position > 0 ? String(trackRow.position) : "")
@@ -2512,7 +2512,7 @@ Timer {
       id: durationText
       width: Style.space(42)
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(36)
+      anchors.rightMargin: Style.space(40)
       anchors.verticalCenter: parent.verticalCenter
       horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
@@ -2597,7 +2597,7 @@ Timer {
     // a plain left-click target of its own.
     BarGlyph {
       anchors.right: parent.right
-      anchors.rightMargin: 0
+      anchors.rightMargin: Style.space(4)
       anchors.verticalCenter: parent.verticalCenter
       width: Style.space(26)
       height: trackRow.height
