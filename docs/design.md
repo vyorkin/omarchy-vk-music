@@ -269,6 +269,13 @@ v0.468.0, the same set the reference widget uses) and drawn as an SVG data URL w
 for a name the set does not carry.
 
 
+Every track row carries a heart as well, at its right end: filled when the track is in
+«Моя музыка», outlined when it is not, and a left click toggles it without disturbing
+playback. VK keeps a copy of a track in each list it appears in, so the panel remembers
+nothing between rows — it bumps a counter after a like, and every heart on screen is bound
+to it. In the player band the heart sits just left of the volume slider: it belongs with
+the things that act on the sound, not after them.
+
 ## Languages
 
 The panel speaks seven languages — English (the default), German, Spanish, French,

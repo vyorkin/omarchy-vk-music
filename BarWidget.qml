@@ -486,6 +486,39 @@ Timer {
     })
   }
 
+  // Likes made from a row: the same list holds its own copy of the track, so the
+  // panel keeps an epoch that every heart depends on and bumps it after a change.
+  property int likeEpoch: 0
+
+  function isLiked(track) {
+    root.likeEpoch
+    return track ? track.is_liked === true : false
+  }
+
+  function markLiked(key, liked) {
+    function mark(list) {
+      for (var i = 0; i < (list ? list.length : 0); i++) {
+        if (list[i] && String(list[i].key) === key) list[i].is_liked = liked
+      }
+    }
+    mark(root.queue)
+    mark(root.browseTracks)
+    mark(root.openPlaylistTracks)
+    mark(root.results)
+    root.likeEpoch = root.likeEpoch + 1
+  }
+
+  function toggleLikeFor(track) {
+    if (!track || String(track.key || "") === "") return
+    var key = String(track.key)
+    var liked = root.isLiked(track)
+    root.call([root.cli, liked ? "unlike" : "like", key], function(answer) {
+      if (!answer || !answer.ok || !answer.data) return
+      root.markLiked(key, answer.data.liked === true)
+      if (answer.data.status) root.status = answer.data.status
+    })
+  }
+
   function toggleLike() {
     if (!root.hasTrack) return
     var key = root.trackValue("key", "")
@@ -2456,7 +2489,7 @@ Timer {
       id: durationText
       width: Style.space(42)
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(8)
+      anchors.rightMargin: Style.space(36)
       anchors.verticalCenter: parent.verticalCenter
       horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
@@ -2495,6 +2528,22 @@ Timer {
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
       }
+    }
+
+    // A heart on every row: the same glyph the player uses, filled when the track is in
+    // «Моя музыка». Right-click on the row still opens the queue menu, so the heart is
+    // a plain left-click target of its own.
+    BarGlyph {
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(2)
+      anchors.verticalCenter: parent.verticalCenter
+      width: Style.space(26)
+      height: trackRow.height
+      name: "heart"
+      filled: root.isLiked(trackRow.track)
+      iconColor: root.isLiked(trackRow.track) ? Color.accent : (trackRow.playing ? Color.accent : root.dim)
+      tooltip: root.isLiked(trackRow.track) ? root.t("Убрать из моей музыки") : root.t("В мою музыку")
+      onClicked: root.toggleLikeFor(trackRow.track)
     }
 
     MouseArea {
@@ -3837,18 +3886,6 @@ Timer {
         onClicked: root.toggleMute()
       }
 
-      PanelSlider {
-        Layout.preferredWidth: Style.space(84)
-        Layout.alignment: Qt.AlignVCenter
-        minimum: 0
-        maximum: 100
-        integer: true
-        value: root.displayVolume
-        bar: root.bar
-        onMoved: function(value) { root.setVolume(value, true) }
-        onReleased: function(value) { root.setVolume(value, false) }
-      }
-
       // The heart sits at the right end, after everything that controls the sound:
       // it is not a transport control, it is a statement about the track. Lucide's
       // heart is an outline until the track is in «Моя музыка», then it is filled —
@@ -3869,6 +3906,18 @@ Timer {
           onClicked: root.toggleLike()
         }
       }
+      PanelSlider {
+        Layout.preferredWidth: Style.space(84)
+        Layout.alignment: Qt.AlignVCenter
+        minimum: 0
+        maximum: 100
+        integer: true
+        value: root.displayVolume
+        bar: root.bar
+        onMoved: function(value) { root.setVolume(value, true) }
+        onReleased: function(value) { root.setVolume(value, false) }
+      }
+
     }
 
     // The seek line: the one control that wants the whole width.
