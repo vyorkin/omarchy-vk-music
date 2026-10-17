@@ -269,30 +269,16 @@ v0.468.0, the same set the reference widget uses) and drawn as an SVG data URL w
 for a name the set does not carry.
 
 
-The cover in the band is a rounded frame around a square picture, and the two did not
-agree: the frame's corners showed the background while the picture's did not.
+The cover in the BAR is twenty pixels, and that is why its frame looked wrong: a
+four-pixel corner is a fifth of a twenty-pixel picture, so the frame's rounding and the
+picture's square corners read as two shapes fighting. Its rounding is proportional now —
+two pixels, with the picture one pixel in — and `coverShape: circle` still means a circle.
 
-Making the picture follow the rounded shape is not achievable with what works here, and
-three attempts settled it. `Rectangle { radius; clip: true }` does not clip to the radius
-— measured on a 52 px red square whose corner stayed red. `MultiEffect` with `maskEnabled`
-renders nothing in the offscreen harness and changed nothing in the shell.
-`OpacityMask` with `ShaderEffectSource { hideSource: true }` does not render offscreen
-either, so it cannot be verified before shipping.
-
-So the frame is a MAT rather than an outline: the theme's own surface with a six-pixel
-even margin around the picture, and the frame's rounded corners read as the mat's corners.
-A two-pixel gap is what looked like a picture pasted onto a frame; six pixels reads as a
-border someone chose.
-`Rectangle { radius; clip: true }` does not clip to the radius — `clip` is always
-rectangular, measured on a 52 px red square whose corner stayed red. A shader mask
-(`MultiEffect` / `OpacityMask`) renders nothing in the offscreen harness, and the first
-of them changed nothing in the shell either, so it cannot be trusted for a detail this
-small.
-
-What is left is the frame's radius: it is three pixels now, with a one-pixel inset, small
-enough that a square picture inside it reads as one shape instead of a picture pasted onto
-a frame. If a truly rounded cover is wanted later, it needs a mask that is verified in the
-live shell rather than offscreen.
+Three rounds were spent on the wrong element: «топ-бар» is the system bar, and the cover
+there is the twenty-pixel artwork in the bar row, not the one in the popup's band. The
+lesson is cheap and worth keeping: when a report says «в топ-баре», the first question is
+*which* bar, and the answer is in the screenshot's scale — twenty pixels look like sixty
+only when the capture is zoomed.
 
 Every track row carries a heart as well, at its right end: filled when the track is in
 «Моя музыка», outlined when it is not, and a left click toggles it without disturbing

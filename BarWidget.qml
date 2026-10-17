@@ -1733,8 +1733,11 @@ Timer {
       // 20 px matches the cover size the other bar players in this shell use.
       width: Style.space(20)
       height: width
+      // At twenty pixels a four-pixel corner is a fifth of the picture, so the frame's
+      // rounding and the picture's square corners read as two shapes fighting. The
+      // rounding is proportional here, and the picture sits one pixel in.
       radius: root.barCoverShape === "circle" ? width / 2
-        : (root.barCoverShape === "square" ? 0 : Style.spacing.labelGap)
+        : (root.barCoverShape === "square" ? 0 : Style.space(2))
       visible: root.barShowArtwork
       anchors.verticalCenter: parent.verticalCenter
       color: Style.normalFillFor(root.fg, Color.accent)
@@ -1745,7 +1748,7 @@ Timer {
 
       Image {
         anchors.fill: parent
-        anchors.margins: Style.space(2)
+        anchors.margins: Style.space(1)
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
         source: root.onAir()
@@ -3732,11 +3735,6 @@ Timer {
 
     width: size
     height: size
-    // A picture cannot be clipped to a rounded shape here: `clip` is always rectangular
-    // (measured), and a shader mask renders nothing offscreen and did nothing in the
-    // shell. So the frame is a mat instead of an outline: a visible, even margin of the
-    // theme's own surface around the picture, with the frame's rounded corners reading as
-    // the mat's corners. Two pixels of gap is what looked like a mistake.
     radius: Style.spacing.labelGap
     color: Style.normalFillFor(root.textColor, Color.accent)
     borderSpec: root.buffering
@@ -3745,7 +3743,7 @@ Timer {
 
     Image {
       anchors.fill: parent
-      anchors.margins: Style.space(6)
+      anchors.margins: Style.space(2)
       fillMode: Image.PreserveAspectCrop
       asynchronous: true
       source: root.onAir()
