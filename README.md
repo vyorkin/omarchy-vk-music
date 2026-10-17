@@ -36,13 +36,20 @@ omarchy pkg add python mpv ffmpeg
 
 ## Install
 
+Adding the plugin only puts the widget in place. The backend — a Python service with its
+own virtualenv — is installed in a second step, because a plugin must never run an installer
+just by being enabled:
+
 ```bash
 omarchy plugin add https://github.com/vyorkin/omarchy-vk-music --enable
+cd ~/.config/omarchy/plugins/vyorkin.vk-music
+./install.sh --backend-only
 ```
 
-The installer copies the plugin into `~/.config/omarchy/plugins/vyorkin.vk-music`, builds
-the backend into a virtualenv under `~/.local/share/omarchy-vk-music`, installs the systemd
-user service and starts it. Re-run `./install.sh --backend-only` after changing the backend.
+The second command builds the backend into a virtualenv under
+`~/.local/share/omarchy-vk-music`, installs the systemd user service and starts it. Without
+it the panel opens with an empty state and the bar says the service is not running. Re-run
+the same command after changing the backend.
 
 ## Signing in
 

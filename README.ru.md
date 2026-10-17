@@ -37,13 +37,19 @@ omarchy pkg add python mpv ffmpeg
 
 ## Установка
 
+Добавление плагина лишь кладёт виджет на место. Бэкенд — служба на Python со своим
+виртуальным окружением — ставится **вторым шагом**, потому что плагин не должен запускать
+установщик просто от того, что его включили:
+
 ```bash
 omarchy plugin add https://github.com/vyorkin/omarchy-vk-music --enable
+cd ~/.config/omarchy/plugins/vyorkin.vk-music
+./install.sh --backend-only
 ```
 
-Установщик копирует плагин в `~/.config/omarchy/plugins/vyorkin.vk-music`, собирает бэкенд
-в виртуальное окружение в `~/.local/share/omarchy-vk-music`, ставит пользовательский
-systemd-сервис и запускает его. После правок бэкенда — `./install.sh --backend-only`.
+Вторая команда собирает бэкенд в `~/.local/share/omarchy-vk-music`, ставит
+пользовательский systemd-сервис и запускает его. Без неё панель откроется пустой, а бар
+скажет, что служба не запущена. После правок бэкенда — та же команда.
 
 ## Вход в VK
 
