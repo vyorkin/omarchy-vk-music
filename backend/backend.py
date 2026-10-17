@@ -124,7 +124,7 @@ PREFERENCE_ENUMS: dict[str, tuple[str, ...]] = {
     "longTitleMode": ("truncate", "scroll"),
     "notifications": ("off", "all"),
     "popupView": ("compact", "extended"),
-    "language": ("en", "de", "es", "fr", "ja", "zh", "uk"),
+    "language": ("en", "de", "es", "fr", "ja", "zh", "uk", "ru"),
     "playlistView": ("list", "grid"),
 }
 

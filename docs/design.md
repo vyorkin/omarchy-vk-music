@@ -296,11 +296,12 @@ the things that act on the sound, not after them.
 
 ## Languages
 
-The panel speaks seven languages — English (the default), German, Spanish, French,
-Japanese, Chinese and Ukrainian — and the language is a preference, switched in the
+The panel speaks eight languages — English (the default), German, Spanish, French,
+Japanese, Chinese, Ukrainian and Russian — and the language is a preference, switched in the
 settings with a row of chips and stored like every other one.
 
-The strings live in `i18n.js`, keyed by the Russian literals the code was written with.
+The strings live in `i18n.js`, keyed by the Russian literals the code was written with — which is also why Russian is
+the one language whose values are the keys themselves.
 That has one property worth the ugliness: a key with no translation falls back to itself,
 so a half-translated panel stays readable instead of showing empty labels. English is not
 a fallback — every key carries all seven languages, and a check over the file asserts it.
