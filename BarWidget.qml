@@ -3732,38 +3732,25 @@ Timer {
 
     width: size
     height: size
-    radius: Style.spacing.labelGap
+    // A picture cannot be clipped to a rounded shape in plain QML (`clip` is always
+    // rectangular, and a shader mask was not reliable here), so the radius is small
+    // enough that a square picture inside a rounded frame reads as one shape rather than
+    // as a picture pasted onto a frame.
+    radius: Style.space(3)
     color: Style.normalFillFor(root.textColor, Color.accent)
     borderSpec: root.buffering
       ? Border.none()
       : Border.controlSpec("normal", root.textColor, Color.accent)
 
-    // A rounded frame around a square picture reads as an accident: the frame's corners
-    // show the background, the picture's do not. The picture is masked by a rounded
-    // rectangle of the same radius, so frame and cover are one shape.
-    Rectangle {
-      id: coverMask
-      width: coverArt.width - Style.space(4)
-      height: coverArt.height - Style.space(4)
-      radius: Math.max(0, coverArt.radius - Style.space(2))
-      visible: false
-      layer.enabled: true
-    }
-
     Image {
       anchors.fill: parent
-      anchors.margins: Style.space(2)
+      anchors.margins: Style.space(1)
       fillMode: Image.PreserveAspectCrop
       asynchronous: true
       source: root.onAir()
         ? String(root.radioValue("logo", ""))
         : (root.hasTrack && root.trackValue("thumb", "") ? root.trackValue("thumb", "") : "")
       visible: source !== ""
-      layer.enabled: true
-      layer.effect: MultiEffect {
-        maskEnabled: true
-        maskSource: coverMask
-      }
     }
 
     Text {

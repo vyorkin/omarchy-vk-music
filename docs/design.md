@@ -270,9 +270,19 @@ for a name the set does not carry.
 
 
 The cover in the band is a rounded frame around a square picture, and the two did not
-agree: the frame's corners showed the background while the picture's did not. The picture
-is masked by a rounded rectangle of the same radius now (`MultiEffect` with `maskEnabled`,
-the mask itself never drawn), so the frame and the cover are one shape.
+agree: the frame's corners showed the background while the picture's did not.
+
+Two ways to make a picture follow a rounded shape were tried and both failed here.
+`Rectangle { radius; clip: true }` does not clip to the radius — `clip` is always
+rectangular, measured on a 52 px red square whose corner stayed red. A shader mask
+(`MultiEffect` / `OpacityMask`) renders nothing in the offscreen harness, and the first
+of them changed nothing in the shell either, so it cannot be trusted for a detail this
+small.
+
+What is left is the frame's radius: it is three pixels now, with a one-pixel inset, small
+enough that a square picture inside it reads as one shape instead of a picture pasted onto
+a frame. If a truly rounded cover is wanted later, it needs a mask that is verified in the
+live shell rather than offscreen.
 
 Every track row carries a heart as well, at its right end: filled when the track is in
 «Моя музыка», outlined when it is not, and a left click toggles it without disturbing
