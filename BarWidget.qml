@@ -93,7 +93,7 @@ Panel {
   // that means two things, so the hint follows the query.
   readonly property string keyHints: {
     if (root.activeField().activeFocus) return "Enter искать · Tab к списку · Esc выйти из поля"
-    return "Space пауза · jk выбор (hjkl в галерее) · Enter играть · / фильтр · Esc закрыть"
+    return "Space пауза · jk выбор · Enter играть · / фильтр · [ ] вкладки · ⇧H ⇧L раздел · Esc закрыть"
   }
 
   // The heading is worth its line only when there is something under it: while
@@ -766,6 +766,34 @@ Timer {
     root.filter = ""
     root.filtering = false
     root.filterFocused = false
+  }
+
+  // «[» and «]» walk the tabs, «⇧H» and «⇧L» walk the sources of the section view:
+  // one pair for what is being looked at, one for where it comes from. The key catcher
+  // turns h and l into cursor moves, but a shifted letter is not «h», so these arrive
+  // as plain text keys and cannot be confused with navigation.
+  function cycleView(step) {
+    var views = ["queue", "browse", "search", "settings"]
+    var index = views.indexOf(root.view)
+    if (index < 0) index = 0
+    var next = views[(index + step + views.length) % views.length]
+    root.view = next
+    root.cursor = -1
+    if (next === "browse" && root.browseSlug === "") root.browseSource("explore")
+    root.focusList()
+  }
+
+  function cycleSource(step) {
+    if (root.view !== "browse") return
+    var slugs = ["friends"]
+    for (var i = 0; i < root.sources.length; i++) slugs.push(root.sourceSlug(root.sources[i]))
+    var current = root.browseSlug === "person" || root.browseSlug === "playlist"
+      ? "friends" : root.browseSlug
+    var index = slugs.indexOf(current)
+    if (index < 0) index = 0
+    var next = slugs[(index + step + slugs.length) % slugs.length]
+    if (next === "friends") root.browseFriends()
+    else root.browseSource(next)
   }
 
   function setSearchMode(mode) {
@@ -1473,6 +1501,9 @@ Timer {
   // too small to recognise.
   readonly property string playlistView: String(root.setting("playlistView", root.prefs.playlistView || "list"))
   readonly property bool gridView: root.playlistView === "grid"
+  // How far the selected fill reaches past a card, and therefore how much room a grid
+  // has to leave around its columns.
+  readonly property real cardRim: Style.space(4)
   readonly property int galleryColumns: root.isExtended() ? 4 : 2
   // A grid of cards, as opposed to a one-column list: only then do h and l mean
   // anything, and only then does j move a row rather than a line. It is the list ON
@@ -1779,7 +1810,7 @@ Timer {
   // once it has been laid out, and the keyboard focus only takes on a mapped
   // item. Opening the search view hands the keyboard straight to the field, so
   // typing works without a click.
-function afterOpen() {
+  function afterOpen() {
     console.log("[vk-music] popup layout", JSON.stringify({
       card: [panel.contentWidth, panel.contentHeight],
       body: root.activeBody().implicitHeight,
@@ -2160,7 +2191,8 @@ function afterOpen() {
     // Where this grid starts in the cursor's list: the recent people come after the
     // friends, so their cards must not light up for the friends' indices.
     property int baseOffset: 0
-    readonly property real cellWidth: (width - spacing * (columns - 1)) / Math.max(1, columns)
+    readonly property real cellWidth:
+      (width - leftPadding - rightPadding - spacing * (columns - 1)) / Math.max(1, columns)
     signal picked(int index)
 
     function itemAt(index) { return cardRepeater.itemAt(index) }
@@ -2168,6 +2200,11 @@ function afterOpen() {
     width: parent ? parent.width : 0
     columns: root.galleryColumns
     spacing: Style.space(6)
+    // The selected fill reaches a few pixels past its card, so the grid keeps a rim of
+    // its own — otherwise the first column's fill is cut by the edge of the list.
+    readonly property real rim: root.cardRim
+    leftPadding: rim
+    rightPadding: rim
 
     Repeater {
       id: cardRepeater
@@ -2477,7 +2514,8 @@ function afterOpen() {
   component PlaylistGrid: Grid {
     id: grid
     property var items: []
-    readonly property real cellWidth: (width - spacing * (columns - 1)) / Math.max(1, columns)
+    readonly property real cellWidth:
+      (width - leftPadding - rightPadding - spacing * (columns - 1)) / Math.max(1, columns)
     signal picked(int index)
 
     function itemAt(index) { return cellRepeater.itemAt(index) }
@@ -2485,6 +2523,11 @@ function afterOpen() {
     width: parent ? parent.width : 0
     columns: root.galleryColumns
     spacing: Style.space(6)
+    // The selected fill reaches a few pixels past its card, so the grid keeps a rim of
+    // its own — otherwise the first column's fill is cut by the edge of the list.
+    readonly property real rim: root.cardRim
+    leftPadding: rim
+    rightPadding: rim
 
     Repeater {
       id: cellRepeater
@@ -4084,6 +4127,10 @@ function afterOpen() {
       }
       onTextKey: function(character) {
         if (root.activeField().activeFocus) return
+        if (character === "]") { root.cycleView(1); return }
+        if (character === "[") { root.cycleView(-1); return }
+        if (character === "L") { root.cycleSource(1); return }
+        if (character === "H") { root.cycleSource(-1); return }
         if (character === "/") {
           // Vim's search: inside the list you are looking at, not a new list.
           root.startFilter()
@@ -4106,7 +4153,7 @@ function afterOpen() {
         PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
         TabsRow { Layout.fillWidth: true }
         SearchFieldRow { id: compactFieldRow; Layout.fillWidth: true }
-        TrackList { id: compactList }
+        TrackList { id: compactList; Layout.topMargin: Style.space(10) }
         LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
       }
 
@@ -4128,7 +4175,7 @@ function afterOpen() {
 
         TabsRow { Layout.fillWidth: true }
         SearchFieldRow { id: extendedFieldRow; Layout.fillWidth: true }
-        TrackList { id: extendedList }
+        TrackList { id: extendedList; Layout.topMargin: Style.space(10) }
         LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
       }
 

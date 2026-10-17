@@ -346,6 +346,16 @@ Three things learned in the move:
   the track repeater sent the reveal to a row far below the viewport, and the row the
   cursor had actually moved to stayed off-screen — the keys looked dead because
   nothing visible changed. `rowAt` now picks the repeater by where the index falls.
+* Keys, and which pair does what: `[` and `]` walk the tabs (queue, section, search,
+  settings) and `⇧H`/`⇧L` walk the sources of the section view. The second pair is free
+  because the key catcher turns an unshifted h and l into cursor moves, while a shifted
+  letter is not «h» and arrives as a plain text key — so navigation and switching can
+  never be confused for one another.
+* A selected fill that reaches past its card needs room to reach into: a grid keeps a
+  rim of its own (`cardRim`) on both sides, and the cell width subtracts it, otherwise
+  the first column's fill is cut by the edge of the list. The same rim's worth of space
+  is needed between the tab row and the first row of a list, or the two selected fills
+  touch and read as one thing.
 * Two functions that call each other are a loop, not a pair. Closing a person went back
   to the people list, and going to the people list closed a person: the pair recursed,
   the friends came back empty and the header read «Друзья · 0 человек». They share a
