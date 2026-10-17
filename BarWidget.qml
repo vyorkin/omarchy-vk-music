@@ -2291,7 +2291,9 @@ Timer {
 
         Image {
           anchors.fill: parent
-          anchors.margins: Style.space(2)
+          // Flush with the frame: an inset shows the surface colour as a ring around the
+          // portrait, which reads as a white gap in a light theme.
+          anchors.margins: 0
           source: personCard.item ? String(personCard.item.photo || "") : ""
           fillMode: Image.PreserveAspectCrop
           asynchronous: true
@@ -2402,7 +2404,9 @@ Timer {
 
       Image {
         anchors.fill: parent
-        anchors.margins: Style.space(1)
+        // Flush with the frame: an inset shows the surface colour as a ring around the
+        // portrait, which reads as a white gap in a light theme.
+        anchors.margins: 0
         source: person.item ? String(person.item.photo || "") : ""
         fillMode: Image.PreserveAspectCrop
         asynchronous: true

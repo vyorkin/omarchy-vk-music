@@ -280,6 +280,13 @@ lesson is cheap and worth keeping: when a report says «в топ-баре», th
 *which* bar, and the answer is in the screenshot's scale — twenty pixels look like sixty
 only when the capture is zoomed.
 
+A person's portrait fills its frame now, flush to the edge. The inset existed to keep the
+picture inside the circular frame, but an inset shows the surface colour as a ring around
+the portrait — in a light theme, a white gap, which is what it looked like. The price is
+the same one the covers pay: a picture cannot be clipped to a rounded shape here, so a
+circular frame around a square picture has to choose between a ring of background and a
+picture whose corners reach past the frame. Flush is the lesser evil.
+
 Every track row carries a heart as well, at its right end: filled when the track is in
 «Моя музыка», outlined when it is not, and a left click toggles it without disturbing
 playback. VK keeps a copy of a track in each list it appears in, so the panel remembers
