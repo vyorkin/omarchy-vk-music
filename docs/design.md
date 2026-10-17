@@ -372,6 +372,14 @@ Three things learned in the move:
   see the difference, because the body is stretched to the card either way. What did see
   it in the end was the LIST's height: 210 px with the band inflated, 536 px with it
   fixed. When a defect is in one child's height, verify on the number that depends on it.
+* A Text in a Layout without `Layout.fillWidth` and `Layout.preferredWidth: 0` has its
+  own content as its implicit width, and a Layout takes the largest implicit width of its
+  children as the minimum it will not go below. The hint line grew by one shortcut
+  («g l вид») and the whole popup went from 588 px of content to 614: every row bled past
+  the card. Any label that can grow with data or configuration needs `fillWidth` plus a
+  zero preferred width, so it takes what is left and elides the rest.
+  The popup's layout line reports the body's and the list's widths for exactly this
+  reason — 588 against 614 is the whole story.
 * `Layout.fillHeight: true` inside a Row inflates the ROW, not the child. Putting it on
   the heart's wrapper turned an 82 px band into most of the card, squashed the seek slider
   and made its knob a fat black dot — and the mistake is already in this document from

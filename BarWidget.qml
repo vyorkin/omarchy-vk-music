@@ -1861,6 +1861,9 @@ Timer {
       available: [panel.availableCardWidth, panel.availableCardHeight],
       inset: panel.verticalContentInset,
       blocks: root.activeBody().children.length,
+      // Widths as well as heights: a child wider than the body is what made every row
+      // bleed past the card, and only this number showed it.
+      widths: [root.activeBody().width, root.activeList().width],
       list: [root.activeList().viewHeight, root.activeList().contentHeight],
       shown: [root.suggestionsShown.length, root.resultsShown.length]
     }))
@@ -3534,8 +3537,13 @@ Timer {
     // card the row sat on the last track of every list.
     Text {
       id: header
+      // The hint line must never widen the panel: without fillWidth its implicit width
+      // IS the whole string, and a longer hint stretched the body from 588 to 614 px so
+      // every row bled past the card. It takes what is left and elides the rest.
       textFormat: Text.PlainText
       elide: Text.ElideRight
+      Layout.fillWidth: true
+      Layout.preferredWidth: 0
       verticalAlignment: Text.AlignVCenter
       Layout.alignment: Qt.AlignVCenter
       text: root.keyHints
