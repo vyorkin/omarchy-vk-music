@@ -1,152 +1,141 @@
 # VK Music for Omarchy
 
-A native VK Music player in the [Omarchy](https://omarchy.org/) bar. Music
-plays in the background through `mpv`; the browser is only needed to sign in —
-and only as a source of two cookies.
+**[Русская версия](README.ru.md)** · English
 
-Status: working prototype. Playback, queue, search, playlists and MPRIS are
-done; the interface is deliberately small (bar widget plus a popup with the
-queue). Design notes and the verified API facts live in
-[`docs/design.md`](docs/design.md).
+VK Music in the Omarchy bar: artwork, title and transport in the bar, and a panel with the
+queue, your own music, other people's playlists and the radio. Playback goes through mpv,
+so the media keys and any MPRIS client work without extra setup.
 
-## How it works
+| Queue | Gallery | Settings |
+|---|---|---|
+| ![Queue](docs/screenshots/queue.png) | ![Gallery](docs/screenshots/gallery.png) | ![Settings](docs/screenshots/settings.png) |
 
-```
-BarWidget.qml  ──>  bin/omarchy-vk-music  ──>  omarchy-vk-music.service
-(artwork, title,        (one JSON command         (Python: VK session,
- transport, popup)       over a Unix socket)       cache, mpv, MPRIS)
-```
+## What it does
 
-The widget knows nothing about VK: it runs the CLI and reads JSON. The service
-owns the session, the API client, the download cache, one `mpv` process and the
-MPRIS identity, so the media keys work without any Hyprland configuration.
+- **The bar row** — cover, title and artist, previous / play-pause / next, a progress line
+  and a like button. Every piece can be turned off, and the row remembers what you chose.
+- **The queue** — the tracks you started, in order. Rows can be jumped to, removed, and a
+  right click puts a track next in line or at the end.
+- **Your music and the catalogue** — «Моя музыка», the sections VK offers, and any
+  playlist: cover gallery or compact rows, whichever you prefer.
+- **Other people's playlists** — friends, anyone by link, and a playlist search.
+- **Radio** — the stations VK links to, played straight from their own streams.
+- **Likes** — a heart on every row and in the player. On VK a like IS «Моя музыка», so the
+  two can never disagree.
+- **Search** — suggestions as you type, results after a pause, tracks or playlists.
+- **Keyboard** — `hjkl` or arrows to move, `Enter` to play, `/` to filter the open list,
+  `m` to switch gallery and list, `[`/`]` for the tabs, `⇧H`/`⇧L` for the sections.
+- **Eight languages** — English (default), German, Spanish, French, Japanese, Chinese,
+  Ukrainian and Russian, switched in the settings.
 
 ## Requirements
 
-`python`, `mpv`, `ffmpeg`. Install with `omarchy pkg add python mpv ffmpeg`.
+```bash
+omarchy pkg add python mpv ffmpeg
+```
 
 ## Install
 
 ```bash
-./install.sh
+omarchy plugin add https://github.com/vyorkin/omarchy-vk-music --enable
 ```
 
-This creates a virtualenv in `~/.local/share/omarchy-vk-music`, installs the CLI
-to `~/.local/bin`, writes the user unit, starts it, and enables the plugin in
-the bar.
+The installer copies the plugin into `~/.config/omarchy/plugins/vyorkin.vk-music`, builds
+the backend into a virtualenv under `~/.local/share/omarchy-vk-music`, installs the systemd
+user service and starts it. Re-run `./install.sh --backend-only` after changing the backend.
 
-## Sign in
+## Signing in
 
-The player reads the cookies `p` and `remixsid` from your Firefox-family
-browser profile (Firefox, Zen, LibreWolf) and exchanges them for a VK web
-token. No password, no new device login, no captcha.
+VK's audio API has no public OAuth flow, so the plugin does what a browser does: it takes
+the `p` and `remixsid` cookies from your browser profile and exchanges them for a token —
+no password is asked for and none is stored.
 
-- From the widget: click it and press **Войти через браузер**.
-- From a terminal: `omarchy-vk-music auth web`, or `omarchy-vk-music auth web
-  --no-browser` to paste the cookies from DevTools yourself.
+1. Sign in to <https://vk.ru> in Firefox, Zen or LibreWolf.
+2. Open the panel and press **Sign in with the browser**, or run
+   `omarchy-vk-music auth web` in a terminal.
+3. The session ends when VK ends it; finishing all sessions in VK's settings logs the
+   plugin out too.
 
-The token is stored in `~/.config/omarchy-vk-music/token.json` together with the
-cookies, mode 600, because the token is refreshed from those cookies. That file
-is a live session: never commit it and never share it. Revoking it means
-"завершить все сессии" in VK's security settings.
-
-A password login exists as a fallback (`omarchy-vk-music auth mobile`). It is not
-the default: VK throttles password logins, its token dies after about three
-hours, and it can ask for a captcha and an SMS code.
+The token and cookies live in `~/.config/omarchy-vk-music/token.json` with mode 600. They
+are never written to the repository, the journal, or anywhere else.
 
 ## Controls
 
-| Where | Action |
-| --- | --- |
-| Bar artwork or title, left click | Open the popup |
-| Bar, right click | Play / pause |
-| Bar, middle click | Next track |
-| Media keys | Through MPRIS, no configuration needed |
-| ⚙ → «Строка в баре» | Length, speed and pause of the scrolling title, cover shape, and which parts of the row are shown |
-| ⚙ → «Вид плейлистов» | Gallery of covers or rows; the same two buttons sit at the right of the tab row |
-| Clicking a playlist | Opens its tracks rather than starting it; «Играть» plays it all, a row starts from there |
-| Обзор → «Люди» | First entry in the source row: the friend list with photos, a field for a link, id or friend's name, and the people opened recently. Clicking anyone opens their playlists |
-| Right click on a track row | «В очередь» appends it, «Следующим» puts it right after the current track |
-| Wheel over the bar widget | Volume, five percent a notch |
-| `/` | Jumps into the search field; with it empty, the recent searches are listed |
-| Esc | Clears the search box first; a second press closes the popup |
-| Попап | Two shapes, chosen in ⚙ → Попап: compact (player above the list) and extended (player beside it, with shuffle, repeat and queue actions) |
-| The popup's ⚙ tab | What the bar shows, cover shape, long titles, width, restore, notifications, cache |
-| `↑` / `↓` in the popup | Move the selection through the list; playback is not touched |
-| `Enter` in the popup | Play the selected row; with nothing selected — play / pause |
-| `Space` in the popup | Play / pause |
-| `N` / `P` in the popup | Next / previous track |
-| Typing in Поиск | Suggestions after a pause, results after a longer one, `Enter` at once |
-| Tab Обзор | Sections (Главная, Моя музыка, Обзор, Радио, Обновления), their playlists and tracks, `Ещё` for the next page; a line runs while a section loads, and the header says what is loading |
-| A station in Обзор → Радио | Live stream: the bar shows the station, the popup has no timeline to seek in |
+| Where | What |
+|---|---|
+| Bar, left click | open the panel |
+| Bar, right click | pause or resume |
+| Bar, middle click | next track |
+| Bar, wheel | volume |
+| `Space` | pause |
+| `j` `k` / `↑` `↓` | move the cursor |
+| `h` `l` | sideways in the gallery |
+| `Enter` | play what is selected |
+| `/` | filter the open list |
+| `m` | gallery or list |
+| `[` `]` | previous / next tab |
+| `⇧H` `⇧L` | previous / next section |
+| `Tab` | from a field into the list |
+| `Esc` | one step back |
+| `Backspace` | one level back |
 
-## Commands
-
-Everything the widget does is available from a terminal:
+## Terminal
 
 ```bash
-omarchy-vk-music status                 # the whole state as JSON
-omarchy-vk-music play section all       # queue "Моя музыка" and start
-omarchy-vk-music play search radiohead  # queue the search results
-omarchy-vk-music play keys 371745444_456389989 371745438_456389857 --index 1
-omarchy-vk-music search radiohead --play
-omarchy-vk-music suggestions radioh      # VK's own completion
-omarchy-vk-music section explore         # one catalog page, with its cursor
-omarchy-vk-music section explore PUlYVA8FWRs   # the next page
-omarchy-vk-music radio                   # the live stations
-omarchy-vk-music play radio 1            # play a station
-omarchy-vk-music playlists джаз         # other people's playlists
-omarchy-vk-music friends               # the friend list
-omarchy-vk-music person vk.com/id213706100   # someone's playlists
-omarchy-vk-music queue add <key>       # append to the queue
-omarchy-vk-music queue next <key>      # play right after the current track
-omarchy-vk-music queue remove 3        # drop a queue entry
-omarchy-vk-music queue clear           # empty the queue
-omarchy-vk-music next | previous | pause
-omarchy-vk-music seek 90 | volume 40 | volume +10
-omarchy-vk-music shuffle on | repeat all
-omarchy-vk-music home                   # sections and playlists
-omarchy-vk-music cache stats | cache clear
-omarchy-vk-music session                # sign-in state, without secrets
+omarchy-vk-music status                 # what is playing, queue length, preferences
+omarchy-vk-music play section all       # start with «Моя музыка»
+omarchy-vk-music search radiohead       # find and print tracks
+omarchy-vk-music play search radiohead  # play the results
+omarchy-vk-music next
+omarchy-vk-music volume 60
+omarchy-vk-music queue remove 3
+omarchy-vk-music prefs language=de
+omarchy-vk-music auth status
 ```
+
+Every command prints one line of JSON. `--pretty` formats it.
 
 ## Troubleshooting
 
 ```bash
-systemctl --user status omarchy-vk-music.service
-journalctl --user -u omarchy-vk-music.service -n 100
-omarchy-vk-music status --pretty
+systemctl --user status omarchy-vk-music
+journalctl --user -u omarchy-vk-music -f
+omarchy-vk-music auth status
 ```
 
-If the widget shows a VK error and stops responding to actions, the service has
-halted itself on purpose: it stops all traffic when VK answers with a rejected
-token, flood control or a captcha demand. Fix the cause (usually sign in again),
-then `systemctl --user restart omarchy-vk-music.service`.
+The plugin stops rather than retries when VK asks for a captcha or starts rate limiting —
+that is deliberate: hammering an unofficial endpoint is how accounts get blocked. Restart
+the service after waiting, or sign in again.
+
+If the widget disappears from the bar, `omarchy restart shell`, then
+`omarchy plugin enable vyorkin.vk-music --after omarchy.clock`.
 
 ## Storage
 
-| Path | Contents |
-| --- | --- |
-| `~/.config/omarchy-vk-music/token.json` | token, cookies, client identity, expiry (600) |
-| `~/.config/omarchy-vk-music/state.json` | queue, position, volume, preferences (600) |
-| `~/.cache/omarchy-vk-music/audio` | finished tracks, LRU, 256 MiB cap |
-
-Sign-in and preferences survive uninstalling; `uninstall.sh --purge` removes
-them too.
+| Path | What |
+|---|---|
+| `~/.config/omarchy-vk-music/token.json` | token and cookies, mode 600 |
+| `~/.config/omarchy-vk-music/state.json` | queue, position, volume, preferences |
+| `~/.cache/omarchy-vk-music/audio` | downloaded tracks, 256 MiB by default |
 
 ## Uninstall
 
 ```bash
-~/.config/omarchy/plugins/vyorkin.vk-music/uninstall.sh          # keeps sign-in
-~/.config/omarchy/plugins/vyorkin.vk-music/uninstall.sh --purge  # removes it
+./uninstall.sh           # keeps your sign-in and preferences
+./uninstall.sh --purge   # removes those too
 ```
 
 ## Legal
 
-Unofficial. VK's audio API is not public and its use is against VK's terms; your
-account is the one at risk. The plugin is built to behave like the VK web player
-— same session, same address, browser-like requests, no telemetry, and a full
-stop instead of retries when VK pushes back — but that is a mitigation, not a
-guarantee.
+VK's audio API is unofficial and undocumented. This plugin uses it the way a mobile client
+does — one identity, paced requests, no scraping — but the risk to your account is yours.
+Nothing here downloads or shares music; the cache exists so that seeking in a track you are
+already playing is instant.
 
-Licence: MIT.
+## Credits
+
+- [Lucide](https://lucide.dev) icons, ISC licence, vendored in `LucideIcons.js`.
+- [vornashev/omarchy-yandex-music](https://github.com/vornashev/omarchy-yandex-music), whose
+  structure — a Python backend, mpv over a socket, MPRIS, a QML panel — this plugin follows.
+
+MIT licence.

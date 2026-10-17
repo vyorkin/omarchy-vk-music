@@ -27,5 +27,7 @@
     "category": "Media",
     "allowMultiple": false,
     "defaultSection": "right"
-  }
+  },
+  "homepage": "https://github.com/vyorkin/omarchy-vk-music",
+  "repository": "https://github.com/vyorkin/omarchy-vk-music"
 }
