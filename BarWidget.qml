@@ -821,7 +821,14 @@ Timer {
   }
 
   function cycleSource(step) {
-    if (root.view !== "browse") return
+    // The keys are about the section view, so they take the panel there instead of
+    // doing nothing when it is on another tab — a key that silently ignores you reads
+    // as a broken key.
+    if (root.view !== "browse") {
+      root.view = "browse"
+      root.cursor = -1
+      root.focusList()
+    }
     var slugs = ["friends"]
     for (var i = 0; i < root.sources.length; i++) slugs.push(root.sourceSlug(root.sources[i]))
     // Count from what is scheduled, not from what is loaded: the load is delayed by

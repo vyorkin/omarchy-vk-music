@@ -389,6 +389,9 @@ Three things learned in the move:
   selected tab's fill reaches down; with nothing between them the two read as one
   shape. The list keeps a fixed 10 px spacer at the top of its column, so the gap does
   not depend on whether a heading happens to be visible.
+* A key that silently does nothing reads as a broken key. ⇧H and ⇧L switch sections,
+  which only means something in the section view — on any other tab they returned early
+  and the panel ignored the press. They take the panel to the section view first now.
 * `g` and `l` choose how playlists are drawn — gallery or rows. `g` arrives as a text
   key, `l` does not: the catcher maps an unshifted «l» to a sideways cursor step, so the
   switch is taken there instead. The cost is that one card at a time to the right is no
