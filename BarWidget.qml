@@ -2460,30 +2460,27 @@ Timer {
     signal contextRequested()
 
     width: parent ? parent.width : 0
-    height: Style.space(44)
+    height: Style.space(48)
 
     readonly property bool playing: trackRow.track !== null
       && root.isPlayingTrack(trackRow.track.key)
 
-    // The playing row carries a faint wash of the accent; the keyboard cursor keeps the
-    // theme's selected fill. Two different facts, two different marks — and where they
-    // meet, the cursor wins.
+    // The row that is playing sits on a plain rounded pill, the way the players people
+    // come from do it, and the play glyph in its number column says why. The keyboard
+    // cursor takes the accent tint instead: two facts, two marks, no confusion.
     BorderSurface {
       anchors.fill: parent
-      radius: Style.space(6)
-      color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.12)
+      radius: Style.space(8)
+      color: Style.selectedFillFor(Color.foreground, Color.accent)
       borderSpec: Border.none()
       visible: trackRow.playing && !trackRow.selected
     }
 
-    // Two states, two fills: the keyboard cursor takes the selected fill, the
-    // pointer under the mouse the plain one, so a list says both «here is the
-    // keyboard» and «here is the mouse» without the two looking alike.
     BorderSurface {
       anchors.fill: parent
-      radius: Style.space(6)
+      radius: Style.space(8)
       color: trackRow.selected
-        ? Style.selectedFillFor(Color.foreground, Color.accent)
+        ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.18)
         : Style.normalFillFor(Color.foreground, Color.accent)
       borderSpec: Border.none()
       visible: trackRow.selected || trackArea.containsMouse
@@ -2498,8 +2495,9 @@ Timer {
       anchors.verticalCenter: parent.verticalCenter
       horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
-      text: trackRow.position > 0 ? String(trackRow.position) : ""
-      color: trackRow.playing ? Color.accent : root.dim
+      // A playing row shows the play glyph where its number would be.
+      text: trackRow.playing ? "▶" : (trackRow.position > 0 ? String(trackRow.position) : "")
+      color: trackRow.playing ? root.textColor : root.dim
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
     }
@@ -2513,14 +2511,47 @@ Timer {
       horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
       text: trackRow.track ? root.clock(Number(trackRow.track.duration || 0)) : ""
-      color: trackRow.playing ? Color.accent : root.dim
+      color: root.dim
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
     }
 
-    Column {
+    // A cover per row: the list is browsed with the eye, and a wall of text is harder
+    // to scan than a column of pictures. It is VK's own 300 px thumbnail, so it costs no
+    // extra request the panel has not already made.
+    BorderSurface {
+      id: rowCover
+      width: Style.space(32)
+      height: width
       anchors.left: positionText.right
-      anchors.leftMargin: Style.space(6)
+      anchors.leftMargin: Style.space(4)
+      anchors.verticalCenter: parent.verticalCenter
+      radius: Style.space(3)
+      color: Style.normalFillFor(root.textColor, Color.accent)
+      borderSpec: Border.none()
+
+      Image {
+        anchors.fill: parent
+        anchors.margins: Style.space(1)
+        source: trackRow.track ? String(trackRow.track.thumb || "") : ""
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        visible: source !== ""
+      }
+
+      Text {
+        anchors.centerIn: parent
+        visible: !(trackRow.track && trackRow.track.thumb)
+        text: "󰝚"
+        color: root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+    }
+
+    Column {
+      anchors.left: rowCover.right
+      anchors.leftMargin: Style.space(8)
       anchors.right: durationText.left
       anchors.rightMargin: Style.space(6)
       anchors.verticalCenter: parent.verticalCenter
@@ -2532,7 +2563,8 @@ Timer {
         elide: Text.ElideRight
         maximumLineCount: 1
         text: trackRow.track ? String(trackRow.track.title || "") : ""
-        color: trackRow.playing ? Color.accent : root.textColor
+        color: root.textColor
+        font.bold: trackRow.playing
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
       }
@@ -2542,8 +2574,13 @@ Timer {
         textFormat: Text.PlainText
         elide: Text.ElideRight
         maximumLineCount: 1
-        text: trackRow.track ? String(trackRow.track.artist || "") : ""
-        color: trackRow.playing ? Color.accent : root.dim
+        text: {
+          if (!trackRow.track) return ""
+          var artist = String(trackRow.track.artist || "")
+          var more = String(trackRow.track.subtitle || "")
+          return more !== "" ? (artist !== "" ? artist + " · " + more : more) : artist
+        }
+        color: root.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
       }

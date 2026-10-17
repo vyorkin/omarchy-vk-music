@@ -293,6 +293,15 @@ marks. Where they meet, the cursor wins — a wash you cannot select over would 
 that lies. The accent text on that row stays: the wash says «here», the colour says
 «this one is sounding».
 
+A row is laid out the way the players people come from lay theirs out: the place number,
+a small cover, the title over «artist · album», the length, and the heart. The playing row
+sits on a plain rounded pill with a play glyph where its number would be, and its title is
+bold — the pill says «here», the glyph says «this one is sounding». The keyboard cursor
+takes the accent tint instead, so the two marks never look alike.
+
+The cover is VK's own thumbnail, the one the panel has already fetched for the player; it
+costs no extra request.
+
 Every track row carries a heart as well, at its right end: filled when the track is in
 «Моя музыка», outlined when it is not, and a left click toggles it without disturbing
 playback. VK keeps a copy of a track in each list it appears in, so the panel remembers
