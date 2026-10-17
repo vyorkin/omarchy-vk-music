@@ -2492,10 +2492,10 @@ Timer {
 
     Text {
       id: positionText
-      // As wide as the list needs: a section of tracks has no numbers, and reserving the
-      // column there pushed every cover 28 px right — the row's left padding then read as
-      // forty pixels while its right padding was eight.
-      width: (trackRow.position > 0 || trackRow.playing) ? Style.space(28) : 0
+      // Always the same width, so the cover never moves when a track starts playing and
+      // the glyph has to appear. The right side of the row is inset by the same total, so
+      // the two paddings match without either side depending on what the row contains.
+      width: Style.space(20)
       anchors.left: parent.left
       anchors.leftMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
@@ -2515,7 +2515,7 @@ Timer {
       id: durationText
       width: Style.space(42)
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(40)
+      anchors.rightMargin: Style.space(52)
       anchors.verticalCenter: parent.verticalCenter
       horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
@@ -2533,7 +2533,7 @@ Timer {
       width: Style.space(32)
       height: width
       anchors.left: positionText.right
-      anchors.leftMargin: trackRow.position > 0 ? Style.space(4) : 0
+      anchors.leftMargin: Style.space(4)
       anchors.verticalCenter: parent.verticalCenter
       radius: Style.space(3)
       color: Style.normalFillFor(root.textColor, Color.accent)
@@ -2603,8 +2603,11 @@ Timer {
     // the box: the row's right padding is then exactly Style.space(8), the same as the
     // number's left padding, and nothing depends on how a control centres its icon.
     Item {
+      // The right padding mirrors the left one: eight, the glyph column's twenty and the
+      // four before the cover, so 32 on both sides. Symmetry is worth the width here —
+      // the alternative was a cover that jumps when the play glyph appears.
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(8)
+      anchors.rightMargin: Style.space(32)
       anchors.verticalCenter: parent.verticalCenter
       width: Style.space(14)
       height: trackRow.height
