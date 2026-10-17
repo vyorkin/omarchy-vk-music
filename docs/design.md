@@ -252,6 +252,11 @@ clock. The glyph size is the bar's own icon token rather than a panel font, so t
 cannot grow taller than the bar, and the middle glyph still never turns into a download
 icon — it dims while the track is being fetched.
 
+The heart is not a transport control — it is a statement about the track — so it sits
+at the right end of the band, after the volume. It is Lucide's `heart`: an outline while
+the track is not in «Моя музыка», filled (and accent-coloured) once it is. «Моя музыка»
+and the favourites are one list on VK, so the glyph is the same one the bar shows.
+
 The transport glyphs are FILLED — the reference sets `filled: true` on all three of its
 transport buttons, which is what turns Lucide's polygons into solid shapes. Its heart is
 the exception: filled only while the track is in the favourites, outlined otherwise.

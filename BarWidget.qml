@@ -3672,16 +3672,6 @@ Timer {
       }
 
       Button {
-        visible: !root.onAir()
-        iconText: root.liked ? "󰋑" : "󰋕"
-        foreground: root.liked ? Color.urgent : root.textColor
-        enabled: root.hasTrack
-        opacity: enabled ? 1.0 : 0.4
-        tooltipText: root.liked ? "Убрать из моей музыки" : "В мою музыку"
-        onClicked: root.toggleLike()
-      }
-
-      Button {
         iconText: "󰒟"
         foreground: root.shuffled ? Color.accent : root.textColor
         tooltipText: root.shuffled ? "Перемешивание включено" : "Перемешать"
@@ -3737,6 +3727,26 @@ Timer {
         bar: root.bar
         onMoved: function(value) { root.setVolume(value, true) }
         onReleased: function(value) { root.setVolume(value, false) }
+      }
+
+      // The heart sits at the right end, after everything that controls the sound:
+      // it is not a transport control, it is a statement about the track. Lucide's
+      // heart is an outline until the track is in «Моя музыка», then it is filled —
+      // the same glyph the bar uses, so the two say the same thing the same way.
+      Item {
+        Layout.preferredWidth: Style.space(26)
+        Layout.fillHeight: true
+        visible: !root.onAir() && root.hasTrack
+
+        BarGlyph {
+          anchors.fill: parent
+          name: "heart"
+          filled: root.liked
+          iconColor: root.liked ? Color.accent : root.textColor
+          tooltip: root.liked ? "Убрать из моей музыки" : "В мою музыку"
+          enabled: root.hasTrack
+          onClicked: root.toggleLike()
+        }
       }
     }
 
