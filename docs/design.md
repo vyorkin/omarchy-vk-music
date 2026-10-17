@@ -287,6 +287,12 @@ the same one the covers pay: a picture cannot be clipped to a rounded shape here
 circular frame around a square picture has to choose between a ring of background and a
 picture whose corners reach past the frame. Flush is the lesser evil.
 
+The row that is playing carries a faint wash of the accent across its whole width, and
+the keyboard cursor keeps the theme's selected fill: two different facts, two different
+marks. Where they meet, the cursor wins — a wash you cannot select over would be a mark
+that lies. The accent text on that row stays: the wash says «here», the colour says
+«this one is sounding».
+
 Every track row carries a heart as well, at its right end: filled when the track is in
 «Моя музыка», outlined when it is not, and a left click toggles it without disturbing
 playback. VK keeps a copy of a track in each list it appears in, so the panel remembers

@@ -2465,6 +2465,17 @@ Timer {
     readonly property bool playing: trackRow.track !== null
       && root.isPlayingTrack(trackRow.track.key)
 
+    // The playing row carries a faint wash of the accent; the keyboard cursor keeps the
+    // theme's selected fill. Two different facts, two different marks — and where they
+    // meet, the cursor wins.
+    BorderSurface {
+      anchors.fill: parent
+      radius: Style.space(6)
+      color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.12)
+      borderSpec: Border.none()
+      visible: trackRow.playing && !trackRow.selected
+    }
+
     // Two states, two fills: the keyboard cursor takes the selected fill, the
     // pointer under the mouse the plain one, so a list says both «here is the
     // keyboard» and «here is the mouse» without the two looking alike.
