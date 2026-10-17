@@ -748,6 +748,12 @@ Timer {
     for (var i = 0; i < list.length; i++) {
       if (list[i] === item) return i
     }
+    // A row can hold a copy rather than the very object, and identity then fails while
+    // the track is the same one. The key is what identifies a track, so it is the
+    // fallback — and a wrong index plays the wrong song, which is worse than any lookup.
+    for (var j = 0; j < list.length; j++) {
+      if (list[j] && item.key && String(list[j].key) === String(item.key)) return j
+    }
     return -1
   }
 
@@ -1340,6 +1346,7 @@ Timer {
   }
 
   function playBrowseTrack(index) {
+    if (!(index >= 0)) return
     // Same rule as a search result: the queue is exactly the list on screen.
     var keys = []
     for (var i = 0; i < root.browseTracks.length; i++) {
@@ -1415,6 +1422,7 @@ Timer {
   }
 
   function playPlaylistTrack(index) {
+    if (!(index >= 0)) return
     var keys = []
     for (var i = 0; i < root.openPlaylistTracks.length; i++) {
       var key = String(root.openPlaylistTracks[i].key || "")
@@ -1539,6 +1547,7 @@ Timer {
   }
 
   function playSearchResult(index) {
+    if (!(index >= 0)) return
     // Hand the backend the keys of the results the user is looking at: one
     // `audio.getById` instead of a repeated search, and the queue is exactly
     // this list rather than whatever the same query returns the second time.
