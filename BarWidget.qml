@@ -50,7 +50,7 @@ Panel {
   property string browseNext: ""
   property var stations: []
   // A list that is being fetched is not an empty list: without these the popup
-  // showed root.t(root.t("Пусто")) and root.t(root.t("Очередь пуста")) while the answer was still on its way.
+  // showed root.t("Пусто") and root.t("Очередь пуста") while the answer was still on its way.
   property bool browseLoading: false
   property bool browseMoreLoading: false
   property bool queueLoading: false
@@ -85,24 +85,24 @@ Panel {
     if (root._queryLength < 2) return ""
     // A playlist search answers in playlists, so its heading counts those.
     if (root.searchMode === "playlists") {
-      if (root.playlistSearchLoading) return root.t(root.t("Ищу…"))
+      if (root.playlistSearchLoading) return root.t("Ищу…")
       var found = root.foundPlaylists.length
-      if (found === 0) return root.t(root.t("Плейлисты не найдены"))
-      return root.t(root.t("Найдено ")) + found + " " + root.plural(found, root.t(root.t("плейлист")), root.t(root.t("плейлиста")), root.t(root.t("плейлистов")))
+      if (found === 0) return root.t("Плейлисты не найдены")
+      return root.t("Найдено ") + found + " " + root.plural(found, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов"))
     }
-    if (root.searchState === "searching") return root.t(root.t("Ищу…"))
-    if (!root.resultsShowing) return root.t(root.t("Подсказки"))
+    if (root.searchState === "searching") return root.t("Ищу…")
+    if (!root.resultsShowing) return root.t("Подсказки")
     if (root.results.length === 0) {
-      return root.suggestionsShown.length > 0 ? root.t(root.t("Ничего не найдено. Похожее:")) : root.t(root.t("Ничего не найдено"))
+      return root.suggestionsShown.length > 0 ? root.t("Ничего не найдено. Похожее:") : root.t("Ничего не найдено")
     }
     var span = root.tracksSpan(root.results)
-    return root.t(root.t("Найдено ")) + root.results.length + (span === "" ? "" : " · " + span)
+    return root.t("Найдено ") + root.results.length + (span === "" ? "" : " · " + span)
   }
   // The popup answers to five keys and nothing on screen says so. Esc is the one
   // that means two things, so the hint follows the query.
   readonly property string keyHints: {
-    if (root.activeField().activeFocus) return root.t(root.t("Enter искать · Tab к списку · Esc выйти из поля"))
-    return root.t(root.t("Space пауза · jk выбор · Enter играть · / фильтр · m вид · [ ] вкладки · ⇧H ⇧L раздел · Esc закрыть"))
+    if (root.activeField().activeFocus) return root.t("Enter искать · Tab к списку · Esc выйти из поля")
+    return root.t("Space пауза · jk выбор · Enter играть · / фильтр · m вид · [ ] вкладки · ⇧H ⇧L раздел · Esc закрыть")
   }
 
   // The heading is worth its line only when there is something under it: while
@@ -117,8 +117,8 @@ Panel {
     var minutes = Math.round(seconds / 60)
     var hours = Math.floor(minutes / 60)
     minutes = minutes % 60
-    if (hours > 0) return hours + " ч " + minutes + " мин"
-    return minutes + " мин"
+    if (hours > 0) return hours + root.t("ч ") + minutes + root.t("мин")
+    return minutes + root.t("мин")
   }
 
   function tracksSpan(tracks) {
@@ -245,10 +245,10 @@ Panel {
     if (root.errorText !== "") return root.errorText
     if (root.halted !== "") return root.halted
     if (root.notice !== "") return root.notice
-    if (!root.signedIn) return root.t(root.t("нет входа"))
+    if (!root.signedIn) return root.t("нет входа")
     // Buffering is not text: the ring around the cover says it, in place, and
     // without a word that would appear and vanish three times a second.
-    if (!root.hasTrack) return root.t(root.t("готов"))
+    if (!root.hasTrack) return root.t("готов")
     return root.busy !== "" ? "…" : ""
   }
   readonly property bool statusUrgent: root.errorText !== "" || root.halted !== ""
@@ -323,7 +323,7 @@ Timer {
   // The answer is parsed in the collector's own `onStreamFinished`, because
   // `text` is a property of the collector and not of the Process. Reading it
   // from `onExited` yields undefined, which is how every command silently
-  // became root.t(root.t("команда не выполнена")) while the service was in fact working.
+  // became root.t("команда не выполнена") while the service was in fact working.
   Component {
     id: commandComponent
     Process {
@@ -344,11 +344,11 @@ Timer {
           if (answer && answer.ok) {
             root.errorText = ""
           } else if (answer && answer.error) {
-            root.errorText = String(answer.error.message || answer.error.code || root.t(root.t("ошибка")))
+            root.errorText = String(answer.error.message || answer.error.code || root.t("ошибка"))
           } else if (raw !== "") {
             root.errorText = raw
           } else {
-            root.errorText = String(commandError.text || "").trim() || root.t(root.t("команда не выполнена"))
+            root.errorText = String(commandError.text || "").trim() || root.t("команда не выполнена")
           }
           if (onDone) onDone(answer)
         }
@@ -1134,12 +1134,12 @@ Timer {
       if (held === 0) return root.openPlaylistTitle + root.t(" · пусто")
       var span = root.tracksSpan(root.openPlaylistTracks)
       return root.openPlaylistTitle + " · " + held + " "
-        + root.plural(held, root.t(root.t("трек")), root.t(root.t("трека")), root.t(root.t("треков"))) + (span === "" ? "" : " · " + span)
+        + root.plural(held, root.t("трек"), root.t("трека"), root.t("треков")) + (span === "" ? "" : " · " + span)
     }
     if (root.view === "queue") {
       if (root.queue.length === 0) return ""
-      var summary = root.listSummary(root.upcoming, root.t(root.t("трек")), root.t(root.t("трека")), root.t(root.t("треков")))
-      return summary === "" ? root.t(root.t("Дальше в очереди")) : root.t("Дальше в очереди · ") + summary
+      var summary = root.listSummary(root.upcoming, root.t("трек"), root.t("трека"), root.t("треков"))
+      return summary === "" ? root.t("Дальше в очереди") : root.t("Дальше в очереди · ") + summary
     }
     var base = ""
     if (root.view === "browse") base = root.browseHeader
@@ -1151,48 +1151,64 @@ Timer {
   }
 
   function listAction() {
-    if (root.view === "browse" && root.openPlaylist !== null) return root.t(root.t("Играть"))
-    if (root.view === "queue" && root.queue.length > 0) return root.t(root.t("Очистить"))
+    if (root.view === "browse" && root.openPlaylist !== null) return root.t("Играть")
+    if (root.view === "queue" && root.queue.length > 0) return root.t("Очистить")
     return ""
   }
 
   readonly property string browseHeader: {
     if (root.browseSlug === "") return ""
     if (root.browseSlug === "person") {
-      if (root.personLoading) return root.t(root.t("Открываю…"))
+      if (root.personLoading) return root.t("Открываю…")
       var mine = root.personPlaylists.length
-      if (!root.person) return root.t(root.t("Человек не найден"))
-      return String(root.person.name || root.t(root.t("Человек")))
-        + (mine === 0 ? root.t(" · пусто") : " · " + mine + " " + root.plural(mine, root.t(root.t("плейлист")), root.t(root.t("плейлиста")), root.t(root.t("плейлистов"))))
+      if (!root.person) return root.t("Человек не найден")
+      return String(root.person.name || root.t("Человек"))
+        + (mine === 0 ? root.t(" · пусто") : " · " + mine + " " + root.plural(mine, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов")))
     }
     if (root.browseSlug === "friends") {
-      if (root.friendsLoading) return root.t(root.t("Друзья · загрузка…"))
+      if (root.friendsLoading) return root.t("Друзья · загрузка…")
       var count = root.friends.length
-      return root.t("Друзья · ") + count + " " + root.plural(count, root.t(root.t("человек")), root.t(root.t("человека")), root.t(root.t("человек")))
+      return root.t("Друзья · ") + count + " " + root.plural(count, root.t("человек"), root.t("человека"), root.t("человек"))
     }
     if (root.browseSlug === "radiostations") {
-      if (root.browseLoading) return root.t(root.t("Радио · загрузка…"))
+      if (root.browseLoading) return root.t("Радио · загрузка…")
       var stations = root.stations.length
       return root.t("Радио · ") + (stations === 0
-        ? root.t(root.t("пусто"))
-        : stations + " " + root.plural(stations, root.t(root.t("станция")), root.t(root.t("станции")), root.t(root.t("станций"))))
+        ? root.t("пусто")
+        : stations + " " + root.plural(stations, root.t("станция"), root.t("станции"), root.t("станций")))
     }
-    var title = root.browseTitle !== "" ? root.browseTitle : (root.sectionTitle(root.browseSlug) || root.t(root.t("Раздел")))
+    var title = root.browseTitle !== "" ? root.browseTitle : (root.sectionTitle(root.browseSlug) || root.t("Раздел"))
     if (root.browseLoading) return title + root.t(" · загрузка…")
     var tracks = root.browseTracks.length
     var lists = root.browsePlaylists.length
     if (tracks === 0 && lists === 0) return title + root.t(" · пусто")
     if (tracks === 0) {
-      return title + " · " + lists + " " + root.plural(lists, root.t(root.t("плейлист")), root.t(root.t("плейлиста")), root.t(root.t("плейлистов")))
+      return title + " · " + lists + " " + root.plural(lists, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов"))
     }
-    return title + " · " + root.listSummary(root.browseTracks, root.t(root.t("трек")), root.t(root.t("трека")), root.t(root.t("треков")))
+    return title + " · " + root.listSummary(root.browseTracks, root.t("трек"), root.t("трека"), root.t("треков"))
   }
 
   // The sections come as opaque ids with a friendly slug inside the url. The
   // backend accepts either, and the url is what lets the UI label them.
   // The section's own name, known from the section list before its page arrives:
-  // root.t(root.t("Раздел · загрузка…")) tells the user nothing about what is loading.
+  // root.t("Раздел · загрузка…") tells the user nothing about what is loading.
+  // VK's section titles come in Russian: the slugs are stable, so the name shown is
+  // translated by slug and VK's own title is only the fallback.
+  function sectionName(slug) {
+    var known = {
+      general: "Главная",
+      all: "Моя музыка",
+      explore: "Обзор",
+      radiostations: "Радио",
+      updates: "Обновления"
+    }
+    var key = known[slug]
+    return key ? root.t(key) : ""
+  }
+
   function sectionTitle(slug) {
+    var translated = root.sectionName(slug)
+    if (translated !== "") return translated
     for (var i = 0; i < root.sources.length; i++) {
       if (root.sourceSlug(root.sources[i]) === slug) return String(root.sources[i].title || "")
     }
@@ -1238,7 +1254,7 @@ Timer {
 
   function adoptSection(page) {
     if (!page) return
-    root.browseTitle = String(page.title || "")
+    root.browseTitle = root.sectionTitle(root.browseSlug) || String(page.title || "")
     root.browseTracks = page.tracks || []
     root.browsePlaylists = page.playlists || []
     root.browseNext = String(page.next || "")
@@ -1275,7 +1291,7 @@ Timer {
     if (keys.length === 0) return
     var args = [root.cli, "play", "keys"].concat(keys)
     args.push("--index", String(index))
-    args.push("--title", root.browseTitle !== "" ? root.browseTitle : root.t(root.t("Обзор")))
+    args.push("--title", root.browseTitle !== "" ? root.browseTitle : root.t("Обзор"))
     root.call(args, function() { root.watchForTrack() })
   }
 
@@ -1292,7 +1308,7 @@ Timer {
   }
 
   readonly property string openPlaylistTitle: root.openPlaylist
-    ? String(root.openPlaylist.title || root.t(root.t("Плейлист")))
+    ? String(root.openPlaylist.title || root.t("Плейлист"))
     : ""
 
   // Opening a playlist is not the same as playing it: the tracks are fetched and
@@ -1324,7 +1340,7 @@ Timer {
       if (answer && answer.ok && answer.data) {
         root.openPlaylistTracks = answer.data.tracks || []
       } else {
-        root.notice = root.t(root.t("Не удалось открыть плейлист"))
+        root.notice = root.t("Не удалось открыть плейлист")
       }
     })
   }
@@ -1383,7 +1399,7 @@ Timer {
     root.person = null
     root.personPlaylists = []
     root.browseSlug = "friends"
-    root.browseTitle = root.t(root.t("Друзья"))
+    root.browseTitle = root.t("Друзья")
     root.browseTracks = []
     root.browsePlaylists = []
     root.browseNext = ""
@@ -1407,7 +1423,7 @@ Timer {
     root.browseSlug = "person"
     root.browseTracks = []
     root.browseNext = ""
-    root.browseTitle = root.t(root.t("Человек"))
+    root.browseTitle = root.t("Человек")
     root.call([root.cli, "person", text], function(answer) {
       root.personLoading = false
       if (seqPerson !== root._browseSeq) return
@@ -1417,9 +1433,9 @@ Timer {
         // The same list feeds the gallery and the rows: one place decides what a
         // person's page shows.
         root.browsePlaylists = root.personPlaylists
-        root.browseTitle = root.person ? String(root.person.name || root.t(root.t("Человек"))) : root.t(root.t("Человек"))
+        root.browseTitle = root.person ? String(root.person.name || root.t("Человек")) : root.t("Человек")
       } else {
-        root.notice = root.t(root.t("Человек не найден"))
+        root.notice = root.t("Человек не найден")
       }
     })
   }
@@ -1440,7 +1456,7 @@ Timer {
     root.browseTracks = []
     root.browseNext = ""
     root.browseSlug = "friends"
-    root.browseTitle = root.t(root.t("Друзья"))
+    root.browseTitle = root.t("Друзья")
     root.loadFriends()
     root.focusList()
   }
@@ -1476,7 +1492,7 @@ Timer {
     if (keys.length === 0) return
     var args = [root.cli, "play", "keys"].concat(keys)
     args.push("--index", String(index))
-    args.push("--title", root.t(root.t("Поиск: ")) + root.query.trim())
+    args.push("--title", root.t("Поиск: ") + root.query.trim())
     root.call(args, function() { root.watchForTrack() })
   }
 
@@ -1610,11 +1626,11 @@ Timer {
   // The label shown in the bar. Signing in, an empty queue and a stopped
   // service are states of the widget, not errors: only a halt paints red.
   readonly property string barLabel: {
-    if (root.halted !== "") return root.t(root.t("остановлен"))
+    if (root.halted !== "") return root.t("остановлен")
     if (!root.signedIn) return "vk music"
     // A live station has no track behind it: its name is the whole label.
-    if (root.onAir()) return String(root.radioValue("name", root.t(root.t("радио"))))
-    if (!root.hasTrack) return root.loading ? root.t(root.t("загрузка…")) : "vk music"
+    if (root.onAir()) return String(root.radioValue("name", root.t("радио")))
+    if (!root.hasTrack) return root.loading ? root.t("загрузка…") : "vk music"
     var title = root.barShowTitle ? root.trackValue("title") : ""
     var artist = root.barShowArtist ? root.trackValue("artist", "") : ""
     if (title !== "" && artist !== "") return title + "  ·  " + artist
@@ -1820,7 +1836,7 @@ Timer {
         name: "skip-back"
         filled: true
         icon: "󰒮"
-        tooltip: root.t(root.t("Предыдущий трек"))
+        tooltip: root.t("Предыдущий трек")
         onClicked: root.skipPrevious()
       }
 
@@ -1830,7 +1846,7 @@ Timer {
         name: root.playing ? "pause" : "play"
         filled: true
         icon: root.playing ? "󰏤" : "󰐊"
-        tooltip: root.playing ? root.t(root.t("Пауза")) : root.t(root.t("Играть"))
+        tooltip: root.playing ? root.t("Пауза") : root.t("Играть")
         onClicked: root.togglePause()
       }
 
@@ -1838,7 +1854,7 @@ Timer {
         name: "skip-forward"
         filled: true
         icon: "󰒭"
-        tooltip: root.t(root.t("Следующий трек"))
+        tooltip: root.t("Следующий трек")
         onClicked: root.skipNext()
       }
     }
@@ -1852,7 +1868,7 @@ Timer {
       filled: root.liked
       icon: root.liked ? "󰋑" : "󰋕"
       iconColor: root.liked ? Color.accent : root.fg
-      tooltip: root.liked ? root.t(root.t("Убрать из моей музыки")) : root.t(root.t("В мою музыку"))
+      tooltip: root.liked ? root.t("Убрать из моей музыки") : root.t("В мою музыку")
       onClicked: root.toggleLike()
     }
   }
@@ -2161,7 +2177,7 @@ Timer {
         leftPadding: Style.space(6)
         rightPadding: Style.space(6)
         text: card.item && card.item.count
-          ? (Number(card.item.count) + " " + root.plural(Number(card.item.count), root.t(root.t("трек")), root.t(root.t("трека")), root.t(root.t("треков"))))
+          ? (Number(card.item.count) + " " + root.plural(Number(card.item.count), root.t("трек"), root.t("трека"), root.t("треков")))
           : ""
         color: root.dim
         font.family: Style.font.family
@@ -2557,7 +2573,7 @@ Timer {
             textFormat: Text.PlainText
             elide: Text.ElideRight
             maximumLineCount: 1
-            text: modelData ? String(modelData.title || "") : ""
+            text: modelData ? (root.sectionName(root.sourceSlug(modelData)) || String(modelData.title || "")) : ""
             color: root.textColor
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall
@@ -2569,7 +2585,7 @@ Timer {
             elide: Text.ElideRight
             text: modelData && modelData.count
               ? (Number(modelData.count) + " "
-                 + root.plural(Number(modelData.count), root.t(root.t("трек")), root.t(root.t("трека")), root.t(root.t("треков"))))
+                 + root.plural(Number(modelData.count), root.t("трек"), root.t("трека"), root.t("треков")))
               : ""
             color: root.dim
             font.family: Style.font.family
@@ -2627,7 +2643,7 @@ Timer {
       iconText: "󰕳"
       foreground: root.textColor
       selected: root.gridView
-      tooltipText: root.t(root.t("Галерея обложек"))
+      tooltipText: root.t("Галерея обложек")
       onClicked: root.setPlaylistView("grid")
     }
 
@@ -2635,7 +2651,7 @@ Timer {
       iconText: "󰉹"
       foreground: root.textColor
       selected: !root.gridView
-      tooltipText: root.t(root.t("Список"))
+      tooltipText: root.t("Список")
       onClicked: root.setPlaylistView("list")
     }
   }
@@ -2675,21 +2691,21 @@ Timer {
       }
 
       Button {
-        text: root.pendingIndex >= 0 ? root.t(root.t("Играть сейчас")) : root.t(root.t("В очередь"))
+        text: root.pendingIndex >= 0 ? root.t("Играть сейчас") : root.t("В очередь")
         foreground: root.textColor
         tooltipText: root.pendingIndex >= 0
-          ? root.t(root.t("Перейти к этому треку"))
-          : root.t(root.t("Добавить в конец очереди"))
+          ? root.t("Перейти к этому треку")
+          : root.t("Добавить в конец очереди")
         onClicked: if (root.pendingIndex >= 0) root.jumpPending()
           else root.queuePendingTrack(false)
       }
 
       Button {
-        text: root.pendingIndex >= 0 ? root.t(root.t("Убрать")) : root.t(root.t("Следующим"))
+        text: root.pendingIndex >= 0 ? root.t("Убрать") : root.t("Следующим")
         foreground: root.textColor
         tooltipText: root.pendingIndex >= 0
-          ? root.t(root.t("Убрать из очереди"))
-          : root.t(root.t("Поставить сразу после текущего трека"))
+          ? root.t("Убрать из очереди")
+          : root.t("Поставить сразу после текущего трека")
         onClicked: if (root.pendingIndex >= 0) root.removePending()
           else root.queuePendingTrack(true)
       }
@@ -2697,7 +2713,7 @@ Timer {
       Button {
         iconText: "󰅖"
         foreground: root.textColor
-        tooltipText: root.t(root.t("Отмена"))
+        tooltipText: root.t("Отмена")
         onClicked: root.closeRowMenu()
       }
     }
@@ -2753,9 +2769,9 @@ Timer {
       Button {
         Layout.alignment: Qt.AlignVCenter
         visible: !root.filtering && (root.openPlaylist !== null || root.person !== null)
-        text: root.t(root.t("Назад"))
+        text: root.t("Назад")
         foreground: root.textColor
-        tooltipText: root.openPlaylist !== null ? root.t(root.t("К плейлистам")) : root.t(root.t("К списку людей"))
+        tooltipText: root.openPlaylist !== null ? root.t("К плейлистам") : root.t("К списку людей")
         onClicked: {
           if (root.openPlaylist !== null) {
             root.closePlaylistView()
@@ -2782,7 +2798,7 @@ Timer {
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignVCenter
         visible: root.filtering
-        placeholderText: root.t(root.t("Фильтр по списку: название или исполнитель"))
+        placeholderText: root.t("Фильтр по списку: название или исполнитель")
         text: root.filter
         // Vim-like: «/» puts you in the field, Enter leaves it, Esc clears it.
         onVisibleChanged: if (visible) forceActiveFocus()
@@ -2803,13 +2819,13 @@ Timer {
         visible: !root.filtering && root.listAction() !== ""
         text: root.listAction()
         foreground: root.textColor
-        tooltipText: root.listAction() === root.t(root.t("Играть")) ? root.t(root.t("Играть весь плейлист")) : root.t(root.t("Очистить очередь"))
-        enabled: root.listAction() === root.t(root.t("Играть"))
+        tooltipText: root.listAction() === root.t("Играть") ? root.t("Играть весь плейлист") : root.t("Очистить очередь")
+        enabled: root.listAction() === root.t("Играть")
           ? root.openPlaylistTracks.length > 0
           : root.queue.length > 0
         opacity: enabled ? 1.0 : 0.4
         onClicked: {
-          if (root.listAction() === root.t(root.t("Играть"))) root.playPlaylistTrack(0)
+          if (root.listAction() === root.t("Играть")) root.playPlaylistTrack(0)
           else root.clearQueue()
         }
       }
@@ -2849,9 +2865,9 @@ Timer {
           spacing: Style.space(6)
 
           Button {
-            text: root.t(root.t("Моя музыка"))
+            text: root.t("Моя музыка")
             foreground: root.textColor
-            onClicked: root.playSection("all", root.t(root.t("Моя музыка")))
+            onClicked: root.playSection("all", root.t("Моя музыка"))
           }
 
           Repeater {
@@ -2879,7 +2895,7 @@ Timer {
         Text {
           visible: root.queue.length === 0 && !root.queueLoading
           textFormat: Text.PlainText
-          text: root.t(root.t("Очередь пуста. Начни с «Моя музыка»."))
+          text: root.t("Очередь пуста. Начни с «Моя музыка».")
           color: root.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -2910,17 +2926,17 @@ Timer {
             // First, and deliberately: choosing a person is a way in, not a
             // section, and it must not hide behind a scrolling row.
             Button {
-              text: root.t(root.t("Люди"))
+              text: root.t("Люди")
               foreground: root.textColor
               selected: root.effectiveBrowse() === "friends" || root.effectiveBrowse() === "person"
-              tooltipText: root.t(root.t("Друзья и любой человек по ссылке — их плейлисты"))
+              tooltipText: root.t("Друзья и любой человек по ссылке — их плейлисты")
               onClicked: root.browseFriends()
             }
 
             Repeater {
               model: root.sources
               delegate: Button {
-                text: modelData ? String(modelData.title || "") : ""
+                text: modelData ? (root.sectionName(root.sourceSlug(modelData)) || String(modelData.title || "")) : ""
                 foreground: root.textColor
                 selected: modelData ? root.sourceSlug(modelData) === root.effectiveBrowse() : false
                 onClicked: if (modelData) {
@@ -2964,7 +2980,7 @@ Timer {
           textFormat: Text.PlainText
           wrapMode: Text.WordWrap
           visible: root.browseSlug === ""
-          text: root.t(root.t("Выбери раздел: подборки, новинки, эфир."))
+          text: root.t("Выбери раздел: подборки, новинки, эфир.")
           color: root.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -2984,7 +3000,7 @@ Timer {
             TextField {
               id: personField
               width: parent.width - personGo.width - Style.space(6)
-              placeholderText: root.t(root.t("Ссылка, id или имя друга"))
+              placeholderText: root.t("Ссылка, id или имя друга")
               text: root.personQuery
               onTextChanged: root.personQuery = text
               onAccepted: root.openPersonFromField()
@@ -2992,7 +3008,7 @@ Timer {
 
             Button {
               id: personGo
-              text: root.t(root.t("Открыть"))
+              text: root.t("Открыть")
               foreground: root.textColor
               enabled: root.personQuery.trim() !== ""
               opacity: enabled ? 1.0 : 0.4
@@ -3001,7 +3017,7 @@ Timer {
           }
 
           PanelSectionHeader {
-            text: root.t(root.t("Друзья"))
+            text: root.t("Друзья")
             foreground: root.dim
             visible: root.friends.length > 0
           }
@@ -3026,7 +3042,7 @@ Timer {
           }
 
           PanelSectionHeader {
-            text: root.t(root.t("Недавние"))
+            text: root.t("Недавние")
             foreground: root.dim
             visible: root.people.length > 0
           }
@@ -3056,7 +3072,7 @@ Timer {
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             visible: !root.friendsLoading && root.friends.length === 0 && root.people.length === 0
-            text: root.t(root.t("Список друзей пуст. Вставь ссылку на человека — например vk.com/id213706100."))
+            text: root.t("Список друзей пуст. Вставь ссылку на человека — например vk.com/id213706100.")
             color: root.dim
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall
@@ -3099,7 +3115,7 @@ Timer {
           visible: root.browseNext !== ""
           enabled: !root.browseMoreLoading
           opacity: enabled ? 1.0 : 0.5
-          text: root.t(root.t("Ещё"))
+          text: root.t("Ещё")
           foreground: root.textColor
           onClicked: root.browseMore()
         }
@@ -3132,7 +3148,7 @@ Timer {
           textFormat: Text.PlainText
           wrapMode: Text.WordWrap
           visible: root.openPlaylistLoading && root.openPlaylistTracks.length === 0
-          text: root.t(root.t("Открываю плейлист…"))
+          text: root.t("Открываю плейлист…")
           color: root.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -3152,17 +3168,17 @@ Timer {
           visible: root.signedIn
 
           Button {
-            text: root.t(root.t("Треки"))
+            text: root.t("Треки")
             foreground: root.textColor
             selected: root.searchMode === "tracks"
             onClicked: root.setSearchMode("tracks")
           }
 
           Button {
-            text: root.t(root.t("Плейлисты"))
+            text: root.t("Плейлисты")
             foreground: root.textColor
             selected: root.searchMode === "playlists"
-            tooltipText: root.t(root.t("Искать плейлисты других людей"))
+            tooltipText: root.t("Искать плейлисты других людей")
             onClicked: root.setSearchMode("playlists")
           }
         }
@@ -3172,7 +3188,7 @@ Timer {
           width: parent.width
           textFormat: Text.PlainText
           wrapMode: Text.WordWrap
-          text: root.t(root.t("Начни печатать — подсказки ВК появятся сами, поиск пойдёт после паузы"))
+          text: root.t("Начни печатать — подсказки ВК появятся сами, поиск пойдёт после паузы")
           color: root.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -3180,7 +3196,7 @@ Timer {
 
         // What was searched before, offered back while the field is empty.
         PanelSectionHeader {
-          text: root.t(root.t("Недавние запросы"))
+          text: root.t("Недавние запросы")
           foreground: root.dim
           visible: root._queryLength < 2 && root.history.length > 0
         }
@@ -3254,7 +3270,7 @@ Timer {
         spacing: Style.spacing.controlGap
         visible: root.view === "settings"
 
-        PanelSectionHeader { text: root.t(root.t("Язык")); foreground: root.dim }
+        PanelSectionHeader { text: root.t("Язык"); foreground: root.dim }
 
         // Seven names do not need a dropdown: they fit one row, and a row of chips is
         // one click instead of two.
@@ -3276,34 +3292,34 @@ Timer {
 
         PanelSeparator { Layout.fillWidth: true; foreground: root.textColor }
 
-        PanelSectionHeader { text: root.t(root.t("Строка в баре")); foreground: root.dim }
+        PanelSectionHeader { text: root.t("Строка в баре"); foreground: root.dim }
 
-        ToggleRow { label: root.t(root.t("Обложка трека")); key: "showArtwork"; on: root.prefs.showArtwork !== false }
-        ToggleRow { label: root.t(root.t("Название трека")); key: "showTitle"; on: root.prefs.showTitle !== false }
-        ToggleRow { label: root.t(root.t("Исполнитель")); key: "showArtist"; on: root.prefs.showArtist !== false }
-        ToggleRow { label: root.t(root.t("Кнопки управления")); key: "showControls"; on: root.prefs.showControls !== false }
-        ToggleRow { label: root.t(root.t("Линия прогресса")); key: "showProgress"; on: root.prefs.showProgress !== false }
-        ToggleRow { label: root.t(root.t("Время трека")); key: "showTime"; on: root.prefs.showTime === true }
-        ToggleRow { label: root.t(root.t("Кнопка «Нравится»")); key: "showLike"; on: root.prefs.showLike === true }
+        ToggleRow { label: root.t("Обложка трека"); key: "showArtwork"; on: root.prefs.showArtwork !== false }
+        ToggleRow { label: root.t("Название трека"); key: "showTitle"; on: root.prefs.showTitle !== false }
+        ToggleRow { label: root.t("Исполнитель"); key: "showArtist"; on: root.prefs.showArtist !== false }
+        ToggleRow { label: root.t("Кнопки управления"); key: "showControls"; on: root.prefs.showControls !== false }
+        ToggleRow { label: root.t("Линия прогресса"); key: "showProgress"; on: root.prefs.showProgress !== false }
+        ToggleRow { label: root.t("Время трека"); key: "showTime"; on: root.prefs.showTime === true }
+        ToggleRow { label: root.t("Кнопка «Нравится»"); key: "showLike"; on: root.prefs.showLike === true }
 
         ChoiceRow {
-          label: root.t(root.t("Форма обложки"))
+          label: root.t("Форма обложки")
           key: "coverShape"
           value: String(root.prefs.coverShape || "rounded")
           options: [
-            { value: "square", label: root.t(root.t("Квадрат")) },
-            { value: "rounded", label: root.t(root.t("Скруглённая")) },
-            { value: "circle", label: root.t(root.t("Круг")) }
+            { value: "square", label: root.t("Квадрат") },
+            { value: "rounded", label: root.t("Скруглённая") },
+            { value: "circle", label: root.t("Круг") }
           ]
         }
 
         ChoiceRow {
-          label: root.t(root.t("Длинные названия"))
+          label: root.t("Длинные названия")
           key: "longTitleMode"
           value: String(root.prefs.longTitleMode || "scroll")
           options: [
-            { value: "truncate", label: root.t(root.t("Обрезать")) },
-            { value: "scroll", label: root.t(root.t("Прокрутка")) }
+            { value: "truncate", label: root.t("Обрезать") },
+            { value: "scroll", label: root.t("Прокрутка") }
           ]
         }
 
@@ -3314,7 +3330,7 @@ Timer {
           opacity: root.barLongTitle === "scroll" ? 1.0 : 0.4
 
           Text {
-            text: root.t(root.t("Пауза перед прокруткой"))
+            text: root.t("Пауза перед прокруткой")
             color: root.dim
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
@@ -3357,7 +3373,7 @@ Timer {
           opacity: root.barLongTitle === "scroll" ? 1.0 : 0.4
 
           Text {
-            text: root.t(root.t("Скорость прокрутки"))
+            text: root.t("Скорость прокрутки")
             color: root.dim
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
@@ -3399,7 +3415,7 @@ Timer {
           spacing: Style.space(4)
 
           Text {
-            text: root.t(root.t("Ширина подписи"))
+            text: root.t("Ширина подписи")
             color: root.dim
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
@@ -3410,9 +3426,9 @@ Timer {
 
             Repeater {
               model: [
-                { value: 120, label: root.t(root.t("Узкая")) },
-                { value: 180, label: root.t(root.t("Обычная")) },
-                { value: 260, label: root.t(root.t("Широкая")) }
+                { value: 120, label: root.t("Узкая") },
+                { value: 180, label: root.t("Обычная") },
+                { value: 260, label: root.t("Широкая") }
               ]
               delegate: Button {
                 text: modelData ? String(modelData.label) : ""
@@ -3454,31 +3470,31 @@ Timer {
 
         PanelSeparator { width: parent.width; foreground: root.textColor }
 
-        PanelSectionHeader { text: root.t(root.t("Попап")); foreground: root.dim }
+        PanelSectionHeader { text: root.t("Попап"); foreground: root.dim }
 
         ChoiceRow {
-          label: root.t(root.t("Вид попапа"))
+          label: root.t("Вид попапа")
           key: "popupView"
           value: String(root.prefs.popupView || "compact")
           options: [
-            { value: "compact", label: root.t(root.t("Компактный")) },
-            { value: "extended", label: root.t(root.t("Расширенный")) }
+            { value: "compact", label: root.t("Компактный") },
+            { value: "extended", label: root.t("Расширенный") }
           ]
         }
 
         PanelSeparator { width: parent.width; foreground: root.textColor }
 
-        PanelSectionHeader { text: root.t(root.t("Воспроизведение")); foreground: root.dim }
+        PanelSectionHeader { text: root.t("Воспроизведение"); foreground: root.dim }
 
         ToggleRow {
-          label: root.t(root.t("Скачивать следующий трек заранее — переключение без паузы"))
+          label: root.t("Скачивать следующий трек заранее — переключение без паузы")
           key: "prefetchEnabled"
           on: root.prefs.prefetchEnabled !== false && root.prefs.cacheEnabled !== false
           dim: root.prefs.cacheEnabled === false
         }
 
         Text {
-          text: root.t(root.t("Возвращать при запуске"))
+          text: root.t("Возвращать при запуске")
           color: root.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -3487,31 +3503,31 @@ Timer {
         Row {
           spacing: Style.space(6)
 
-          ChipToggle { text: root.t(root.t("Очередь")); key: "restoreQueue"; on: root.prefs.restoreQueue !== false }
-          ChipToggle { text: root.t(root.t("Позицию")); key: "restorePosition"; on: root.prefs.restorePosition !== false }
-          ChipToggle { text: root.t(root.t("Громкость")); key: "restoreVolume"; on: root.prefs.restoreVolume !== false }
+          ChipToggle { text: root.t("Очередь"); key: "restoreQueue"; on: root.prefs.restoreQueue !== false }
+          ChipToggle { text: root.t("Позицию"); key: "restorePosition"; on: root.prefs.restorePosition !== false }
+          ChipToggle { text: root.t("Громкость"); key: "restoreVolume"; on: root.prefs.restoreVolume !== false }
         }
 
         PanelSeparator { width: parent.width; foreground: root.textColor }
 
-        PanelSectionHeader { text: root.t(root.t("Уведомления")); foreground: root.dim }
+        PanelSectionHeader { text: root.t("Уведомления"); foreground: root.dim }
 
         ChoiceRow {
-          label: root.t(root.t("Уведомлять о смене трека"))
+          label: root.t("Уведомлять о смене трека")
           key: "notifications"
           value: String(root.prefs.notifications || "off")
           options: [
-            { value: "off", label: root.t(root.t("Нет")) },
-            { value: "all", label: root.t(root.t("Показывать")) }
+            { value: "off", label: root.t("Нет") },
+            { value: "all", label: root.t("Показывать") }
           ]
         }
 
         PanelSeparator { width: parent.width; foreground: root.textColor }
 
-        PanelSectionHeader { text: root.t(root.t("Кеш")); foreground: root.dim }
+        PanelSectionHeader { text: root.t("Кеш"); foreground: root.dim }
 
         ToggleRow {
-          label: root.t(root.t("Хранить треки на диске · "))
+          label: root.t("Хранить треки на диске · ")
             + root.megabytes(root.status.cache ? root.status.cache.bytes : 0)
             + " из " + root.megabytes(root.status.cache ? root.status.cache.limit_bytes : 0)
             + (root.status.cache && root.status.cache.files ? root.t(" · файлов ") + root.status.cache.files : "")
@@ -3525,7 +3541,7 @@ Timer {
           visible: root.prefs.cacheEnabled !== false
 
           Text {
-            text: root.t(root.t("Лимит кеша"))
+            text: root.t("Лимит кеша")
             anchors.verticalCenter: parent.verticalCenter
             color: root.dim
             font.family: Style.font.family
@@ -3563,7 +3579,7 @@ Timer {
             anchors.verticalCenter: parent.verticalCenter
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
-            text: root.t(root.t("Освободить место прямо сейчас"))
+            text: root.t("Освободить место прямо сейчас")
             color: root.dim
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
@@ -3571,7 +3587,7 @@ Timer {
 
           Button {
             id: clearButton
-            text: root.t(root.t("Очистить кеш"))
+            text: root.t("Очистить кеш")
             foreground: root.textColor
             onClicked: root.call([root.cli, "cache", "clear"], function() { root.refresh() })
           }
@@ -3730,8 +3746,8 @@ Timer {
           textFormat: Text.PlainText
           elide: Text.ElideRight
           text: root.onAir()
-            ? String(root.radioValue("name", root.t(root.t("Радио"))))
-            : (root.hasTrack ? root.trackValue("title") : root.t(root.t("Ничего не играет")))
+            ? String(root.radioValue("name", root.t("Радио")))
+            : (root.hasTrack ? root.trackValue("title") : root.t("Ничего не играет"))
           color: root.textColor
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -3743,7 +3759,7 @@ Timer {
           textFormat: Text.PlainText
           elide: Text.ElideRight
           text: root.onAir()
-            ? root.t(root.t("Радио · в эфире"))
+            ? root.t("Радио · в эфире")
             : (root.hasTrack
                ? (root.trackValue("artist", "") + (root.duration > 0
                   ? (root.trackValue("artist", "") ? " · " : "") + root.clock(root.displayPosition)
@@ -3759,15 +3775,15 @@ Timer {
       Button {
         iconText: "󰒟"
         foreground: root.shuffled ? Color.accent : root.textColor
-        tooltipText: root.shuffled ? root.t(root.t("Перемешивание включено")) : root.t(root.t("Перемешать"))
+        tooltipText: root.shuffled ? root.t("Перемешивание включено") : root.t("Перемешать")
         onClicked: root.toggleShuffle()
       }
 
       Button {
         iconText: root.repeatGlyph
         foreground: root.repeatMode === "off" ? root.textColor : Color.accent
-        tooltipText: root.repeatMode === "off" ? root.t(root.t("Повтор выключен"))
-          : (root.repeatMode === "one" ? root.t(root.t("Повторять трек")) : root.t(root.t("Повторять очередь")))
+        tooltipText: root.repeatMode === "off" ? root.t("Повтор выключен")
+          : (root.repeatMode === "one" ? root.t("Повторять трек") : root.t("Повторять очередь"))
         onClicked: root.cycleRepeat()
       }
 
@@ -3798,7 +3814,7 @@ Timer {
       Button {
         iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
         foreground: root.textColor
-        tooltipText: root.displayVolume <= 0 ? root.t(root.t("Включить звук")) : root.t(root.t("Выключить звук"))
+        tooltipText: root.displayVolume <= 0 ? root.t("Включить звук") : root.t("Выключить звук")
         onClicked: root.toggleMute()
       }
 
@@ -3829,7 +3845,7 @@ Timer {
           name: "heart"
           filled: root.liked
           iconColor: root.liked ? Color.accent : root.textColor
-          tooltip: root.liked ? root.t(root.t("Убрать из моей музыки")) : root.t(root.t("В мою музыку"))
+          tooltip: root.liked ? root.t("Убрать из моей музыки") : root.t("В мою музыку")
           enabled: root.hasTrack
           onClicked: root.toggleLike()
         }
@@ -3876,8 +3892,8 @@ Timer {
         textFormat: Text.PlainText
         elide: Text.ElideRight
         text: root.onAir()
-          ? String(root.radioValue("name", root.t(root.t("Радио"))))
-          : (root.hasTrack ? root.trackValue("title") : root.t(root.t("Ничего не играет")))
+          ? String(root.radioValue("name", root.t("Радио")))
+          : (root.hasTrack ? root.trackValue("title") : root.t("Ничего не играет"))
         color: root.textColor
         font.family: Style.font.family
         font.pixelSize: Style.font.subtitle
@@ -3889,7 +3905,7 @@ Timer {
         textFormat: Text.PlainText
         elide: Text.ElideRight
         visible: root.hasTrack || root.onAir()
-        text: root.onAir() ? root.t(root.t("Радио · в эфире")) : root.trackValue("artist", "")
+        text: root.onAir() ? root.t("Радио · в эфире") : root.trackValue("artist", "")
         color: root.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
@@ -3937,22 +3953,22 @@ Timer {
       foreground: root.liked ? Color.urgent : root.textColor
       enabled: root.hasTrack
       opacity: enabled ? 1.0 : 0.4
-      tooltipText: root.liked ? root.t(root.t("Убрать из моей музыки")) : root.t(root.t("В мою музыку"))
+      tooltipText: root.liked ? root.t("Убрать из моей музыки") : root.t("В мою музыку")
       onClicked: root.toggleLike()
     }
 
     Button {
       iconText: "󰒟"
       foreground: root.shuffled ? Color.accent : root.textColor
-      tooltipText: root.shuffled ? root.t(root.t("Перемешивание включено")) : root.t(root.t("Перемешать"))
+      tooltipText: root.shuffled ? root.t("Перемешивание включено") : root.t("Перемешать")
       onClicked: root.toggleShuffle()
     }
 
     Button {
       iconText: root.repeatGlyph
       foreground: root.repeatMode === "off" ? root.textColor : Color.accent
-      tooltipText: root.repeatMode === "off" ? root.t(root.t("Повтор выключен"))
-        : (root.repeatMode === "one" ? root.t(root.t("Повторять трек")) : root.t(root.t("Повторять очередь")))
+      tooltipText: root.repeatMode === "off" ? root.t("Повтор выключен")
+        : (root.repeatMode === "one" ? root.t("Повторять трек") : root.t("Повторять очередь"))
       onClicked: root.cycleRepeat()
     }
 
@@ -3993,7 +4009,7 @@ Timer {
     Button {
       iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
       foreground: root.textColor
-      tooltipText: root.displayVolume <= 0 ? root.t(root.t("Включить звук")) : root.t(root.t("Выключить звук"))
+      tooltipText: root.displayVolume <= 0 ? root.t("Включить звук") : root.t("Выключить звук")
       onClicked: root.toggleMute()
     }
 
@@ -4028,7 +4044,7 @@ Timer {
     visible: root.signedIn
 
     Button {
-      text: root.t(root.t("Очередь"))
+      text: root.t("Очередь")
       foreground: root.textColor
       selected: root.view === "queue"
       onClicked: {
@@ -4039,7 +4055,7 @@ Timer {
     }
 
     Button {
-      text: root.t(root.t("Обзор"))
+      text: root.t("Обзор")
       foreground: root.textColor
       selected: root.view === "browse"
       onClicked: {
@@ -4051,7 +4067,7 @@ Timer {
     }
 
     Button {
-      text: root.t(root.t("Поиск"))
+      text: root.t("Поиск")
       foreground: root.textColor
       selected: root.view === "search"
       onClicked: {
@@ -4065,7 +4081,7 @@ Timer {
       iconText: "󰒓"
       foreground: root.textColor
       selected: root.view === "settings"
-      tooltipText: root.t(root.t("Настройки"))
+      tooltipText: root.t("Настройки")
       onClicked: {
         root.cursor = -1
         root.view = "settings"
@@ -4099,7 +4115,7 @@ Timer {
     TextField {
       id: searchField
       Layout.fillWidth: true
-      placeholderText: root.t(root.t("Артист, трек, альбом"))
+      placeholderText: root.t("Артист, трек, альбом")
       foreground: root.textColor
       accent: Color.accent
       // Two-way in one direction only: the field follows the query, and a
@@ -4128,7 +4144,7 @@ Timer {
       iconText: "󰅖"
       foreground: root.textColor
       visible: root.query.length > 0
-      tooltipText: root.t(root.t("Очистить"))
+      tooltipText: root.t("Очистить")
       onClicked: {
         root.clearSearch()
         searchField.forceActiveFocus()

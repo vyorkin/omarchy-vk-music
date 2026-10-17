@@ -181,8 +181,8 @@ T["нет входа"] = { en: "signed out", de: "abgemeldet", es: "sin sesión"
 T["радио"] = { en: "radio", de: "Radio", es: "radio", fr: "radio", ja: "ラジオ", zh: "电台", uk: "радіо" }
 
 T["мс"] = { en: "ms", de: "ms", es: "ms", fr: "ms", ja: "ミリ秒", zh: "毫秒", uk: "мс" }
-T["мин"] = { en: "min", de: "Min", es: "min", fr: "min", ja: "分", zh: "分", uk: "хв" }
-T["ч "] = { en: "h ", de: "Std. ", es: "h ", fr: "h ", ja: "時間 ", zh: "小时 ", uk: "год " }
+T["мин"] = { en: " min", de: " Min", es: " min", fr: " min", ja: "分", zh: "分", uk: " хв" }
+T["ч "] = { en: " h ", de: " Std. ", es: " h ", fr: " h ", ja: "時間", zh: "小时", uk: " год " }
 T["МБ"] = { en: "MB", de: "MB", es: "MB", fr: "Mo", ja: "MB", zh: "MB", uk: "МБ" }
 T["из "] = { en: "of ", de: "von ", es: "de ", fr: "sur ", ja: "/ ", zh: "共 ", uk: "з " }
 T["px/с"] = { en: "px/s", de: "px/s", es: "px/s", fr: "px/s", ja: "px/秒", zh: "像素/秒", uk: "px/с" }
@@ -195,6 +195,15 @@ T[" · загрузка…"] = { en: " · loading…", de: " · lädt…", es: "
 T[" · пусто"] = { en: " · empty", de: " · leer", es: " · vacío", fr: " · vide", ja: " · 空", zh: " · 空", uk: " · порожньо" }
 T["Войти через браузер"] = { en: "Sign in with the browser", de: "Über den Browser anmelden", es: "Entrar con el navegador", fr: "Se connecter via le navigateur", ja: "ブラウザでログイン", zh: "用浏览器登录", uk: "Увійти через браузер" }
 T["Нужен вход в VK. Плагин возьмёт cookie p и remixsid из профиля браузера и обменяет их на токен — пароль не спрашивается."] = { en: "VK sign-in is needed. The plugin takes the p and remixsid cookies from your browser profile and exchanges them for a token — no password is asked for.", de: "VK-Anmeldung nötig. Das Plugin nimmt die Cookies p und remixsid aus dem Browserprofil und tauscht sie gegen ein Token — kein Passwort.", es: "Hace falta iniciar sesión en VK. El plugin toma las cookies p y remixsid del perfil del navegador y las cambia por un token — sin contraseña.", fr: "Connexion à VK requise. Le plugin prend les cookies p et remixsid du profil du navigateur et les échange contre un jeton — sans mot de passe.", ja: "VKへのログインが必要です。プラグインはブラウザのプロファイルから p と remixsid の Cookie を取り、トークンと交換します — パスワードは不要です。", zh: "需要登录 VK。插件会从浏览器配置文件中读取 p 和 remixsid 两个 cookie，用它们换取令牌 — 不需要密码。", uk: "Потрібен вхід у VK. Плагін візьме cookie p і remixsid з профілю браузера й обміняє їх на токен — пароль не питається." }
+
+T["Главная"] = { en: "Home", de: "Startseite", es: "Inicio", fr: "Accueil", ja: "ホーム", zh: "首页", uk: "Головна" }
+T["Обновления"] = { en: "Updates", de: "Neues", es: "Novedades", fr: "Nouveautés", ja: "更新", zh: "更新", uk: "Оновлення" }
+T["Список пуст"] = { en: "The list is empty", de: "Die Liste ist leer", es: "La lista está vacía", fr: "La liste est vide", ja: "リストは空です", zh: "列表为空", uk: "Список порожній" }
+T["not signed in"] = { en: "Not signed in", de: "Nicht angemeldet", es: "Sin sesión", fr: "Non connecté", ja: "ログインしていません", zh: "未登录", uk: "Немає входу" }
+T["VK needs a captcha"] = { en: "VK wants a captcha", de: "VK verlangt ein Captcha", es: "VK pide un captcha", fr: "VK demande un captcha", ja: "VKがキャプチャを要求しています", zh: "VK 要求验证码", uk: "VK вимагає капчу" }
+T["VK is rate limiting: wait a few minutes"] = { en: "VK is rate limiting: wait a few minutes", de: "VK begrenzt Anfragen: warte ein paar Minuten", es: "VK limita las peticiones: espera unos minutos", fr: "VK limite les requêtes : attendez quelques minutes", ja: "VKが制限中です。数分お待ちください", zh: "VK 正在限流：请等几分钟", uk: "VK обмежує запити: зачекай кілька хвилин" }
+T["VK rejected the token"] = { en: "VK rejected the token", de: "VK hat das Token abgelehnt", es: "VK rechazó el token", fr: "VK a rejeté le jeton", ja: "VKがトークンを拒否しました", zh: "VK 拒绝了令牌", uk: "VK відхилив токен" }
+T["у станции нет ссылки на поток"] = { en: "This station has no stream", de: "Dieser Sender hat keinen Stream", es: "Esta emisora no tiene emisión", fr: "Cette station n'a pas de flux", ja: "この局にはストリームがありません", zh: "该电台没有流", uk: "У станції немає посилання на потік" }
 
 // The string in the chosen language, or the key itself when this language has no line
 // for it: a half-translated panel stays readable.
