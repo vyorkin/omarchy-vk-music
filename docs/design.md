@@ -381,6 +381,11 @@ Three things learned in the move:
   selected tab's fill reaches down; with nothing between them the two read as one
   shape. The list keeps a fixed 10 px spacer at the top of its column, so the gap does
   not depend on whether a heading happens to be visible.
+* `g` and `l` choose how playlists are drawn — gallery or rows. `g` arrives as a text
+  key, `l` does not: the catcher maps an unshifted «l» to a sideways cursor step, so the
+  switch is taken there instead. The cost is that one card at a time to the right is no
+  longer reachable, which is no loss: a gallery is read top to bottom, and j/k already
+  move a whole row.
 * Keys, and which pair does what: `[` and `]` walk the tabs (queue, section, search,
   settings) and `⇧H`/`⇧L` walk the sources of the section view. The second pair is free
   because the key catcher turns an unshifted h and l into cursor moves, while a shifted

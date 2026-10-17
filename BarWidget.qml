@@ -93,7 +93,7 @@ Panel {
   // that means two things, so the hint follows the query.
   readonly property string keyHints: {
     if (root.activeField().activeFocus) return "Enter искать · Tab к списку · Esc выйти из поля"
-    return "Space пауза · jk выбор · Enter играть · / фильтр · [ ] вкладки · ⇧H ⇧L раздел · Esc закрыть"
+    return "Space пауза · jk выбор · Enter играть · / фильтр · g l вид · [ ] вкладки · ⇧H ⇧L раздел · Esc закрыть"
   }
 
   // The heading is worth its line only when there is something under it: while
@@ -4134,12 +4134,14 @@ Timer {
       // to look through a list should not start a track. `n` and `p` below still
       // switch tracks.
       onMoveRequested: function(dx, dy) {
-        // The gallery is a grid, so h and l step sideways and j and k step a whole
-        // row; a list is one column, where only j and k mean anything.
-        if (dx !== 0) {
-          if (root.galleryMode) root.moveCursor(dx)
+        // «l» chooses how playlists are drawn rather than stepping right: a gallery is
+        // read top to bottom, and stepping one card sideways was never the useful
+        // direction. «g» does the other half, from the text keys below.
+        if (dy === 0 && dx > 0) {
+          root.setPlaylistView("list")
           return
         }
+        if (dx !== 0) return
         if (dy !== 0) root.moveCursor(root.galleryMode ? dy * root.galleryColumns : dy)
       }
       // Tab hands the keyboard to the list and puts the cursor on its first item —
@@ -4193,6 +4195,7 @@ Timer {
         if (root.activeField().activeFocus) return
         if (character === "]") { root.cycleView(1); return }
         if (character === "[") { root.cycleView(-1); return }
+        if (character === "g") { root.setPlaylistView("grid"); return }
         if (character === "L") { root.cycleSource(1); return }
         if (character === "H") { root.cycleSource(-1); return }
         if (character === "/") {
