@@ -5,9 +5,10 @@
   "version": "0.1.0",
   "author": "vyorkin",
   "license": "MIT",
-  "description": "Native VK Music player for the Omarchy bar: your music, playlists and search, streamed through mpv with MPRIS and a disk cache",
+  "description": "VK Music in the Omarchy bar: VKontakte audio with a queue, playlists, radio, search and likes, driven over MPRIS and the media keys.",
   "keywords": [
     "vk",
+    "vkontakte",
     "music",
     "audio",
     "player",
