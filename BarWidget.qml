@@ -1924,7 +1924,7 @@ Timer {
     BarGlyph {
       visible: root.barShowLike && root.hasTrack && !root.onAir()
       anchors.verticalCenter: parent.verticalCenter
-      name: "heart"
+        name: "heart"
       filled: root.liked
       icon: root.liked ? "󰋑" : "󰋕"
       iconColor: root.liked ? Color.accent : root.fg
@@ -2497,7 +2497,7 @@ Timer {
       // the same somewhere as a number.
       width: Style.space(28)
       anchors.left: parent.left
-      anchors.leftMargin: Style.space(10)
+      anchors.leftMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
       // Flush left, not centred: a centred glyph sits ten pixels deeper than a flush one,
       // and the row's two side paddings then look nothing alike. The column is a fixed
@@ -2598,17 +2598,25 @@ Timer {
     // A heart on every row: the same glyph the player uses, filled when the track is in
     // «Моя музыка». Right-click on the row still opens the queue menu, so the heart is
     // a plain left-click target of its own.
-    BarGlyph {
+    // The glyph is 14 px wide inside a 26 px target, so its painted right edge sits six
+    // pixels in from the target's. A 14 px wrapper makes the edge of the icon the edge of
+    // the box: the row's right padding is then exactly Style.space(8), the same as the
+    // number's left padding, and nothing depends on how a control centres its icon.
+    Item {
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(4)
+      anchors.rightMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
-      width: Style.space(26)
+      width: Style.space(14)
       height: trackRow.height
+
+      BarGlyph {
+        anchors.fill: parent
       name: "heart"
-      filled: root.isLiked(trackRow.track)
-      iconColor: root.isLiked(trackRow.track) ? Color.accent : (trackRow.playing ? Color.accent : root.dim)
-      tooltip: root.isLiked(trackRow.track) ? root.t("Убрать из моей музыки") : root.t("В мою музыку")
-      onClicked: root.toggleLikeFor(trackRow.track)
+        filled: root.isLiked(trackRow.track)
+        iconColor: root.isLiked(trackRow.track) ? Color.accent : (trackRow.playing ? Color.accent : root.dim)
+        tooltip: root.isLiked(trackRow.track) ? root.t("Убрать из моей музыки") : root.t("В мою музыку")
+        onClicked: root.toggleLikeFor(trackRow.track)
+      }
     }
 
     MouseArea {
