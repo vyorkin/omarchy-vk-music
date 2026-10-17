@@ -3739,7 +3739,8 @@ Timer {
       // the same glyph the bar uses, so the two say the same thing the same way.
       Item {
         Layout.preferredWidth: Style.space(26)
-        Layout.fillHeight: true
+        Layout.preferredHeight: Style.space(24)
+        Layout.alignment: Qt.AlignVCenter
         visible: !root.onAir() && root.hasTrack
 
         BarGlyph {

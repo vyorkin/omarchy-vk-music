@@ -357,6 +357,12 @@ Three things learned in the move:
   panel is still on the section view — a load for a list nobody is looking at is exactly
   the traffic the delay exists to avoid. A click on a source chip still loads at once:
   the pointer is on the chip the user chose.
+* A fix that reports "ok" is not a fix. Last round's replacement for exactly this
+  `fillHeight` matched a block that had already changed and moved the heart instead of
+  repairing it, while the check that followed — the popup's own layout line — could not
+  see the difference, because the body is stretched to the card either way. What did see
+  it in the end was the LIST's height: 210 px with the band inflated, 536 px with it
+  fixed. When a defect is in one child's height, verify on the number that depends on it.
 * `Layout.fillHeight: true` inside a Row inflates the ROW, not the child. Putting it on
   the heart's wrapper turned an 82 px band into most of the card, squashed the seek slider
   and made its knob a fat black dot — and the mistake is already in this document from
