@@ -796,6 +796,18 @@ class Player:
             self._start_current()
 
     def _start_current(self) -> None:
+        self.position = 0.0
+        self.playing = False
+        self.paused = False
+        # The previous file keeps sounding until the new one is loaded, which is a whole
+        # download away. Pause it now, and reset the position so the bar's slider starts
+        # from the beginning instead of showing the old track's progress.
+        try:
+            # No `alive()` check: the command itself raises when mpv is not up yet, and
+            # that is the only failure worth ignoring here.
+            self.mpv.command("set_property", "pause", True)
+        except Exception:
+            pass
         self._cancel_prefetch()
         self.radio = None
         self._trace = {"start": time.monotonic()}

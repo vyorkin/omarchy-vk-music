@@ -2534,7 +2534,7 @@ Timer {
       id: durationText
       width: Style.space(42)
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(52)
+      anchors.rightMargin: Style.space(28)
       anchors.verticalCenter: parent.verticalCenter
       horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
@@ -2626,7 +2626,7 @@ Timer {
       // four before the cover, so 32 on both sides. Symmetry is worth the width here —
       // the alternative was a cover that jumps when the play glyph appears.
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(32)
+      anchors.rightMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
       width: Style.space(14)
       height: trackRow.height
