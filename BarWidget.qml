@@ -2488,8 +2488,10 @@ Timer {
 
     Text {
       id: positionText
-      width: trackRow.position > 0 ? Style.space(28) : 0
-      visible: trackRow.position > 0
+      // The column exists for the number, and for the play glyph when there is no
+      // number — a playlist row has no place, but the playing one still needs its mark.
+      width: (trackRow.position > 0 || trackRow.playing) ? Style.space(28) : 0
+      visible: trackRow.position > 0 || trackRow.playing
       anchors.left: parent.left
       anchors.leftMargin: Style.space(6)
       anchors.verticalCenter: parent.verticalCenter
@@ -2497,7 +2499,7 @@ Timer {
       textFormat: Text.PlainText
       // A playing row shows the play glyph where its number would be.
       text: trackRow.playing ? "▶" : (trackRow.position > 0 ? String(trackRow.position) : "")
-      color: trackRow.playing ? root.textColor : root.dim
+      color: root.dim
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
     }
@@ -2591,7 +2593,7 @@ Timer {
     // a plain left-click target of its own.
     BarGlyph {
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(2)
+      anchors.rightMargin: 0
       anchors.verticalCenter: parent.verticalCenter
       width: Style.space(26)
       height: trackRow.height
