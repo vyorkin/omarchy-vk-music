@@ -803,6 +803,12 @@ Timer {
     }
   }
 
+  // The section the panel is on, counting a scheduled one: the chip lights up the
+  // moment the key is pressed, even though the load waits.
+  function effectiveBrowse() {
+    return root._pendingBrowse !== "" ? root._pendingBrowse : root.browseSlug
+  }
+
   function cycleView(step) {
     var views = ["queue", "browse", "search", "settings"]
     var index = views.indexOf(root.view)
@@ -818,8 +824,12 @@ Timer {
     if (root.view !== "browse") return
     var slugs = ["friends"]
     for (var i = 0; i < root.sources.length; i++) slugs.push(root.sourceSlug(root.sources[i]))
-    var current = root.browseSlug === "person" || root.browseSlug === "playlist"
-      ? "friends" : root.browseSlug
+    // Count from what is scheduled, not from what is loaded: the load is delayed by
+    // 600 ms, and with the loaded slug a second press would ask for the same section
+    // again — which is why the first press looked like it did nothing.
+    var current = root._pendingBrowse !== ""
+      ? root._pendingBrowse
+      : (root.browseSlug === "person" || root.browseSlug === "playlist" ? "friends" : root.browseSlug)
     var index = slugs.indexOf(current)
     if (index < 0) index = 0
     var next = slugs[(index + step + slugs.length) % slugs.length]
@@ -2868,7 +2878,7 @@ Timer {
             Button {
               text: "Люди"
               foreground: root.textColor
-              selected: root.browseSlug === "friends" || root.browseSlug === "person"
+              selected: root.effectiveBrowse() === "friends" || root.effectiveBrowse() === "person"
               tooltipText: "Друзья и любой человек по ссылке — их плейлисты"
               onClicked: root.browseFriends()
             }
@@ -2878,7 +2888,7 @@ Timer {
               delegate: Button {
                 text: modelData ? String(modelData.title || "") : ""
                 foreground: root.textColor
-                selected: modelData ? root.sourceSlug(modelData) === root.browseSlug : false
+                selected: modelData ? root.sourceSlug(modelData) === root.effectiveBrowse() : false
                 onClicked: if (modelData) {
                   root.browseSource(root.sourceSlug(modelData))
                   root.focusList()

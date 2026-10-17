@@ -360,6 +360,11 @@ Three things learned in the move:
   spend traffic on a tab that was already left. Measured with a log on every daemon call:
   six tab presses in a row issue no section request at all. A click on a source chip
   still loads at once:
+  A delayed load also means the section's SLUG is still the old one for those 600 ms, so
+  a second ⇧L must count from the *scheduled* one — otherwise the second press asks for
+  the same section again and the first press looks like it did nothing. `effectiveBrowse()`
+  is what both the cycle and the source chips read, so the chip lights up on the press
+  even though the rows arrive later.
   the pointer is on the chip the user chose.
 * A fix that reports "ok" is not a fix. Last round's replacement for exactly this
   `fillHeight` matched a block that had already changed and moved the heart instead of
