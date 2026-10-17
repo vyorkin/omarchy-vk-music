@@ -2492,10 +2492,10 @@ Timer {
 
     Text {
       id: positionText
-      // Fixed width whether or not this row has a place: it keeps every cover in every
-      // list on one vertical line, and it gives the play glyph somewhere to sit that is
-      // the same somewhere as a number.
-      width: Style.space(28)
+      // As wide as the list needs: a section of tracks has no numbers, and reserving the
+      // column there pushed every cover 28 px right — the row's left padding then read as
+      // forty pixels while its right padding was eight.
+      width: (trackRow.position > 0 || trackRow.playing) ? Style.space(28) : 0
       anchors.left: parent.left
       anchors.leftMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
@@ -2533,7 +2533,7 @@ Timer {
       width: Style.space(32)
       height: width
       anchors.left: positionText.right
-      anchors.leftMargin: Style.space(4)
+      anchors.leftMargin: trackRow.position > 0 ? Style.space(4) : 0
       anchors.verticalCenter: parent.verticalCenter
       radius: Style.space(3)
       color: Style.normalFillFor(root.textColor, Color.accent)
