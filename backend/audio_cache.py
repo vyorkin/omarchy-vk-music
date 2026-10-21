@@ -165,7 +165,12 @@ class AudioCache:
                 break
             tmp.unlink(missing_ok=True)
         else:
-            raise CacheError(f"could not download the track: {last_error}")
+            # The notice this becomes is shown in the panel, where a signed
+            # stream URL is unreadable noise: the message has room for the
+            # reason, not for a link that has already expired by the time
+            # anyone reads it.
+            detail = last_error.replace(url, "the stream") if url else last_error
+            raise CacheError(f"could not download the track: {detail}")
 
         os.replace(tmp, final)
         size = final.stat().st_size

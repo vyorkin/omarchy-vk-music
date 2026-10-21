@@ -1039,7 +1039,10 @@ class Player:
 
     def _mark_unplayable(self, track: Track, reason: str) -> None:
         self.unplayable.add(track.key)
-        self.notice = f"Пропущен трек «{track.label}»: {reason}"
+        # The reason is ffmpeg's own text, newlines and all, and the notice is a
+        # single line in the panel's header: one line here keeps it from
+        # stretching that row.
+        self.notice = f"Пропущен трек «{track.label}»: {' '.join(str(reason).split())}"
         log(self.notice)
         self.next(automatic=True)
 
@@ -1158,6 +1161,11 @@ class Player:
 
     def toggle_pause(self) -> None:
         with self.lock:
+            # A press of any transport control means the skipped-track notice has
+            # been read: it describes one moment in the past, and keeping it in
+            # the header forever makes the panel look broken after everything
+            # started working again.
+            self.notice = ""
             if self.loading:
                 # Nothing is playing yet, and starting the track again here would
                 # throw away the download in progress: a press of play during the
@@ -1190,6 +1198,7 @@ class Player:
             self.buffering = False
             self.buffer_percent = None
             self.position = 0
+            self.notice = ""
             self._publish_mpris()
             self.save_state()
 
@@ -1287,6 +1296,9 @@ class Player:
                 self.playing = True
                 self.paused = False
                 self.position = 0
+                # The track that was skipped is behind us and something is
+                # sounding: the notice that reported the skip is spent.
+                self.notice = ""
                 self._publish_mpris()
                 self._schedule_prefetch()
                 return

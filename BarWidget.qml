@@ -3776,7 +3776,10 @@ Timer {
     }
 
     Text {
+      // Same rule as the hint line: a long notice (a skipped track carries
+      // ffmpeg's whole complaint) must elide, not push the row out of the card.
       Layout.fillWidth: true
+      Layout.preferredWidth: 0
       textFormat: Text.PlainText
       elide: Text.ElideRight
       verticalAlignment: Text.AlignVCenter
