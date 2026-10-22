@@ -15,6 +15,7 @@ import qs.Ui
 import "LucideIcons.js" as Lucide
 import "i18n.js" as I18n
 import "CoverTint.js" as CoverTint
+import "GalleryFit.js" as GalleryFit
 
 Panel {
   id: root
@@ -123,6 +124,18 @@ Panel {
   readonly property string keyHints: {
     if (root.activeField().activeFocus) return root.t("Enter искать · Tab к списку · Esc выйти из поля")
     return root.t("Space пауза · jk выбор · Enter играть · / фильтр · m вид · [ ] вкладки · ⇧H ⇧L раздел · Esc закрыть")
+  }
+  // The hint is one translated string with «·» between its keys, and it is longer than
+  // the card: the line has to break somewhere. Left to itself the layout breaks it
+  // between «Esc» and «закрыть», which reads as two hints rather than one; breaking on
+  // a dot keeps the phrases whole, and the count of keys per line is the translation's
+  // own order, not a Russian assumption.
+  readonly property string keyHintsText: {
+    var parts = String(root.keyHints).split("·")
+    if (parts.length < 4) return String(root.keyHints)
+    var half = Math.ceil(parts.length / 2)
+    return parts.slice(0, half).join("·").trim() + "\n"
+      + parts.slice(half).join("·").trim()
   }
 
   // The heading is worth its line only when there is something under it: while
@@ -1115,18 +1128,27 @@ Timer {
     var row = root.cursorRow()
     if (!row) return
     var list = root.activeList()
-    var margin = Style.space(6)
     // A row's own `y` is the y its parent block gave it, not a position in the
     // content: a card sits in a grid, the grid in a column, and the column under the
     // section chips. Mapping the row into the content item is what contentY counts
     // in; using the raw y landed the reveal short by every block above the row, which
     // is why the last card of a gallery kept its caption below the bottom edge.
     var top = row.mapToItem(list.contentRoot, 0, 0).y
-    var bottom = top + row.height
     // The mapped position is clamped into the scrollable range: unclamped, the last
     // row of a long list asked for a scroll past the end, the flickable refused it,
     // and the row stayed half under the bottom edge.
     var maxScroll = Math.max(0, list.contentHeight - list.viewHeight)
+    if (root.galleryMode) {
+      // A gallery puts the cursor's row at the top of the list, not at the nearest
+      // edge of it: the cells are sized to fill the viewport with whole rows, so a row
+      // that starts where the viewport starts is the only alignment that leaves every
+      // other visible row whole — scrolling just far enough instead cut the row above
+      // the cursor in half, which is what the gallery kept showing.
+      list.contentY = Math.max(0, Math.min(maxScroll, top))
+      return
+    }
+    var margin = Style.space(6)
+    var bottom = top + row.height
     var target = list.contentY
     if (top - margin < target) target = top - margin
     else if (bottom + margin > target + list.viewHeight) target = bottom + margin - list.viewHeight
@@ -2228,8 +2250,10 @@ Timer {
     readonly property bool roomy: tile.side >= Style.space(40)
     readonly property bool labeled: tile.roomy && tile.monogram !== ""
     // Below eighty pixels the corner mark is a speck beside the letters rather than a
-    // second word, so a small tile keeps the monogram alone.
-    readonly property bool cornerMark: tile.labeled && tile.side >= Style.space(80)
+    // second word, so a small tile keeps the monogram alone. A circle has no corners
+    // either: the bottom-right of the square is the part its radius cuts away.
+    readonly property bool round: tile.radius * 2 >= tile.side - 1
+    readonly property bool cornerMark: tile.labeled && !tile.round && tile.side >= Style.space(80)
 
     radius: Style.spacing.labelGap
     // The tint belongs to the fallback, not to the frame: a picture keeps the neutral
@@ -2455,8 +2479,34 @@ Timer {
     // Where this grid starts in the cursor's list: the recent people come after the
     // friends, so their cards must not light up for the friends' indices.
     property int baseOffset: 0
-    readonly property real cellWidth:
-      (width - leftPadding - rightPadding - spacing * (columns - 1)) / Math.max(1, columns)
+    // The captions under a portrait are two known lines of known fonts, and their
+    // height is what turns a picture into a card. Measured from the fonts rather than
+    // from a delegate: a card's width would otherwise feed back into the height that
+    // decides that width, and the binding would settle wherever the loop was broken.
+    TextMetrics {
+      id: personTitleLine
+      font.family: Style.font.family
+      font.pixelSize: Style.font.bodySmall
+      text: "Ag"
+    }
+    TextMetrics {
+      id: personCountLine
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+      text: "Ag"
+    }
+    readonly property real captionBlock:
+      personTitleLine.height + personCountLine.height + 2 * Style.space(3)
+    readonly property int cardRows:
+      items.length === 0 ? 0 : Math.ceil(items.length / Math.max(1, columns))
+    // The size that leaves whole rows on screen, not a row half under the edge — see
+    // `GalleryFit.js`, where the arithmetic is tested.
+    readonly property real cellWidth: GalleryFit.cellWidth(
+      peopleGrid.width - peopleGrid.leftPadding - peopleGrid.rightPadding
+        - peopleGrid.spacing * (peopleGrid.columns - 1),
+      peopleGrid.columns, peopleGrid.spacing, peopleGrid.captionBlock,
+      root.activeList() ? root.activeList().viewHeight - Style.space(2) : 0,
+      peopleGrid.cardRows)
     signal picked(int index)
 
     function itemAt(index) { return cardRepeater.itemAt(index) }
@@ -2812,8 +2862,31 @@ Timer {
   component PlaylistGrid: Grid {
     id: grid
     property var items: []
-    readonly property real cellWidth:
-      (width - leftPadding - rightPadding - spacing * (columns - 1)) / Math.max(1, columns)
+    // The same two lines of caption as a person card, for the same reason: the card's
+    // height decides how many rows fit, and the width must not feed back into it.
+    TextMetrics {
+      id: cellTitleLine
+      font.family: Style.font.family
+      font.pixelSize: Style.font.bodySmall
+      text: "Ag"
+    }
+    TextMetrics {
+      id: cellCountLine
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+      text: "Ag"
+    }
+    readonly property real captionBlock:
+      cellTitleLine.height + cellCountLine.height + 2 * Style.space(3)
+    readonly property int cellRows:
+      items.length === 0 ? 0 : Math.ceil(items.length / Math.max(1, columns))
+    // The size that leaves whole rows on screen — see `GalleryFit.js`.
+    readonly property real cellWidth: GalleryFit.cellWidth(
+      grid.width - grid.leftPadding - grid.rightPadding
+        - grid.spacing * (grid.columns - 1),
+      grid.columns, grid.spacing, grid.captionBlock,
+      root.activeList() ? root.activeList().viewHeight - Style.space(2) : 0,
+      grid.cellRows)
     signal picked(int index)
 
     function itemAt(index) { return cellRepeater.itemAt(index) }
@@ -3798,6 +3871,7 @@ Timer {
   }
 
   component HeaderRow: RowLayout {
+    id: hints
     Layout.fillWidth: true
     spacing: Style.spacing.controlGap
 
@@ -3805,29 +3879,34 @@ Timer {
     // card the row sat on the last track of every list.
     Text {
       id: header
-      // The hint line must never widen the panel: without fillWidth its implicit width
-      // IS the whole string, and a longer hint stretched the body from 588 to 614 px so
-      // every row bled past the card. It takes what is left and elides the rest.
+      // The hint line must never widen the panel, and it must not be cut either —
+      // «/ филь…» teaches nothing. It takes the room the status is not using, and wraps
+      // onto a second line when that is not enough: nothing is lost, the band is one
+      // caption taller.
       textFormat: Text.PlainText
-      elide: Text.ElideRight
+      wrapMode: Text.WordWrap
       Layout.fillWidth: true
       Layout.preferredWidth: 0
       verticalAlignment: Text.AlignVCenter
       Layout.alignment: Qt.AlignVCenter
-      text: root.keyHints
+      text: root.keyHintsText
       color: root.dim
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
     }
 
     Text {
-      // Same rule as the hint line: a long notice (a skipped track carries
-      // ffmpeg's whole complaint) must elide, not push the row out of the card.
-      Layout.fillWidth: true
-      Layout.preferredWidth: 0
+      // The status is one line and it elides: a skipped track carries ffmpeg's whole
+      // complaint. It is capped at a fixed width — taking a share of the row would make
+      // the row's own width depend on its children, and Qt answers that with a
+      // recursive layout.
+      Layout.fillWidth: false
+      Layout.preferredWidth: Math.min(implicitWidth, Style.space(160))
+      horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
       elide: Text.ElideRight
       verticalAlignment: Text.AlignVCenter
+      Layout.alignment: Qt.AlignVCenter
       text: root.statusText
       color: root.statusUrgent ? Color.urgent : root.dim
       font.family: Style.font.family

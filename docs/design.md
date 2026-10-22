@@ -831,6 +831,38 @@ The rim of the frame stays neutral: it is the fallback that is coloured, not the
 border around a picture that loaded. The picture is asked for at twice the tile's
 size (`sourceSize`), so the 600-pixel cover is not decoded for a 160-pixel card.
 
+### The size of a card, and the row that is never cut
+
+The columns give a card its width and the list's own height has the last word: a grid
+whose rows do not divide the viewport always leaves one row half under the edge, and
+with `j`/`k` the cursor lands on exactly that row. So the cells are narrowed until a
+whole number of rows fills the list (`GalleryFit.js`, tested in
+`tests/qml/tst_gallery_fit.qml`): one row more than fits at the natural width is the
+row count that fills the viewport, and the cards give up a few pixels of height so
+that the last row is whole. A grid that is shorter than the viewport is left alone —
+there is no edge to be cut by, and smaller covers would be a loss for nothing.
+
+The reveal follows from that: in a gallery the cursor's row is put at the *top* of the
+list rather than scrolled to the nearest edge. Scrolling just far enough was the other
+half of the problem — it kept the row above the cursor cut in half, which is what the
+gallery showed every time `j` was pressed. Rows and tracks keep the old behaviour: they
+are lines, not squares, and their height does not divide anything.
+
+The captions under a cover are measured from the fonts (`TextMetrics`), not from a
+delegate: a card's width would otherwise feed back into the height that decides that
+width, and the layout would settle wherever the binding loop was broken.
+
+### The line of key hints
+
+The hints are the only place the popup says which keys it answers to, and they used to
+be cut: «/ филь…» teaches nothing. Two things were wrong. The status text beside the
+hint reserved half the row even when it had nothing to say, and the hint elided what it
+could not fit. The status is now capped at a fixed width and elides itself, and the
+hint wraps: nothing is lost, the band at the top is one caption taller. Left to break
+where it likes the line split «Esc» from «закрыть», so the translation is broken on a
+«·» separator instead — the phrases stay whole, and the order of the keys is the
+translation's own.
+
 ## The scrolling label, and why it stops at both ends
 
 A long title scrolls, and the first version scrolled it *past* the clip: the text
