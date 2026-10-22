@@ -625,6 +625,18 @@ class Player:
         self.authenticate(record)
         return True
 
+    def sign_in(self) -> None:
+        """Adopt a fresh token, forgetting what the old session said.
+
+        A halt writes its reason into both `error` and `notice`, and `notice` is
+        the popup header's third line: without this, a successful sign-in leaves
+        «Сессия VK отклонена» on screen until the next track start replaces it.
+        """
+        self.record = None
+        self.load_session()
+        self.error = ""
+        self.notice = ""
+
     @property
     def authenticated(self) -> bool:
         return self.client is not None and not self.client.halted
@@ -1907,9 +1919,7 @@ class Backend:
             raise VkAuthError("no cookies given")
         token = request_web_token(parsed)
         save_web_token(token, parsed)
-        self.player.record = None
-        self.player.load_session()
-        self.player.error = ""
+        self.player.sign_in()
         log("signed in with a web token")
         return session_summary(self.player.record)
 
@@ -1922,8 +1932,7 @@ class Backend:
         if payload.get("access_token"):
             save_mobile_token(mobile, payload)
             self.mobile_auth = {}
-            self.player.record = None
-            self.player.load_session()
+            self.player.sign_in()
             return {"done": True, "session": session_summary(self.player.record)}
         self.mobile_auth = {
             "login": login,
@@ -1947,8 +1956,7 @@ class Backend:
         if payload.get("access_token"):
             save_mobile_token(mobile, payload)
             self.mobile_auth = {}
-            self.player.record = None
-            self.player.load_session()
+            self.player.sign_in()
             return {"done": True, "session": session_summary(self.player.record)}
         return self._mobile_step_result(payload, mobile)
 
@@ -1979,6 +1987,8 @@ class Backend:
         self.player.record = None
         self.player.client = None
         self.player.error = ""
+        # The notice may still carry a halt from the session being dropped.
+        self.player.notice = ""
         log("signed out")
         return {"signedOut": True}
 
