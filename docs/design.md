@@ -795,6 +795,42 @@ layout. The gallery is the one place the plugin shows images it does not need:
 covers load asynchronously, and a missing one leaves the frame with a music glyph
 rather than an empty hole.
 
+### A cover that is not there
+
+The frame is a `CoverTile` everywhere a picture appears — a playlist card, a playlist
+row, a track row, a person, the player, the twenty-pixel cover in the bar — and the
+picture fades in over it only once `Image.status` says `Ready`. Loading and failure
+therefore look the same, on purpose, and both look like something: the tile is tinted
+and carries the item's first letters. What this replaced was a frame whose picture was
+shown whenever the URL was not empty, so a link that did not answer left a flat square
+of the popup's own colour, with the glyph hidden because nothing was missing from the
+JSON.
+
+The links do stop answering. A playlist's cover comes from VK as a signed URL
+(`sign`, `c_uniq_tag`), and a scan of 83 covers fetched in the same minute as their
+`photo` object found two already dead — `HTTP 424` and `HTTP 404`. The widget keeps a
+section's or a person's payload for as long as it runs, so a gallery reopened hours
+later holds signatures that have expired meanwhile. Nothing in the interface can make
+such a link work again; it can only stop pretending the picture is coming.
+
+The tint and the letters both come from the title, in `CoverTint.js`:
+
+* the hue is a hash of the title, so one playlist is one colour on every open and on
+every machine, and the tests can pin it;
+* the tile is that hue mixed 24 % into the popup's own surface, so it is dark in a
+dark theme and pale in a light one, and never a saturated block beside the real
+covers it sits between;
+* the monogram is the first letters of the first two words that are not punctuation
+or a short preposition — «Блюз: Краткая история» is «БК», «От Disco до Rave» is
+  «DR» — and one word gives one letter;
+* under forty pixels there is room for one mark only, so a row shows the glyph, the
+  way it always did; the corner mark joins the monogram only from eighty pixels up,
+  where it reads as a second word rather than a speck.
+
+The rim of the frame stays neutral: it is the fallback that is coloured, not the
+border around a picture that loaded. The picture is asked for at twice the tile's
+size (`sourceSize`), so the 600-pixel cover is not decoded for a 160-pixel card.
+
 ## The scrolling label, and why it stops at both ends
 
 A long title scrolls, and the first version scrolled it *past* the clip: the text

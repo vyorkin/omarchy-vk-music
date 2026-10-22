@@ -14,6 +14,7 @@ import qs.Commons
 import qs.Ui
 import "LucideIcons.js" as Lucide
 import "i18n.js" as I18n
+import "CoverTint.js" as CoverTint
 
 Panel {
   id: root
@@ -1199,6 +1200,25 @@ Timer {
     return root.t(forms[I18n.pluralIndex(root.language, count)])
   }
 
+  // A playlist with no cover still has to be told apart from its neighbours. The hue
+  // is a hash of the title, so the same playlist keeps the same colour on every open,
+  // and the tint is mixed into the popup's own surface rather than painted at full
+  // strength: quiet in a dark theme, pale in a light one, and never a saturated block
+  // that fights the real covers beside it. The hash itself lives in `CoverTint.js`,
+  // where the tests can reach it without a shell.
+  function coverHue(text) {
+    return CoverTint.hue(text)
+  }
+
+  function coverTint(text) {
+    var tint = Qt.hsla(root.coverHue(text) / 360, 0.55, 0.5, 1)
+    return Qt.tint(root.panelBackground, Qt.rgba(tint.r, tint.g, tint.b, 0.24))
+  }
+
+  function coverMonogram(text) {
+    return CoverTint.monogram(text)
+  }
+
   // What the list is showing, and what it is doing: the header is the one place
   // that says both, so the list itself never has to claim anything false.
   // What the sticky row above the list says, and what its right button does: one
@@ -1773,24 +1793,22 @@ Timer {
         : Border.controlSpec("normal", root.fg, Color.accent)
       opacity: root.hasTrack ? 1.0 : 0.6
 
-      Image {
+      CoverTile {
         anchors.fill: parent
         anchors.margins: Style.space(1)
-        fillMode: Image.PreserveAspectCrop
-        asynchronous: true
+        // The rounding is proportional here, and the picture sits one pixel in: at
+        // twenty pixels a four-pixel corner is a fifth of the picture.
+        radius: Math.max(0, artwork.radius - Style.space(1))
+        inset: 0
+        glyphFamily: bar ? bar.fontFamily : Style.font.family
+        markColor: root.fg
+        decodeSize: Style.space(20)
         source: root.onAir()
           ? String(root.radioValue("logo", ""))
           : (root.hasTrack && root.trackValue("thumb", "") ? root.trackValue("thumb", "") : "")
-        visible: source !== ""
-      }
-
-      Text {
-        anchors.centerIn: parent
-        visible: !root.hasTrack || !root.trackValue("thumb", "")
-        text: "󰝚"
-        color: root.fg
-        font.family: bar ? bar.fontFamily : Style.font.family
-        font.pixelSize: Style.font.caption
+        title: root.onAir()
+          ? String(root.radioValue("name", ""))
+          : (root.hasTrack ? root.trackValue("artist", "") : "")
       }
 
       // The ring rides on the artwork that is already there: no layout shift and
@@ -2174,6 +2192,103 @@ Timer {
     }
   }
 
+  // A cover that may not be there. Loading and failure look the same on purpose: the
+  // tile is drawn first and the picture fades in over it only once it is ready, so a
+  // card never shows the surface colour where a cover belongs. A signed VK link that
+  // has expired used to leave exactly that — a flat white square, with the glyph hidden
+  // because the URL was not empty. What stays when there is no picture is a tint of the
+  // item's own title and its first letters.
+  component CoverTile: BorderSurface {
+    id: tile
+    property string source: ""
+    // Both the monogram and the tint come from this, so it has to be the item's name:
+    // the same playlist keeps one colour between opens, and no id has to be hashed.
+    property string title: ""
+    // The corner mark says what kind of item this is — a note for a playlist or a track,
+    // a person for a profile. Empty leaves the tile wordless.
+    property string mark: "󰝚"
+    property string glyphFamily: Style.font.family
+    property color markColor: root.dim
+    property color monogramColor: root.textColor
+    // The picture sits a pixel or two inside the surface: a Rectangle cannot clip its
+    // children to a radius, so the frame has to show around it instead.
+    property real inset: 0
+    // How many pixels the picture is asked for. The callers pass the width the tile
+    // will have, because the tile starts at zero and a size that grows would ask the
+    // network for the same cover twice — once at 0 (the original) and once at the final
+    // width. Twice the width keeps it sharp on a scaled display.
+    property real decodeSize: 0
+
+    readonly property bool shown: picture.status === Image.Ready
+    readonly property real side: Math.min(width, height)
+    readonly property string monogram: root.coverMonogram(title)
+    // Below about forty pixels there is no room for two marks: the glyph alone says
+    // what the row is, the way it always has in the small covers. A tile with nothing
+    // to abbreviate keeps the large centred glyph at any size.
+    readonly property bool roomy: tile.side >= Style.space(40)
+    readonly property bool labeled: tile.roomy && tile.monogram !== ""
+    // Below eighty pixels the corner mark is a speck beside the letters rather than a
+    // second word, so a small tile keeps the monogram alone.
+    readonly property bool cornerMark: tile.labeled && tile.side >= Style.space(80)
+
+    radius: Style.spacing.labelGap
+    // The tint belongs to the fallback, not to the frame: a picture keeps the neutral
+    // rim it has always had, and only the tile that stands in for it is coloured.
+    color: tile.shown ? root.panelBackground : root.coverTint(title)
+
+    Image {
+      id: picture
+      anchors.fill: parent
+      anchors.margins: tile.inset
+      source: tile.source
+      fillMode: Image.PreserveAspectCrop
+      asynchronous: true
+      smooth: true
+      // A 600 px cover decoded for a 160 px card is memory for nothing: the tile says
+      // what it needs, and nothing is asked for while that is unknown.
+      sourceSize.width: tile.decodeSize > 0 ? Math.ceil(tile.decodeSize * 2) : 0
+      sourceSize.height: tile.decodeSize > 0 ? Math.ceil(tile.decodeSize * 2) : 0
+      opacity: tile.shown ? 1 : 0
+      Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutQuad } }
+    }
+
+    Text {
+      anchors.centerIn: parent
+      visible: !tile.shown && tile.labeled
+      text: tile.monogram
+      textFormat: Text.PlainText
+      color: tile.monogramColor
+      opacity: 0.8
+      font.family: tile.glyphFamily
+      font.bold: true
+      font.pixelSize: Math.round(tile.side * 0.34)
+      font.letterSpacing: Math.round(tile.side * 0.02)
+    }
+
+    Text {
+      anchors.centerIn: parent
+      visible: !tile.shown && !tile.labeled && tile.mark !== ""
+      text: tile.mark
+      textFormat: Text.PlainText
+      color: tile.markColor
+      font.family: tile.glyphFamily
+      font.pixelSize: Math.max(Style.font.caption, Math.round(tile.side * (tile.roomy ? 0.34 : 0.5)))
+    }
+
+    Text {
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      anchors.margins: Math.round(tile.side * 0.07)
+      visible: !tile.shown && tile.cornerMark
+      text: tile.mark
+      textFormat: Text.PlainText
+      color: tile.markColor
+      opacity: 0.45
+      font.family: tile.glyphFamily
+      font.pixelSize: Math.round(tile.side * 0.15)
+    }
+  }
+
   component PlaylistCard: Item {
     id: card
     property var item: null
@@ -2208,34 +2323,18 @@ Timer {
       spacing: Style.space(3)
 
       // The accent frame is the keyboard cursor, the way the fill is on a row.
-      BorderSurface {
+      CoverTile {
         width: parent.width
         height: width
-        radius: Style.spacing.labelGap
-        color: Color.popups.background
+        inset: Style.space(2)
         // The cover keeps only the hover border: selection is the fill behind the
         // card, and two marks for one state would say nothing extra.
         borderSpec: cardArea.containsMouse && !card.selected
           ? Border.controlSpec("hover", Color.foreground, Color.accent, Color.urgent)
           : Border.none()
-
-        Image {
-          anchors.fill: parent
-          anchors.margins: Style.space(2)
-          source: card.item ? String(card.item.cover || "") : ""
-          fillMode: Image.PreserveAspectCrop
-          asynchronous: true
-          visible: String(card.item ? card.item.cover || "" : "") !== ""
-        }
-
-        Text {
-          anchors.centerIn: parent
-          visible: !(card.item && card.item.cover)
-          text: "󰝚"
-          color: root.dim
-          font.family: Style.font.family
-          font.pixelSize: Style.font.displayLarge
-        }
+        decodeSize: card.cellWidth
+        source: card.item ? String(card.item.cover || "") : ""
+        title: card.item ? String(card.item.title || "") : ""
       }
 
       Text {
@@ -2307,34 +2406,20 @@ Timer {
       width: parent.width
       spacing: Style.space(3)
 
-      BorderSurface {
+      CoverTile {
         width: parent.width
         height: width
         radius: width / 2
-        color: Color.popups.background
+        // Flush with the frame: an inset shows the surface colour as a ring around the
+        // portrait, which reads as a white gap in a light theme.
+        inset: 0
+        mark: "󰀄"
         borderSpec: personCardArea.containsMouse && !personCard.selected
           ? Border.controlSpec("hover", Color.foreground, Color.accent, Color.urgent)
           : Border.none()
-
-        Image {
-          anchors.fill: parent
-          // Flush with the frame: an inset shows the surface colour as a ring around the
-          // portrait, which reads as a white gap in a light theme.
-          anchors.margins: 0
-          source: personCard.item ? String(personCard.item.photo || "") : ""
-          fillMode: Image.PreserveAspectCrop
-          asynchronous: true
-          visible: source !== ""
-        }
-
-        Text {
-          anchors.centerIn: parent
-          visible: !(personCard.item && personCard.item.photo)
-          text: "󰀄"
-          color: root.dim
-          font.family: Style.font.family
-          font.pixelSize: Style.font.displayLarge
-        }
+        decodeSize: personCard.cellWidth
+        source: personCard.item ? String(personCard.item.photo || "") : ""
+        title: personCard.item ? String(personCard.item.name || "") : ""
       }
 
       Text {
@@ -2418,7 +2503,7 @@ Timer {
       visible: person.selected || personArea.containsMouse
     }
 
-    BorderSurface {
+    CoverTile {
       id: avatar
       width: Style.space(24)
       height: width
@@ -2426,28 +2511,13 @@ Timer {
       anchors.left: parent.left
       anchors.leftMargin: Style.space(4)
       anchors.verticalCenter: parent.verticalCenter
-      color: Color.popups.background
-      borderSpec: Border.none()
-
-      Image {
-        anchors.fill: parent
-        // Flush with the frame: an inset shows the surface colour as a ring around the
-        // portrait, which reads as a white gap in a light theme.
-        anchors.margins: 0
-        source: person.item ? String(person.item.photo || "") : ""
-        fillMode: Image.PreserveAspectCrop
-        asynchronous: true
-        visible: String(person.item ? person.item.photo || "" : "") !== ""
-      }
-
-      Text {
-        anchors.centerIn: parent
-        visible: !(person.item && person.item.photo)
-        text: "󰀄"
-        color: root.dim
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
-      }
+      // Flush with the frame: an inset shows the surface colour as a ring around the
+      // portrait, which reads as a white gap in a light theme.
+      inset: 0
+      mark: "󰀄"
+      decodeSize: Style.space(24)
+      source: person.item ? String(person.item.photo || "") : ""
+      title: person.item ? String(person.item.name || "") : ""
     }
 
     Text {
@@ -2549,9 +2619,9 @@ Timer {
     }
 
     // A cover per row: the list is browsed with the eye, and a wall of text is harder
-    // to scan than a column of pictures. It is VK's own 300 px thumbnail, so it costs no
+    // to scan than a column of pictures. It is VK's own thumbnail, so it costs no
     // extra request the panel has not already made.
-    BorderSurface {
+    CoverTile {
       id: rowCover
       width: Style.space(32)
       height: width
@@ -2559,26 +2629,10 @@ Timer {
       anchors.leftMargin: Style.space(4)
       anchors.verticalCenter: parent.verticalCenter
       radius: Style.space(3)
-      color: Style.normalFillFor(root.textColor, Color.accent)
-      borderSpec: Border.none()
-
-      Image {
-        anchors.fill: parent
-        anchors.margins: Style.space(1)
-        source: trackRow.track ? String(trackRow.track.thumb || "") : ""
-        fillMode: Image.PreserveAspectCrop
-        asynchronous: true
-        visible: source !== ""
-      }
-
-      Text {
-        anchors.centerIn: parent
-        visible: !(trackRow.track && trackRow.track.thumb)
-        text: "󰝚"
-        color: root.dim
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
-      }
+      inset: Style.space(1)
+      decodeSize: Style.space(32)
+      source: trackRow.track ? String(trackRow.track.thumb || "") : ""
+      title: trackRow.track ? String(trackRow.track.title || "") : ""
     }
 
     Column {
@@ -2695,36 +2749,19 @@ Timer {
           visible: row.selected || rowArea.containsMouse
         }
 
-        BorderSurface {
+        CoverTile {
           id: rowCover
           width: Style.space(28)
           height: width
           anchors.left: parent.left
           anchors.leftMargin: Style.space(6)
           anchors.verticalCenter: parent.verticalCenter
-          radius: Style.spacing.labelGap
-          color: Color.popups.background
-          borderSpec: Border.none()
-
-          Image {
-            anchors.fill: parent
-            anchors.margins: Style.space(1)
-            source: modelData
-              ? String(modelData.cover_small || modelData.cover || "")
-              : ""
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            visible: source !== ""
-          }
-
-          Text {
-            anchors.centerIn: parent
-            visible: !(modelData && (modelData.cover_small || modelData.cover))
-            text: "󰝚"
-            color: root.dim
-            font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
-          }
+          inset: Style.space(1)
+          decodeSize: Style.space(28)
+          source: modelData
+            ? String(modelData.cover_small || modelData.cover || "")
+            : ""
+          title: modelData ? String(modelData.title || "") : ""
         }
 
         Column {
@@ -3834,24 +3871,20 @@ Timer {
       ? Border.none()
       : Border.controlSpec("normal", root.textColor, Color.accent)
 
-    Image {
+    CoverTile {
       anchors.fill: parent
       anchors.margins: Style.space(2)
-      fillMode: Image.PreserveAspectCrop
-      asynchronous: true
+      radius: Math.max(0, coverArt.radius - Style.space(2))
+      inset: 0
+      decodeSize: coverArt.size
       source: root.onAir()
         ? String(root.radioValue("logo", ""))
         : (root.hasTrack && root.trackValue("thumb", "") ? root.trackValue("thumb", "") : "")
-      visible: source !== ""
-    }
-
-    Text {
-      anchors.centerIn: parent
-      visible: !root.hasTrack || !root.trackValue("thumb", "")
-      text: "󰝚"
-      color: root.textColor
-      font.family: Style.font.family
-      font.pixelSize: coverArt.size >= Style.space(100) ? Style.font.displayLarge : Style.font.subtitle
+      // A player with no art names what it is playing: the artist is what the eye
+      // looks for when the picture is not there.
+      title: root.onAir()
+        ? String(root.radioValue("name", ""))
+        : (root.hasTrack ? root.trackValue("artist", "") : "")
     }
 
     Rectangle {
