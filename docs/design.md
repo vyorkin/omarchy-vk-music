@@ -867,11 +867,21 @@ simply asks `index === root.cursor`. `Enter` plays what the selection points at;
 with nothing selected it plays or pauses, as before. `Space` is still play/pause,
 and `n`/`p` still switch tracks.
 
-Two details that were not obvious:
+Three details that were not obvious:
 
 * **Scrolling to the selection uses the delegate item, not arithmetic.**
-  `Repeater.itemAt(index)` gives the row, and its `y` and `height` decide how far
-  `contentY` has to move. Rows are not a fixed height, so index arithmetic drifts.
+  `Repeater.itemAt(index)` gives the row, and its `height` and its position in the
+  content decide how far `contentY` has to move. Rows are not a fixed height, so
+  index arithmetic drifts.
+* **The row's `y` is not a scroll position.** It is the y its parent block gave
+  it: a gallery card sits in a `Grid`, the grid in a column, and the column under
+  the section chips, so the card's own `y` started near zero while the card was
+  hundreds of pixels down the content. The reveal used it directly and every
+  block above the row shortened the scroll — worst in the gallery, where the last
+  card's caption stayed below the bottom edge, then got clamped away by the end of
+  the content. Both the reveal and the first-visible-row lookup now map the row
+  into `scroller.contentItem` (`TrackList.contentRoot`) first, which is the space
+  `contentY` counts in.
 * **Only one handler may own Enter.** The search field had its own `onAccepted`
   (`runSearch(true)`) *and* the panel's key catcher reported Return. The field
   handled it first, which re-ran the search and reset the selection a moment

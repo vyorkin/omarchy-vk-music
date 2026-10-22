@@ -1105,7 +1105,7 @@ Timer {
     var count = root.cursorCount()
     for (var i = 0; i < count; i++) {
       var row = root.rowAt(i)
-      if (row && row.y + row.height > list.contentY) return i
+      if (row && row.mapToItem(list.contentRoot, 0, 0).y + row.height > list.contentY) return i
     }
     return 0
   }
@@ -1115,10 +1115,14 @@ Timer {
     if (!row) return
     var list = root.activeList()
     var margin = Style.space(6)
-    var top = row.y
+    // A row's own `y` is the y its parent block gave it, not a position in the
+    // content: a card sits in a grid, the grid in a column, and the column under the
+    // section chips. Mapping the row into the content item is what contentY counts
+    // in; using the raw y landed the reveal short by every block above the row, which
+    // is why the last card of a gallery kept its caption below the bottom edge.
+    var top = row.mapToItem(list.contentRoot, 0, 0).y
     var bottom = top + row.height
-    // The row's y is in the content's coordinates, which is what contentY counts in,
-    // so the target is simply clamped into the scrollable range: unclamped, the last
+    // The mapped position is clamped into the scrollable range: unclamped, the last
     // row of a long list asked for a scroll past the end, the flickable refused it,
     // and the row stayed half under the bottom edge.
     var maxScroll = Math.max(0, list.contentHeight - list.viewHeight)
@@ -2911,6 +2915,10 @@ Timer {
     // be a column with a header that does not scroll.
     property alias contentY: scroller.contentY
     property alias contentHeight: scroller.contentHeight
+    // The item contentY counts in. Delegates are grandchildren of it at best — a
+    // card in a grid, a track row in a block — so their own y is not a scroll
+    // position and the reveal has to map into this before comparing.
+    property Item contentRoot: scroller.contentItem
     // The scrolling viewport is the inner Flickable, which is shorter than this
     // component by the sticky row above it. Scrolling maths that used the component's
     // own height was off by exactly that much and left the last row half hidden.
