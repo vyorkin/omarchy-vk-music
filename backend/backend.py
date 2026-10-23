@@ -41,20 +41,23 @@ from vk_api import (
     safe_error_text,
 )
 from vk_auth import (
-    COOKIE_NAMES,
-    TOKEN_FILE,
     VkAuthError,
+    account_list,
+    active_account_id,
+    active_record,
     fetch_browser_cookies,
-    load_record,
     needs_refresh,
-    mobile_authorize,
     parse_cookies,
     refresh_web_record,
+    remove_account as remove_stored_account,
     request_mobile_token,
     request_sms_code,
+    save_account,
     save_mobile_token,
     save_web_token,
     request_web_token,
+    set_active_account,
+    summarize_record,
     MOBILE_CLIENTS,
 )
 
@@ -458,6 +461,21 @@ class Player:
     off, mpv streams the HLS URL directly.
     """
 
+    # Fields that belong to one VK account rather than to the installation: the
+    # queue somebody built, what they liked, what they searched, who they opened
+    # and where they were in it. Preferences and volume stay global, because
+    # they are about the panel and the speakers, not about the account.
+    ACCOUNT_STATE_KEYS = (
+        "source",
+        "queue",
+        "likedCopies",
+        "searchHistory",
+        "recentPeople",
+        "index",
+        "position",
+        "trackKey",
+    )
+
     def __init__(self) -> None:
         self.lock = threading.RLock()
         self.mpv = Mpv(MPV_SOCKET, self._mpv_event)
@@ -525,8 +543,9 @@ class Player:
         try:
             stored = json.loads(STATE_FILE.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            return
-        stored_preferences = dict(stored.get("preferences") or {})
+            stored = {}
+        self._state_doc = stored if isinstance(stored, Mapping) else {}
+        stored_preferences = dict(self._state_doc.get("preferences") or {})
         for old, replacements in LEGACY_PREFERENCES.items():
             if old in stored_preferences:
                 value = bool(stored_preferences.pop(old))
@@ -539,29 +558,55 @@ class Player:
             0, int(self.preferences.get("cacheLimitMb", 256)) * 1024 * 1024
         )
         if self.preferences.get("restoreVolume", True):
-            self.volume = int(stored.get("volume", self.volume) or self.volume)
-        self.shuffle = bool(stored.get("shuffle", False))
-        self.repeat = str(stored.get("repeat", "off"))
-        self.source = stored.get("source") or self.source
+            self.volume = int(self._state_doc.get("volume", self.volume) or self.volume)
+        self.shuffle = bool(self._state_doc.get("shuffle", False))
+        self.repeat = str(self._state_doc.get("repeat", "off"))
+        self._apply_account_state(active_account_id(), legacy=self._state_doc)
+
+    def _apply_account_state(
+        self, account_id: Any, legacy: Mapping[str, Any] | None = None
+    ) -> None:
+        """Reset everything one account owns, then restore that account's slice."""
+        document = legacy if legacy is not None else (self._state_doc or {})
+        bucket: Mapping[str, Any] = {}
+        accounts = document.get("accounts")
+        if isinstance(accounts, Mapping):
+            found = accounts.get(str(account_id)) if account_id is not None else None
+            bucket = found if isinstance(found, Mapping) else {}
+        else:
+            # A state file from before accounts existed: everything at the top
+            # belongs to the one account that was signed in then.
+            if account_id is not None:
+                bucket = document
+        self.source = {"kind": "", "id": "", "title": ""}
+        self.queue = []
+        self.index = -1
+        self.position = 0
+        self.duration = 0
+        self.liked_copies = {}
+        self.search_history = []
+        self.recent_people = []
+        self.source = dict(bucket.get("source") or self.source)
         restored = (
-            [track_from_state(item) for item in stored.get("queue") or []]
+            [track_from_state(item) for item in bucket.get("queue") or []]
             if self.preferences.get("restoreQueue", True)
             else []
         )
         self.queue = restored
         self.liked_copies = {
-            str(key): str(value) for key, value in (stored.get("likedCopies") or {}).items()
+            str(key): str(value)
+            for key, value in (bucket.get("likedCopies") or {}).items()
         }
         self.search_history = [
-            str(item) for item in (stored.get("searchHistory") or []) if str(item).strip()
+            str(item) for item in (bucket.get("searchHistory") or []) if str(item).strip()
         ][:SEARCH_HISTORY_LIMIT]
         self.recent_people = [
             dict(item)
-            for item in (stored.get("recentPeople") or [])
+            for item in (bucket.get("recentPeople") or [])
             if isinstance(item, Mapping) and item.get("id")
         ][:PEOPLE_HISTORY_LIMIT]
-        self.index = int(stored.get("index", -1)) if restored else -1
-        self.position = int(stored.get("position", 0) or 0) if self.preferences.get(
+        self.index = int(bucket.get("index", -1)) if restored else -1
+        self.position = int(bucket.get("position", 0) or 0) if self.preferences.get(
             "restorePosition", True
         ) else 0
         # The queue and the position are restored so the bar shows what was
@@ -572,33 +617,52 @@ class Player:
             self.duration = restored_track.duration
         self.position = min(self.position, self.duration) if self.duration else self.position
 
+    def _account_bucket(self) -> dict[str, Any]:
+        bucket: dict[str, Any] = {
+            "source": self.source,
+            "queue": [track_to_state(track) for track in self.queue],
+            "likedCopies": self.liked_copies,
+            "searchHistory": self.search_history,
+            "recentPeople": self.recent_people,
+            "index": self.index,
+            "position": self.position,
+        }
+        track = self.current_track()
+        if track:
+            bucket["trackKey"] = track.key
+        return bucket
+
     def save_state(self) -> None:
         with self.lock:
-            payload = {
-                "preferences": self.preferences,
-                "volume": self.volume,
-                "shuffle": self.shuffle,
-                "repeat": self.repeat,
-                "source": self.source,
-                "queue": [track_to_state(track) for track in self.queue],
-                "likedCopies": self.liked_copies,
-                "searchHistory": self.search_history,
-                "recentPeople": self.recent_people,
-                "index": self.index,
-                "position": self.position,
-            }
-            track = self.current_track()
-            if track:
-                payload["trackKey"] = track.key
+            document = dict(self._state_doc or {})
+            document["preferences"] = self.preferences
+            document["volume"] = self.volume
+            document["shuffle"] = self.shuffle
+            document["repeat"] = self.repeat
+            account_id = self.account_id()
+            if account_id is not None:
+                accounts = dict(document.get("accounts") or {})
+                accounts[str(account_id)] = self._account_bucket()
+                document["accounts"] = accounts
+            # The flat fields belonged to the one account that existed before
+            # accounts did; the store is the account slice now.
+            for key in self.ACCOUNT_STATE_KEYS:
+                document.pop(key, None)
+            self._state_doc = document
         try:
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
             os.chmod(CONFIG_DIR, 0o700)
             tmp = STATE_FILE.with_suffix(".tmp")
-            tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            tmp.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
             os.chmod(tmp, 0o600)
             os.replace(tmp, STATE_FILE)
         except OSError as exc:
             log(f"cannot save state: {exc}")
+
+    def account_id(self) -> Any:
+        if not self.record:
+            return None
+        return self.record.get("user_id")
 
     # -- session -----------------------------------------------------------
 
@@ -611,9 +675,61 @@ class Player:
             device_id=self.record.get("device_id"),
         )
 
+    def describe_account(self, record: Mapping[str, Any]) -> dict[str, Any]:
+        """Ask VK who a token belongs to, for the account list.
+
+        The web token endpoint usually names the user; a mobile token does not
+        always. The name and the portrait are what make a list of accounts
+        readable, so they are fetched once, right after signing in, and stored
+        beside the token. A failure here must not fail the sign-in.
+        """
+        try:
+            client = VkClient(
+                str(record.get("access_token") or ""),
+                user_agent=str(record.get("user_agent") or WEB_USER_AGENT),
+                client_id=str(record.get("client_id") or WEB_APP_ID),
+                device_id=record.get("device_id"),
+            )
+            items = client.call("users.get", fields="photo_200")
+        except Exception as exc:  # noqa: BLE001 - a missing name is not a failed sign-in
+            log(f"could not read the account profile: {safe_error_text(exc)}")
+            return {}
+        if not isinstance(items, list) or not items or not isinstance(items[0], Mapping):
+            return {}
+        item = items[0]
+        name = " ".join(
+            part
+            for part in (item.get("first_name"), item.get("last_name"))
+            if isinstance(part, str) and part
+        )
+        return {
+            "user_id": item.get("id", record.get("user_id")),
+            "name": name,
+            "photo": str(item.get("photo_200") or item.get("photo_100") or ""),
+        }
+
+    def ensure_profile(self) -> None:
+        """Fill in a name and a portrait for an account stored without them.
+
+        A migrated single-account store has no profile: it was written before
+        the account list existed, and the token file is gone. One call fills it
+        in, and the account row stops saying «Аккаунт 12345».
+        """
+        with self.lock:
+            record = self.record
+            if not record or record.get("name"):
+                return
+            profile = self.describe_account(record)
+            if not profile.get("name"):
+                return
+            merged = dict(record)
+            merged.update(profile)
+            save_account(merged, make_active=False)
+            self.record = merged
+
     def load_session(self) -> bool:
         """Load the stored token, refreshing a web token that is near expiry."""
-        record = self.record or load_record()
+        record = self.record or active_record()
         if record is None:
             return False
         if record.get("mode") == "web" and needs_refresh(record):
@@ -631,11 +747,86 @@ class Player:
         A halt writes its reason into both `error` and `notice`, and `notice` is
         the popup header's third line: without this, a successful sign-in leaves
         «Сессия VK отклонена» on screen until the next track start replaces it.
+
+        A sign-in is also the moment an account becomes active, so the queue and
+        the likes of that account are loaded here: leaving the previous account's
+        queue on screen would name tracks this session cannot play.
         """
+        with self.lock:
+            # Adding an account is also switching to it: the old stream URL and
+            # the old queue belong to a session that is no longer used.
+            self._halt_playback(keep_position=True)
+            self.save_state()
+            self.record = None
+            self.client = None
+            self.load_session()
+            self._apply_account_state(self.account_id())
+            self.unplayable.clear()
+            self._friends_cache = None
+            self.error = ""
+            self.notice = ""
+            self.save_state()
+            self._publish_mpris()
+
+    def _reset_session(self) -> None:
+        """Forget live session state without touching the stored history."""
         self.record = None
-        self.load_session()
+        self.client = None
+        self.radio = None
+        self.unplayable.clear()
+        self._friends_cache = None
         self.error = ""
         self.notice = ""
+        self._notified_key = ""
+
+    def switch_account(self, user_id: Any) -> dict[str, Any]:
+        """Make another stored account active, keeping both queues on disk.
+
+        Playback stops: the resolved stream URL belongs to the old session and a
+        queue of somebody else's tracks is not this account's queue. The new
+        account's own queue comes back where it was, paused.
+        """
+        with self.lock:
+            target = set_active_account(user_id)
+            # Save the outgoing account under its own id before the record changes.
+            self._halt_playback(keep_position=True)
+            self.save_state()
+            self._reset_session()
+            self.authenticate(target)
+            self._apply_account_state(target.get("user_id"))
+            self.save_state()
+            self._publish_mpris()
+            return dict(target)
+
+    def remove_account(self, user_id: Any) -> dict[str, Any] | None:
+        """Forget an account, its queue and its likes.
+
+        Removing the active account stops playback and hands the session to the
+        next stored account, if there is one; otherwise the panel goes back to
+        the sign-in screen.
+        """
+        with self.lock:
+            active = self.account_id()
+            is_active = active is not None and str(active) == str(user_id)
+            if is_active:
+                self._halt_playback(keep_position=True)
+                self.save_state()
+            remaining = remove_stored_account(user_id)
+            document = self._state_doc or {}
+            accounts = dict(document.get("accounts") or {})
+            accounts.pop(str(user_id), None)
+            document["accounts"] = accounts
+            self._state_doc = document
+            if is_active:
+                self._reset_session()
+                if remaining:
+                    self.authenticate(remaining)
+                    self._apply_account_state(remaining.get("user_id"))
+                else:
+                    self._apply_account_state(None)
+                self.save_state()
+                self._publish_mpris()
+            return remaining
 
     @property
     def authenticated(self) -> bool:
@@ -1195,23 +1386,33 @@ class Player:
             self.paused = not self.paused
             self._publish_mpris()
 
+    def _halt_playback(self, *, keep_position: bool) -> None:
+        """Stop mpv and the state around it, without deciding about the queue.
+
+        `keep_position` is for an account switch: the outgoing account's place
+        in its queue is worth keeping in its own slice of the state file, while
+        a plain «stop» means the bar should show the track from zero.
+        """
+        self._cancel_prefetch()
+        self.radio = None
+        self._download_cancel.set()
+        try:
+            self.mpv.command("stop")
+        except (MpvError, OSError):
+            pass
+        self.playing = False
+        self.paused = False
+        self.loading = False
+        self.buffering = False
+        self.buffer_percent = None
+        if not keep_position:
+            self.position = 0
+        self.notice = ""
+        self._publish_mpris()
+
     def stop(self) -> None:
         with self.lock:
-            self._cancel_prefetch()
-            self.radio = None
-            self._download_cancel.set()
-            try:
-                self.mpv.command("stop")
-            except (MpvError, OSError):
-                pass
-            self.playing = False
-            self.paused = False
-            self.loading = False
-            self.buffering = False
-            self.buffer_percent = None
-            self.position = 0
-            self.notice = ""
-            self._publish_mpris()
+            self._halt_playback(keep_position=False)
             self.save_state()
 
     def seek(self, position: int) -> None:
@@ -1566,14 +1767,18 @@ def parse_person_reference(text: str) -> str:
 
 def session_summary(record: Mapping[str, Any] | None) -> dict[str, Any]:
     if not record:
-        return {"mode": "", "user_id": None, "has_cookies": False, "expires_in": 0}
-    expires = int(record.get("expires", 0) or 0)
-    return {
-        "mode": str(record.get("mode", "")),
-        "user_id": record.get("user_id"),
-        "has_cookies": all((record.get("cookies") or {}).get(name) for name in COOKIE_NAMES),
-        "expires_in": max(0, expires - int(time.time())) if expires else 0,
-    }
+        return {
+            "mode": "",
+            "user_id": None,
+            "name": "",
+            "photo": "",
+            "active": False,
+            "has_cookies": False,
+            "expires_in": 0,
+        }
+    summary = summarize_record(record, active=True)
+    summary["user_id"] = summary.pop("id")
+    return summary
 
 
 # ---------------------------------------------------------------- MPRIS -----
@@ -1918,26 +2123,58 @@ class Backend:
         else:
             raise VkAuthError("no cookies given")
         token = request_web_token(parsed)
-        save_web_token(token, parsed)
+        # Who the token belongs to decides which account record is written, so
+        # the profile is asked for before the save, not after it.
+        profile = self.player.describe_account(
+            {
+                "access_token": token.access_token,
+                "user_id": token.user_id,
+                "user_agent": WEB_USER_AGENT,
+                "client_id": WEB_APP_ID,
+            }
+        )
+        record = save_web_token(token, parsed, profile=profile)
+        log(f"signed in account {record.get('user_id')} with a web token")
+        return self._account_signed_in()
+
+    def _account_signed_in(self) -> dict[str, Any]:
+        self._radio_cache = (None, 0.0)
+        self.mobile_auth = {}
         self.player.sign_in()
-        log("signed in with a web token")
-        return session_summary(self.player.record)
+        return {
+            "done": True,
+            "session": session_summary(self.player.record),
+            "accounts": account_list(),
+            "status": self.player.status(),
+        }
 
     def cmd_auth_mobile_start(self, login: str = "", password: str = "", client: str = "vk-android") -> dict[str, Any]:
         """First step of the fallback path; the password never leaves memory."""
         if not login or not password:
             raise VkAuthError("login and password are required")
+        # A fresh attempt replaces whatever was pending: an old login must not
+        # be resumed with a code meant for the new one.
+        self.mobile_auth = {}
         mobile = MOBILE_CLIENTS.get(client) or MOBILE_CLIENTS["vk-android"]
         payload = request_mobile_token(mobile, login, password)
         if payload.get("access_token"):
-            save_mobile_token(mobile, payload)
-            self.mobile_auth = {}
-            self.player.sign_in()
-            return {"done": True, "session": session_summary(self.player.record)}
+            profile = self.player.describe_account(
+                {
+                    "access_token": str(payload["access_token"]),
+                    "user_id": payload.get("user_id"),
+                    "user_agent": mobile.user_agent,
+                    "client_id": mobile.client_id,
+                }
+            )
+            save_mobile_token(mobile, payload, profile=profile)
+            return self._account_signed_in()
         self.mobile_auth = {
             "login": login,
             "password": password,
             "client": client,
+            # A pending password is forgotten after a quarter of an hour even
+            # if the panel never comes back to finish the login.
+            "at": time.time(),
         }
         return self._mobile_step_result(payload, mobile)
 
@@ -1945,6 +2182,9 @@ class Backend:
         pending = self.mobile_auth
         if not pending:
             raise VkAuthError("no login in progress")
+        if time.time() - float(pending.get("at", 0) or 0) > 900:
+            self.mobile_auth = {}
+            raise VkAuthError("the login timed out; start it again")
         mobile = MOBILE_CLIENTS.get(pending["client"]) or MOBILE_CLIENTS["vk-android"]
         payload = request_mobile_token(
             mobile,
@@ -1954,11 +2194,22 @@ class Backend:
             success_token=successToken or None,
         )
         if payload.get("access_token"):
-            save_mobile_token(mobile, payload)
-            self.mobile_auth = {}
-            self.player.sign_in()
-            return {"done": True, "session": session_summary(self.player.record)}
+            profile = self.player.describe_account(
+                {
+                    "access_token": str(payload["access_token"]),
+                    "user_id": payload.get("user_id"),
+                    "user_agent": mobile.user_agent,
+                    "client_id": mobile.client_id,
+                }
+            )
+            save_mobile_token(mobile, payload, profile=profile)
+            return self._account_signed_in()
         return self._mobile_step_result(payload, mobile)
+
+    def cmd_auth_mobile_cancel(self) -> dict[str, Any]:
+        """Forget a pending login: the panel closed the form."""
+        self.mobile_auth = {}
+        return {"cancelled": True}
 
     def _mobile_step_result(self, payload: Mapping[str, Any], mobile: Any) -> dict[str, Any]:
         error = str(payload.get("error", ""))
@@ -1983,14 +2234,53 @@ class Backend:
         raise VkAuthError(str(payload.get("error_description") or error or payload))
 
     def cmd_logout(self) -> dict[str, Any]:
-        TOKEN_FILE.unlink(missing_ok=True)
-        self.player.record = None
-        self.player.client = None
-        self.player.error = ""
-        # The notice may still carry a halt from the session being dropped.
-        self.player.notice = ""
-        log("signed out")
-        return {"signedOut": True}
+        """Sign out of the active account only; other accounts stay stored."""
+        active = active_account_id()
+        if active is not None:
+            self.player.remove_account(active)
+        else:
+            self.player._reset_session()
+        self._radio_cache = (None, 0.0)
+        self.mobile_auth = {}
+        log(f"signed out of account {active}")
+        return {
+            "signedOut": self.player.record is None,
+            "accounts": account_list(),
+            "status": self.player.status(),
+        }
+
+    # -- accounts ----------------------------------------------------------
+
+    def cmd_accounts(self) -> dict[str, Any]:
+        return {"active": self.player.account_id(), "accounts": account_list()}
+
+    def cmd_account_switch(self, user_id: int | str = 0) -> dict[str, Any]:
+        if user_id in (None, "", 0, "0"):
+            raise VkAuthError("an account id is required")
+        self.player.switch_account(user_id)
+        self._radio_cache = (None, 0.0)
+        self.mobile_auth = {}
+        log(f"switched to account {user_id}")
+        return {
+            "active": self.player.account_id(),
+            "accounts": account_list(),
+            "session": session_summary(self.player.record),
+            "status": self.player.status(),
+        }
+
+    def cmd_account_remove(self, user_id: int | str = 0) -> dict[str, Any]:
+        if user_id in (None, "", 0, "0"):
+            raise VkAuthError("an account id is required")
+        self.player.remove_account(user_id)
+        self._radio_cache = (None, 0.0)
+        self.mobile_auth = {}
+        log(f"removed account {user_id}")
+        return {
+            "active": self.player.account_id(),
+            "accounts": account_list(),
+            "signedOut": self.player.record is None,
+            "status": self.player.status(),
+        }
 
     # -- sources -----------------------------------------------------------
 
@@ -2324,6 +2614,7 @@ class Backend:
 
     def start(self) -> None:
         self.player.load_session()
+        self.player.ensure_profile()
         self.player.attach_mpris()
         self.server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)

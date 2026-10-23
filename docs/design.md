@@ -93,8 +93,9 @@ Primary: **web token from the browser session.**
    or recent cookies are invisible. Chromium-family stores are encrypted
    against the OS keyring and are not read.
 2. Exchange them for a token with `POST login.vk.ru/?act=web_token`.
-3. Store the token **and the cookies** in `~/.config/omarchy-vk-music/token.json`
-   (mode 600): the refresh call needs the cookies again.
+3. Store the token **and the cookies** in
+   `~/.config/omarchy-vk-music/accounts.json` (mode 600), keyed by VK's user
+   id: the refresh call needs the cookies again.
 4. Refresh before a call when `expires - now < 600 s`.
 
 Fallback: **mobile password grant** (`oauth.vk.com/token`, `grant_type=password`,
@@ -106,6 +107,40 @@ as `success_token`) and 2FA.
 
 The password path never stores the password. Both paths store only what is
 listed above.
+
+### Several accounts
+
+One file holds every account, keyed by its user id, plus an `active` marker. The
+single-account `token.json` of earlier versions is read once, folded into the
+store and removed; an existing installation keeps its session.
+
+The reason the store exists is a browser fact: cookies describe the one session
+the browser is signed into, so the browser path can only ever add that account.
+A second account is added with the password grant instead, which is why that
+path is part of the panel and not only of the CLI. The password travels over a
+`request` command's stdin, never as an argument, and is dropped from the daemon
+as soon as the token arrives.
+
+Reading the browser cookies is also a choice of profile: a machine keeps
+several Firefox-family profiles, and more than one can hold a complete
+`p`/`remixsid` pair. Taking the first profile that has them signed the panel
+into an old account while the window in front of the user was signed into
+another, and the click looked dead because the account it added was already
+active. The freshest pair wins now — `lastAccessed` moves whenever a browser
+uses a cookie — and the form reports which account was added.
+
+Each account owns its queue, position, liked copies, search history and recent
+people; those live under `state.json`'s `accounts` map. Preferences and volume
+stay at the top level, because they describe the panel and the speakers rather
+than a VK account. Switching saves the outgoing slice, stops playback, adopts
+the new token, restores that account's queue paused at its own position and
+publishes it to MPRIS. The stream URL is deliberately not reused: it was
+resolved for the old session. Removing the active account hands the session to
+the next stored one; removing the last one leaves the panel signed out.
+
+User names and portraits come from one `users.get` call right after sign-in and
+are stored beside the token, so the account list is readable without asking VK
+on every open.
 
 ## Stealth rules (enforced in code)
 
@@ -134,13 +169,13 @@ counterpart in `backend/`.
 
 | Path | Contents | Mode |
 | --- | --- | --- |
-| `~/.config/omarchy-vk-music/token.json` | token, cookies, user agent, client id, device id, expiry | 600 |
-| `~/.config/omarchy-vk-music/state.json` | last track, position, queue, volume, preferences | 600 |
+| `~/.config/omarchy-vk-music/accounts.json` | every account: token, cookies, user agent, client id, device id, expiry, name and portrait; plus the active id | 600 |
+| `~/.config/omarchy-vk-music/state.json` | shared preferences and volume, and one queue/position/likes/history slice per account | 600 |
 | `~/.config/omarchy-vk-music/lyrics/` | cached lyrics (later version) | 700 |
 | `$XDG_CACHE_HOME/omarchy-vk-music/audio` | finished tracks, LRU, 256 MiB cap | 700 |
 
-The token store holds a live session and must never be committed. Revoking it
-means "завершить все сессии" in VK's security settings.
+The account store holds live sessions and must never be committed. Revoking one
+means «завершить все сессии» for that account in VK's security settings.
 
 ## Buffering, as the interface shows it
 
@@ -1056,9 +1091,9 @@ automatically.
 3. ~~**Cache** — HLS download, LRU, preload of the next track.~~ done: a track
    is fetched whole before it plays, the next one is fetched while the current
    one plays, and two downloads of the same file are deduplicated.
-4. **Auth UI** — sign-in page for both paths, warning states from error 5/9/14.
-   The web path works from the popup; the mobile path exists on the CLI only.
-   Known gap: a halt can only be cleared by restarting the service.
+4. ~~**Auth UI** — sign-in page for both paths, warning states from error 5/9/14.~~
+   done: the web and password paths both work from the panel, a sign-in clears a
+   halt, and the settings page stores, switches and removes several accounts.
 5. ~~**Polish** — likes, settings page, search-as-you-type.~~ done
 6. **Later** — lyrics via LRCLIB, playlist editing.
 
@@ -1085,6 +1120,7 @@ automatically.
 | Bar row options | artwork, title, artist, controls, progress line, time, like; cover shape, scrolling titles, width presets |
 | Notifications | a desktop notification per track, with a 4 KB cover, on the bus as `image-path` |
 | Settings page | 14 preferences, validated in the backend, with a chip or a switch each |
+| Accounts | several VK accounts stored at once, switched and removed from the settings page, added through the browser or the password grant; each keeps its own queue and likes |
 | Loading states in lists | the area says it is loading instead of claiming to be empty; `ProgressLine` and the pixel check behind it |
 
 The queue and the position survive a restart, but playback does **not** resume

@@ -28,6 +28,7 @@ import os
 import re
 import secrets
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -52,7 +53,11 @@ MOBILE_VALIDATE_ENDPOINT = "https://api.vk.com/method/auth.validatePhone"
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / (
     "omarchy-vk-music"
 )
+# The single-account file this plugin used before accounts existed. It is read
+# once, migrated into ACCOUNTS_FILE and removed.
 TOKEN_FILE = CONFIG_DIR / "token.json"
+ACCOUNTS_FILE = CONFIG_DIR / "accounts.json"
+_STORE_LOCK = threading.RLock()
 
 # Refresh a web token this long before it expires.
 WEB_REFRESH_THRESHOLD = 600
@@ -188,24 +193,44 @@ def fetch_browser_cookies(
     access is needed. Chromium-family stores are encrypted and deliberately
     not handled here.
 
-    The stores that matter on this machine are searched in order unless a
-    specific one is passed. `p` lives on `.login.vk.ru` and `remixsid` on
-    `.vk.ru`, so both hosts are queried and the freshest row per name wins.
+    A machine can hold several Firefox-family profiles, and only one of them is
+    the session the user is looking at. Picking the first profile that has VK
+    cookies is what signed the panel into an old account: profile directory
+    names sort before the one in use, and both hold a complete `p`/`remixsid`
+    pair. The freshest pair wins instead — `lastAccessed` moves whenever the
+    browser uses a cookie, so the session in the open window is the newest one.
     """
     candidates = [Path(store)] if store else _firefox_stores()
     if not candidates:
         raise VkAuthError("no Firefox-family cookie database found")
 
-    attempted: list[str] = []
-    for path in candidates:
-        attempted.append(str(path))
-        found = read_firefox_cookies(path, COOKIE_NAMES)
-        if all(name in found for name in COOKIE_NAMES):
-            return {name: found[name] for name in COOKIE_NAMES}
+    found = _best_cookie_set(candidates)
+    if found:
+        return found
 
     raise VkAuthError(
-        "no VK login found in the browser profiles checked: " + ", ".join(attempted)
+        "no VK login found in the browser profiles checked: "
+        + ", ".join(str(path) for path in candidates)
     )
+
+
+def _best_cookie_set(candidates: list[Path]) -> dict[str, str] | None:
+    """The complete VK cookie pair with the newest `lastAccessed`."""
+    best: dict[str, str] | None = None
+    best_score = -1
+    for path in candidates:
+        try:
+            cookies, score = _read_firefox_cookies(path, COOKIE_NAMES)
+        except VkAuthError:
+            # A profile this process cannot read is not a profile with a login;
+            # one broken store must not hide the account in the next one.
+            continue
+        if not all(name in cookies for name in COOKIE_NAMES):
+            continue
+        if score > best_score:
+            best = {name: cookies[name] for name in COOKIE_NAMES}
+            best_score = score
+    return best
 
 
 def _firefox_stores() -> list[Path]:
@@ -229,6 +254,17 @@ def _firefox_stores() -> list[Path]:
 
 def read_firefox_cookies(path: Path, names: tuple[str, ...]) -> dict[str, str]:
     """Return the freshest value per cookie name, for VK hosts only."""
+    return _read_firefox_cookies(path, names)[0]
+
+
+def _read_firefox_cookies(
+    path: Path, names: tuple[str, ...]
+) -> tuple[dict[str, str], int]:
+    """The cookies, plus the newest `lastAccessed` among them.
+
+    The timestamp is what tells two profiles' sessions apart; `read_firefox_cookies`
+    keeps its old shape for callers that only want the values.
+    """
     import shutil
     import sqlite3
     import tempfile
@@ -266,7 +302,8 @@ def read_firefox_cookies(path: Path, names: tuple[str, ...]) -> dict[str, str]:
         score = rank * 10**13 + int(last_accessed or 0)
         if name not in best or score > best[name][0]:
             best[name] = (score, str(value))
-    return {name: value for name, (_, value) in best.items()}
+    freshest = max((score for score, _ in best.values()), default=0)
+    return {name: value for name, (_, value) in best.items()}, freshest
 
 
 # -- mobile path -----------------------------------------------------------
@@ -410,11 +447,16 @@ def new_device_id() -> str:
 
 
 def store_path() -> Path:
-    return TOKEN_FILE
+    return ACCOUNTS_FILE
 
 
-def save_web_token(token: WebToken, cookies: Mapping[str, str]) -> Path:
-    return _write_record(
+def save_web_token(
+    token: WebToken,
+    cookies: Mapping[str, str],
+    profile: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Store (or refresh) one web account and make it the active one."""
+    return save_account(
         {
             "mode": "web",
             "access_token": token.access_token,
@@ -427,12 +469,16 @@ def save_web_token(token: WebToken, cookies: Mapping[str, str]) -> Path:
             "device_id": new_device_id(),
             "obtained_at": _now(),
         },
-        token.access_token,
+        profile=profile,
     )
 
 
-def save_mobile_token(client: MobileClient, payload: Mapping[str, Any]) -> Path:
-    return _write_record(
+def save_mobile_token(
+    client: MobileClient,
+    payload: Mapping[str, Any],
+    profile: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    return save_account(
         {
             "mode": "mobile",
             "access_token": payload["access_token"],
@@ -445,7 +491,7 @@ def save_mobile_token(client: MobileClient, payload: Mapping[str, Any]) -> Path:
             "device_id": new_device_id(),
             "obtained_at": _now(),
         },
-        payload["access_token"],
+        profile=profile,
     )
 
 
@@ -464,13 +510,12 @@ def refresh_web_record(record: Mapping[str, Any]) -> dict[str, Any]:
         {
             "access_token": token.access_token,
             "expires": token.expires,
-            "user_id": token.user_id,
+            "user_id": token.user_id or record.get("user_id"),
             "logout_hash": token.logout_hash,
             "obtained_at": _now(),
         }
     )
-    _write_record(updated, token.access_token)
-    return updated
+    return save_account(updated, make_active=False)
 
 
 def needs_refresh(record: Mapping[str, Any], threshold: int = WEB_REFRESH_THRESHOLD) -> bool:
@@ -483,26 +528,213 @@ def needs_refresh(record: Mapping[str, Any], threshold: int = WEB_REFRESH_THRESH
     return expires - int(time.time()) < threshold
 
 
-def load_record() -> dict[str, Any] | None:
+# -- the account store ------------------------------------------------------
+#
+# One file holds every session, keyed by VK's own user id:
+#
+#     {"active": "12345", "accounts": {"12345": {...}, "67890": {...}}}
+#
+# The id is a string in the document and the account's own `user_id` stays an
+# int, because QML compares the active marker against what `users.get` sent.
+# "Active" is which record the daemon should sign in with; the per-account
+# queue and likes live in the state file, not here.
+
+
+def _account_key(value: Any) -> str:
+    text = str(value).strip()
     try:
-        return json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
+        return str(int(text))
+    except ValueError:
+        return text
+
+
+def _normalize_store(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, Mapping):
+        raise VkAuthError("account store is not an object")
+    accounts = raw.get("accounts")
+    if not isinstance(accounts, Mapping):
+        accounts = {}
+    store: dict[str, Any] = {
+        "active": None,
+        "accounts": {
+            str(key): dict(record)
+            for key, record in accounts.items()
+            if isinstance(record, Mapping)
+        },
+    }
+    active = raw.get("active")
+    if active is not None:
+        store["active"] = _account_key(active)
+        if store["active"] not in store["accounts"]:
+            store["active"] = next(iter(store["accounts"]), None)
+    return store
+
+
+def _read_store() -> dict[str, Any]:
+    with _STORE_LOCK:
+        return _read_store_unlocked()
+
+
+def _read_store_unlocked() -> dict[str, Any]:
+    try:
+        raw = json.loads(ACCOUNTS_FILE.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return None
+        return _migrate_legacy()
+    except (OSError, json.JSONDecodeError) as exc:
+        raise VkAuthError(f"account store is unreadable: {exc}") from exc
+    return _normalize_store(raw)
+
+
+def _migrate_legacy() -> dict[str, Any]:
+    """Turn the old single-account token file into the store, once."""
+    try:
+        record = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {"active": None, "accounts": {}}
     except (OSError, json.JSONDecodeError) as exc:
         raise VkAuthError(f"token store is unreadable: {exc}") from exc
+    if not isinstance(record, Mapping):
+        raise VkAuthError("token store is not an object")
+    store: dict[str, Any] = {"active": None, "accounts": {}}
+    user_id = record.get("user_id")
+    if user_id is not None:
+        key = _account_key(user_id)
+        migrated = dict(record)
+        migrated.setdefault("added_at", _now())
+        store["accounts"][key] = migrated
+        store["active"] = key
+        _write_store(store)
+        TOKEN_FILE.unlink(missing_ok=True)
+    return store
 
 
-def _write_record(record: Mapping[str, Any], token: str) -> Path:
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    os.chmod(CONFIG_DIR, 0o700)
-    payload = dict(record)
-    if isinstance(payload.get("access_token"), str) and payload["access_token"] == token:
-        payload["token_hint"] = f"{token[:6]}...{len(token)} chars"
-    tmp = TOKEN_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.chmod(tmp, 0o600)
-    tmp.replace(TOKEN_FILE)
-    return TOKEN_FILE
+def _write_store(store: Mapping[str, Any]) -> Path:
+    with _STORE_LOCK:
+        payload = _normalize_store(store)
+        payload["version"] = 1
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        os.chmod(CONFIG_DIR, 0o700)
+        tmp = ACCOUNTS_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        tmp.replace(ACCOUNTS_FILE)
+        return ACCOUNTS_FILE
+
+
+def summarize_record(record: Mapping[str, Any], *, active: bool = False) -> dict[str, Any]:
+    """The public face of an account: never the token, the cookies or the ua."""
+    expires = int(record.get("expires", 0) or 0)
+    return {
+        "id": record.get("user_id"),
+        "name": str(record.get("name") or ""),
+        "photo": str(record.get("photo") or ""),
+        "mode": str(record.get("mode", "")),
+        "active": active,
+        "has_cookies": all(
+            (record.get("cookies") or {}).get(name) for name in COOKIE_NAMES
+        ),
+        "expires_in": max(0, expires - int(time.time())) if expires else 0,
+    }
+
+
+def account_list() -> list[dict[str, Any]]:
+    store = _read_store()
+    active = store.get("active")
+    items = [
+        summarize_record(record, active=key == active)
+        for key, record in store["accounts"].items()
+    ]
+    items.sort(key=lambda item: 0 if item["active"] else 1)
+    return items
+
+
+def active_account_id() -> str | None:
+    return _read_store().get("active")
+
+
+def active_record() -> dict[str, Any] | None:
+    store = _read_store()
+    key = store.get("active")
+    record = store["accounts"].get(key) if key is not None else None
+    return dict(record) if record else None
+
+
+def account_record(user_id: Any) -> dict[str, Any] | None:
+    store = _read_store()
+    record = store["accounts"].get(_account_key(user_id))
+    return dict(record) if record else None
+
+
+def save_account(
+    record: Mapping[str, Any],
+    *,
+    profile: Mapping[str, Any] | None = None,
+    make_active: bool = True,
+) -> dict[str, Any]:
+    """Insert or replace one account. A new or re-added account becomes active."""
+    with _STORE_LOCK:
+        store = _read_store()
+        user_id = record.get("user_id")
+        if profile and profile.get("user_id") is not None:
+            user_id = profile["user_id"]
+        if user_id is None:
+            raise VkAuthError(
+                "VK did not say which account this token belongs to; "
+                "sign in through the browser or the mobile client instead"
+            )
+        key = _account_key(user_id)
+        existing = dict(store["accounts"].get(key) or {})
+        updated = dict(existing)
+        updated.update({name: value for name, value in record.items() if name != "token_hint"})
+        updated["user_id"] = int(key) if key.lstrip("-").isdigit() else user_id
+        if profile:
+            for name in ("name", "photo"):
+                if profile.get(name):
+                    updated[name] = str(profile[name])
+        if not updated.get("name") and existing.get("name"):
+            updated["name"] = existing["name"]
+        if not updated.get("photo") and existing.get("photo"):
+            updated["photo"] = existing["photo"]
+        updated.setdefault("added_at", existing.get("added_at") or _now())
+        token = str(updated.get("access_token") or "")
+        if token:
+            updated["token_hint"] = f"{token[:6]}...{len(token)} chars"
+        store["accounts"][key] = updated
+        if make_active:
+            store["active"] = key
+        _write_store(store)
+        return dict(updated)
+
+
+def set_active_account(user_id: Any) -> dict[str, Any]:
+    with _STORE_LOCK:
+        store = _read_store()
+        key = _account_key(user_id)
+        record = store["accounts"].get(key)
+        if record is None:
+            raise VkAuthError(f"account {user_id} is not signed in")
+        store["active"] = key
+        _write_store(store)
+        return dict(record)
+
+
+def remove_account(user_id: Any) -> dict[str, Any] | None:
+    """Drop one account. When it was active, the next one takes over."""
+    with _STORE_LOCK:
+        store = _read_store()
+        key = _account_key(user_id)
+        store["accounts"].pop(key, None)
+        if store.get("active") == key:
+            store["active"] = next(iter(store["accounts"]), None)
+        _write_store(store)
+        active = store.get("active")
+        record = store["accounts"].get(active) if active is not None else None
+        return dict(record) if record else None
+
+
+def load_record() -> dict[str, Any] | None:
+    """The active account, under the name the daemon already used."""
+    return active_record()
 
 
 def _now() -> str:

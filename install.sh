@@ -76,6 +76,10 @@ fi
 
 systemctl --user daemon-reload
 systemctl --user enable --now omarchy-vk-music.service >/dev/null
+# `enable --now` leaves an already-running unit untouched, so a re-install
+# would keep serving the old code from memory. The README tells people to
+# re-run this script after changing the backend; make that mean something.
+systemctl --user restart omarchy-vk-music.service >/dev/null
 
 if ((BACKEND_ONLY)); then
   echo "VK Music backend is ready."

@@ -31,17 +31,17 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from spike import Report, build_checks, load_record  # noqa: E402
+from spike import Report, build_checks  # noqa: E402
 from vk_api import WEB_APP_ID, WEB_USER_AGENT, VkClient  # noqa: E402
 
 from vk_auth import (  # noqa: E402
+    ACCOUNTS_FILE,
     MOBILE_CLIENTS,
-    TOKEN_FILE,
     VkAuthError,
+    active_record,
     fetch_browser_cookies,
-    load_record as load_stored,
-    mobile_authorize,
     needs_refresh,
+    mobile_authorize,
     parse_cookies,
     refresh_web_record,
     request_web_token,
@@ -69,8 +69,9 @@ def cmd_web(args: argparse.Namespace) -> int:
     print(f"  token received: {len(token.access_token)} chars, "
           f"prefix {token.access_token[:6]}…, valid {lifetime_days:.1f} days")
     if not args.no_save:
-        path = save_web_token(token, cookies)
-        print(f"  stored in {path} (mode 600, holds the session cookies)")
+        record = save_web_token(token, cookies)
+        print(f"  stored account {record.get('user_id')} in {ACCOUNTS_FILE} "
+              "(mode 600, holds the session cookies)")
     return _verify(args, token.access_token, WEB_USER_AGENT, WEB_APP_ID, None)
 
 
@@ -81,15 +82,15 @@ def cmd_mobile(args: argparse.Namespace) -> int:
     print(f"  token received: {len(payload['access_token'])} chars, "
           f"prefix {payload['access_token'][:6]}…, valid {expires_in / 3600:.1f} hours")
     if not args.no_save:
-        path = save_mobile_token(client, payload)
-        print(f"  stored in {path} (mode 600)")
+        record = save_mobile_token(client, payload)
+        print(f"  stored account {record.get('user_id')} in {ACCOUNTS_FILE} (mode 600)")
     return _verify(args, payload["access_token"], client.user_agent, client.client_id, None)
 
 
 def cmd_refresh(args: argparse.Namespace) -> int:
-    record = load_stored()
+    record = active_record()
     if record is None:
-        print(f"nothing stored in {TOKEN_FILE}", file=sys.stderr)
+        print(f"nothing stored in {ACCOUNTS_FILE}", file=sys.stderr)
         return 1
     if record.get("mode") != "web":
         print("only web records can be refreshed from cookies", file=sys.stderr)
@@ -101,9 +102,9 @@ def cmd_refresh(args: argparse.Namespace) -> int:
 
 
 def cmd_status(_: argparse.Namespace) -> int:
-    record = load_stored()
+    record = active_record()
     if record is None:
-        print(f"nothing stored in {TOKEN_FILE}")
+        print(f"nothing stored in {ACCOUNTS_FILE}")
         return 1
     expires = int(record.get("expires", 0) or 0)
     remaining = expires - int(time.time()) if expires else 0
@@ -134,7 +135,7 @@ def _verify(
     if args.no_verify:
         return 0
     if not args.no_save:
-        record = load_record(str(TOKEN_FILE))
+        record = active_record() or {}
         client_id = str(record.get("client_id") or client_id)
         device_id = record.get("device_id")
     client = VkClient(token, user_agent=user_agent, client_id=client_id, device_id=device_id)

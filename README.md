@@ -53,9 +53,10 @@ the same command after changing the backend.
 
 ## Signing in
 
-VK's audio API has no public OAuth flow, so the plugin does what a browser does: it takes
-the `p` and `remixsid` cookies from your browser profile and exchanges them for a token —
-no password is asked for and none is stored.
+VK's audio API has no public OAuth flow, so the default path does what a browser does: it
+takes the `p` and `remixsid` cookies from your browser profile and exchanges them for a
+token — no password is asked for and none is stored. The password path below does ask for
+one, keeps it only in the daemon's memory until VK answers, and never writes it down.
 
 1. Sign in to <https://vk.ru> in Firefox, Zen or LibreWolf.
 2. Open the panel and press **Sign in with the browser**, or run
@@ -63,8 +64,28 @@ no password is asked for and none is stored.
 3. The session ends when VK ends it; finishing all sessions in VK's settings logs the
    plugin out too.
 
-The token and cookies live in `~/.config/omarchy-vk-music/token.json` with mode 600. They
-are never written to the repository, the journal, or anywhere else.
+### Several accounts
+
+The panel keeps as many VK accounts as you sign in, and each one has its own queue,
+position, likes and recent searches. Preferences and the volume stay shared, because they
+belong to the panel and the speakers rather than to an account.
+
+- **Settings → Accounts** lists every stored account. The active one is marked; another
+  one is one click away and becomes active with its own queue restored, paused.
+- **Add an account** offers the browser path (the session Firefox, Zen or LibreWolf is
+  signed into now) and the password path (login, password, then the SMS or app code).
+  The password path is what makes a second account possible without signing out of the
+  first one in the browser.
+- **Remove** forgets the account, its token, its queue and its likes. Removing the active
+  account hands the session to the next stored one; removing the last one returns the
+  panel to the sign-in screen.
+
+Adding or switching an account stops playback: the resolved stream URL belongs to the old
+session, and the tracks in the old queue are not the new account's. `omarchy-vk-music
+accounts`, `account switch <id>` and `account remove <id>` do the same from a terminal.
+
+The tokens and cookies live in `~/.config/omarchy-vk-music/accounts.json` with mode 600.
+They are never written to the repository, the journal, or anywhere else.
 
 ## Controls
 
@@ -98,6 +119,9 @@ omarchy-vk-music volume 60
 omarchy-vk-music queue remove 3
 omarchy-vk-music prefs language=de
 omarchy-vk-music auth status
+omarchy-vk-music accounts
+omarchy-vk-music account switch 213706100
+omarchy-vk-music account remove 213706100
 ```
 
 Every command prints one line of JSON. `--pretty` formats it.
@@ -121,8 +145,8 @@ If the widget disappears from the bar, `omarchy restart shell`, then
 
 | Path | What |
 |---|---|
-| `~/.config/omarchy-vk-music/token.json` | token and cookies, mode 600 |
-| `~/.config/omarchy-vk-music/state.json` | queue, position, volume, preferences |
+| `~/.config/omarchy-vk-music/accounts.json` | every account's token and cookies, active marker, mode 600 |
+| `~/.config/omarchy-vk-music/state.json` | per-account queue, position, likes and history; shared volume and preferences |
 | `~/.cache/omarchy-vk-music/audio` | downloaded tracks, 256 MiB by default |
 
 ## Uninstall

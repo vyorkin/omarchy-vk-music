@@ -74,6 +74,10 @@ def parse_argv(argv: list[str]) -> dict:
     if not argv:
         return {"command": "status"}
     head, rest = argv[0], argv[1:]
+    if head == "request":
+        # One JSON request from stdin: the popup's password login uses this so
+        # the password is never an argument.
+        return json.load(sys.stdin)
     flags = {item for item in rest if item.startswith("--")}
     words = [item for item in rest if not item.startswith("--")]
     play_after = "--play" in flags
@@ -137,9 +141,18 @@ def parse_argv(argv: list[str]) -> dict:
         "queue": "queue",
         "session": "session",
         "logout": "logout",
+        "accounts": "accounts",
     }
     if head in simple:
         return {"command": simple[head]}
+    if head == "account":
+        action = words[0] if words else "list"
+        if action in ("switch", "remove"):
+            if len(words) < 2:
+                raise SystemExit(f"использование: account {action} <id>")
+            command = "account_switch" if action == "switch" else "account_remove"
+            return {"command": command, "user_id": int(words[1])}
+        return {"command": "accounts"}
     if head == "queue" and words:
         if words[0] == "remove":
             return {"command": "queue_remove", "index": int(words[1]) if len(words) > 1 else 0}
@@ -250,6 +263,8 @@ def parse_argv(argv: list[str]) -> dict:
                 index = argv.index("--success-token")
                 payload["successToken"] = argv[index + 1] if index + 1 < len(argv) else ""
             return payload
+        if action == "cancel":
+            return {"command": "auth_mobile_cancel"}
         return {"command": "session"}
     raise SystemExit(f"unknown command: {head}")
 

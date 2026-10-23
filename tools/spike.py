@@ -6,7 +6,7 @@ token reach the audio methods, does the catalog work, what does a stream look
 like, and can ffmpeg and mpv open it. The report never contains the token, the
 full user id, or query strings from stream URLs.
 
-    python3 tools/spike.py --token-file ~/.config/omarchy-vk-music/token.json
+    python3 tools/spike.py --token-file ~/.config/omarchy-vk-music/accounts.json
     python3 tools/spike.py --token-file ... --play
 """
 
@@ -308,18 +308,24 @@ def _home_detail(client: VkClient, user_id: int) -> dict[str, Any]:
 
 
 def load_record(path: str) -> dict[str, Any]:
-    record = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
-    if "access_token" not in record:
+    raw = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    if "accounts" in raw:
+        active = raw.get("active")
+        record = (raw.get("accounts") or {}).get(str(active))
+        if not isinstance(record, dict):
+            raise SystemExit("the account store has no active account")
+        return record
+    if "access_token" not in raw:
         raise SystemExit("token record has no access_token")
-    return record
+    return raw
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--token-file",
-        default=str(Path.home() / ".config" / "omarchy-vk-music" / "token.json"),
-        help="token record written by tools/auth_spike.py",
+        default=str(Path.home() / ".config" / "omarchy-vk-music" / "accounts.json"),
+        help="account store or a token record written by tools/auth_spike.py",
     )
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--play", action="store_true", help="also decode a few seconds with mpv")

@@ -93,6 +93,37 @@ case "$command_name" in
   pause|toggle) send "$C_PAUSE" ;;
   stop) send "$C_STOP" ;;
   logout) send "$C_LOGOUT" ;;
+  accounts) send '{"command":"accounts"}' ;;
+  account)
+    action="${1:-list}"
+    [ $# -gt 0 ] && shift
+    case "$action" in
+      switch)
+        if [ $# -lt 1 ]; then
+          printf 'использование: account switch <id>\n' >&2
+          exit 2
+        fi
+        send "$(jq -nc --argjson user_id "$(number "$1")" '{command:"account_switch", user_id:$user_id}')"
+        ;;
+      remove)
+        if [ $# -lt 1 ]; then
+          printf 'использование: account remove <id>\n' >&2
+          exit 2
+        fi
+        send "$(jq -nc --argjson user_id "$(number "$1")" '{command:"account_remove", user_id:$user_id}')"
+        ;;
+      *) send '{"command":"accounts"}' ;;
+    esac
+    ;;
+  request)
+    # One JSON request on stdin. The popup uses this for the password login, so
+    # the password travels through a pipe and never appears in `ps`.
+    if [ -n "$transport" ]; then
+      send "$(cat)"
+    else
+      fallback_to_python request
+    fi
+    ;;
   radio) send '{"command":"radio"}' ;;
   suggestions)
     send "$(jq -nc --arg query "$*" '{command:"suggestions", query:$query}')"
@@ -299,6 +330,9 @@ case "$command_name" in
         ;;
       status)
         send "$C_SESSION"
+        ;;
+      cancel)
+        send '{"command":"auth_mobile_cancel"}'
         ;;
       *)
         # The password path prompts for a password, which belongs in the Python

@@ -86,8 +86,33 @@ Panel {
   property string query: ""
   property string busy: ""
   property string errorText: ""
+  // The accounts the daemon holds, the form that adds another one, and the
+  // removal that is waiting for a second click. None of this is a preference:
+  // it is loaded from the daemon with the `accounts` command.
+  property var accounts: []
+  property bool accountFormOpen: false
+  property bool accountBusy: false
+  property string accountLogin: ""
+  property string accountPassword: ""
+  property string accountStep: ""
+  property string accountCode: ""
+  property string accountValidationType: ""
+  property string accountPhoneMask: ""
+  property string accountRedirectUri: ""
+  property string accountSuccessToken: ""
+  // What the account form says about the last attempt: a success stays in the
+  // settings block after the form closes, a failure stays next to the fields.
+  property string accountNotice: ""
+  property string accountError: ""
+  // How many of the form's fields hold the keyboard. While one does, the key
+  // catcher must not read «j» as a step down the list.
+  property int accountFieldFocus: 0
+  property string pendingAccountRemove: ""
 
-  onViewChanged: root.cursor = -1
+  onViewChanged: {
+    root.cursor = -1
+    if (root.view === "settings") root.loadAccounts()
+  }
   onBrowseSlugChanged: root.cursor = -1
   // A new query means a new list, so the selection goes. A search *answer* for
   // the same query does not: resetting there threw the selection away a moment
@@ -333,7 +358,13 @@ Panel {
       artwork: artwork.width,
       label: labelText.implicitWidth,
       transport: transportZone.width,
-      labelSize: Style.font.bodySmall
+      labelSize: Style.font.bodySmall,
+      // A bar widget of zero width is invisible and cannot be clicked; the idle
+      // note is the fallback that keeps a stopped, option-less row reachable.
+      empty: root.barRowEmpty,
+      idle: [idleGlyph.visible, idleGlyph.width, idleGlyph.height],
+      shown: [root.barShowArtwork, root.barShowTitle, root.barShowArtist,
+              root.barShowTime, root.barShowControls]
     }))
   }
 
@@ -360,6 +391,7 @@ Panel {
   Component.onCompleted: {
     refresh()
     reportBarLayout()
+    loadAccounts()
   }
 
   // ----------------------------------------------------------------- io ---
@@ -374,41 +406,82 @@ Panel {
   Component {
     id: commandComponent
     Process {
+      id: commandProcess
       property var onDone
       stderr: StdioCollector { id: commandError; waitForEnd: true }
       stdout: StdioCollector {
         id: commandOutput
         waitForEnd: true
-        onStreamFinished: {
-          var raw = String(text || "").trim()
-          var answer = null
-          try {
-            answer = raw === "" ? null : JSON.parse(raw)
-          } catch (parseError) {
-            answer = null
-          }
-          root.busy = ""
-          if (answer && answer.ok) {
-            root.errorText = ""
-          } else if (answer && answer.error) {
-            root.errorText = root.tm(String(answer.error.message || answer.error.code || ""))
-            if (root.errorText === "") root.errorText = root.t("ошибка")
-          } else if (raw !== "") {
-            root.errorText = raw
-          } else {
-            root.errorText = String(commandError.text || "").trim() || root.t("команда не выполнена")
-          }
-          if (onDone) onDone(answer)
-        }
+        onStreamFinished: root.finishCommand(text, commandError.text, commandProcess.onDone)
       }
       onExited: function(code) { destroy() }
     }
+  }
+
+  // The password login needs a request body. It travels over stdin — `request`
+  // reads one JSON line and forwards it — so a password never appears in the
+  // process list the way an argument would.
+  Component {
+    id: requestComponent
+    Process {
+      id: requestProcess
+      property var onDone
+      property string payload: ""
+      stdinEnabled: true
+      stderr: StdioCollector { id: requestError; waitForEnd: true }
+      stdout: StdioCollector {
+        id: requestOutput
+        waitForEnd: true
+        onStreamFinished: root.finishCommand(text, requestError.text, requestProcess.onDone)
+      }
+      onStarted: {
+        write(payload)
+        // Closing stdin is what lets the reader finish; `cat` waits for EOF.
+        stdinEnabled = false
+      }
+      onExited: function(code) { destroy() }
+    }
+  }
+
+  // One parser for both channels: a reply is a reply no matter which process
+  // carried it, and an error must paint the same line either way.
+  function finishCommand(rawText, errorText, onDone) {
+    var raw = String(rawText || "").trim()
+    var answer = null
+    try {
+      answer = raw === "" ? null : JSON.parse(raw)
+    } catch (parseError) {
+      answer = null
+    }
+    root.busy = ""
+    if (answer && answer.ok) {
+      root.errorText = ""
+    } else if (answer && answer.error) {
+      root.errorText = root.tm(String(answer.error.message || answer.error.code || ""))
+      if (root.errorText === "") root.errorText = root.t("ошибка")
+    } else if (raw !== "") {
+      root.errorText = raw
+    } else {
+      root.errorText = String(errorText || "").trim() || root.t("команда не выполнена")
+    }
+    if (onDone) onDone(answer)
   }
 
   function call(args, onDone) {
     var process = commandComponent.createObject(root, { command: args, onDone: onDone })
     if (!process) return
     root.busy = args.join(" ")
+    process.running = true
+  }
+
+  function callRequest(request, onDone) {
+    var process = requestComponent.createObject(root, {
+      command: [root.cli, "request"],
+      payload: JSON.stringify(request),
+      onDone: onDone
+    })
+    if (!process) return
+    root.busy = String(request.command || "request")
     process.running = true
   }
 
@@ -1659,8 +1732,222 @@ Timer {
     call([root.cli, "previous"], function() { root.watchForTrack() })
   }
 
-  function signIn() {
-    call([root.cli, "auth", "web"], function() { root.refresh() })
+  // ---------------------------------------------------------- accounts ---
+
+  function loadAccounts() {
+    root.call([root.cli, "accounts"], function(answer) {
+      if (answer && answer.ok && answer.data) root.accounts = answer.data.accounts || []
+    })
+  }
+
+  function accountById(id) {
+    var wanted = String(id)
+    for (var i = 0; i < root.accounts.length; i++) {
+      if (root.accounts[i] && String(root.accounts[i].id) === wanted) return root.accounts[i]
+    }
+    return null
+  }
+
+  function accountName(account) {
+    if (!account) return ""
+    var name = String(account.name || "").trim()
+    return name !== "" ? name : root.t("Аккаунт ") + String(account.id)
+  }
+
+  function removeAccountHint() {
+    var account = root.accountById(root.pendingAccountRemove)
+    var text = root.t("Удалить аккаунт") + " «" + root.accountName(account) + "»?"
+    // Removing the active account is a sign-out, not just forgetting a list of
+    // tokens; saying so is the difference between a confirmation and a surprise.
+    if (account && account.active === true) text += " " + root.t("Сеанс завершится.")
+    return text
+  }
+
+  // A switched account has its own queue, its own likes and its own people:
+  // every list on screen belongs to the old session and must go, or the panel
+  // keeps showing tracks the new account cannot play.
+  function reloadAfterAccountChange(newStatus) {
+    root.queue = []
+    root.playlists = []
+    root.results = []
+    root.suggestions = []
+    root.browseTracks = []
+    root.browsePlaylists = []
+    root.stations = []
+    root.sources = []
+    root.sourcesLoadedAt = 0
+    root.openPlaylist = null
+    root.openPlaylistTracks = []
+    root.playlistBack = ""
+    root.playlistBackView = ""
+    root.person = null
+    root.personPlaylists = []
+    root.friends = []
+    root.foundPlaylists = []
+    root.foundPlaylistsTotal = 0
+    root.pendingTrack = null
+    root.pendingIndex = -1
+    // A filter belongs to the list it was typed in, and every one of those lists
+    // now belongs to another account.
+    root.filter = ""
+    root.filtering = false
+    root.filterFocused = false
+    root.query = ""
+    root._searchedQuery = ""
+    root.searchState = "typing"
+    root.cursor = -1
+    root._queueIndex = -2
+    // The answer already carries the new session's status; using it here keeps
+    // the panel from flashing the signed-out form (or the old account's track)
+    // while the follow-up status call is on its way.
+    if (newStatus) root.status = newStatus
+    root.refresh()
+    root.loadQueue()
+    root.loadAccounts()
+  }
+
+  function switchAccount(id) {
+    root.pendingAccountRemove = ""
+    root.accountNotice = ""
+    root.accountError = ""
+    root.call([root.cli, "account", "switch", String(id)], function(answer) {
+      if (!answer || !answer.ok) return
+      if (answer.data && answer.data.accounts) root.accounts = answer.data.accounts
+      root.reloadAfterAccountChange(answer.data ? answer.data.status : null)
+    })
+  }
+
+  function removeAccount(id) {
+    if (String(id) === "") return
+    root.pendingAccountRemove = ""
+    root.accountNotice = ""
+    root.accountError = ""
+    root.call([root.cli, "account", "remove", String(id)], function(answer) {
+      if (!answer || !answer.ok) return
+      if (answer.data && answer.data.accounts) root.accounts = answer.data.accounts
+      root.reloadAfterAccountChange(answer.data ? answer.data.status : null)
+    })
+  }
+
+  function openAccountForm() {
+    root.accountFormOpen = true
+    root.accountNotice = ""
+    root.accountError = ""
+    root.accountStep = ""
+    root.accountCode = ""
+    root.accountSuccessToken = ""
+  }
+
+  function closeAccountForm() {
+    // The daemon may be holding a password between the login and the code step;
+    // closing the form is how the panel says it is no longer needed.
+    if (root.accountStep !== "" || root.accountBusy) {
+      root.call([root.cli, "auth", "cancel"])
+    }
+    root.accountFormOpen = false
+    root.accountBusy = false
+    root.accountLogin = ""
+    root.accountPassword = ""
+    root.accountCode = ""
+    root.accountSuccessToken = ""
+    root.accountStep = ""
+    root.accountValidationType = ""
+    root.accountPhoneMask = ""
+    root.accountRedirectUri = ""
+    root.accountFieldFocus = 0
+  }
+
+  function toggleAccountForm() {
+    if (root.accountFormOpen) root.closeAccountForm()
+    else root.openAccountForm()
+  }
+
+  function accountFailure(answer) {
+    if (!answer || !answer.error) return root.t("Не удалось войти")
+    var text = root.tm(String(answer.error.message || answer.error.code || ""))
+    return text !== "" ? text : root.t("Не удалось войти")
+  }
+
+  function accountAddedNotice(answer) {
+    var session = answer && answer.data ? answer.data.session : null
+    var name = session ? String(session.name || "") : ""
+    return name !== "" ? root.t("Аккаунт добавлен: ") + name : root.t("Аккаунт добавлен.")
+  }
+
+  function addAccountFromBrowser() {
+    root.accountBusy = true
+    root.accountError = ""
+    root.call([root.cli, "auth", "web"], function(answer) {
+      root.accountBusy = false
+      if (!answer || !answer.ok) {
+        root.accountError = root.accountFailure(answer)
+        return
+      }
+      if (answer.data && answer.data.accounts) root.accounts = answer.data.accounts
+      root.accountNotice = root.accountAddedNotice(answer)
+      root.closeAccountForm()
+      root.reloadAfterAccountChange(answer.data ? answer.data.status : null)
+    })
+  }
+
+  function submitAccountLogin() {
+    var login = root.accountLogin.trim()
+    var password = root.accountPassword
+    if (login === "" || password === "") {
+      root.accountError = root.t("Нужны логин и пароль")
+      return
+    }
+    root.accountError = ""
+    root.accountBusy = true
+    root.callRequest({ command: "auth_mobile_start", login: login, password: password }, function(answer) {
+      // The password is not kept a moment longer than the request needs it.
+      root.accountPassword = ""
+      root.accountBusy = false
+      root.handleAccountAuth(answer)
+    })
+  }
+
+  function submitAccountCode() {
+    var code = root.accountCode.trim()
+    if (code === "") return
+    root.accountError = ""
+    root.accountBusy = true
+    root.callRequest({ command: "auth_mobile_step", code: code }, function(answer) {
+      root.accountBusy = false
+      root.handleAccountAuth(answer)
+    })
+  }
+
+  function submitAccountCaptcha() {
+    var token = root.accountSuccessToken.trim()
+    if (token === "") return
+    root.accountError = ""
+    root.accountBusy = true
+    root.callRequest({ command: "auth_mobile_step", successToken: token }, function(answer) {
+      root.accountBusy = false
+      root.handleAccountAuth(answer)
+    })
+  }
+
+  function handleAccountAuth(answer) {
+    if (!answer || !answer.ok) {
+      root.accountError = root.accountFailure(answer)
+      return
+    }
+    var data = answer.data || ({})
+    if (data.done === true) {
+      if (data.accounts) root.accounts = data.accounts
+      root.accountNotice = root.accountAddedNotice(answer)
+      root.closeAccountForm()
+      root.reloadAfterAccountChange(data.status || null)
+      return
+    }
+    root.accountStep = String(data.step || "")
+    root.accountValidationType = String(data.validationType || "")
+    root.accountPhoneMask = String(data.phoneMask || "")
+    root.accountRedirectUri = String(data.redirectUri || "")
+    root.accountCode = ""
+    root.accountSuccessToken = ""
   }
 
   function clock(seconds) {
@@ -1742,6 +2029,19 @@ Timer {
   // The progress line has something to say only for a track with a length: a
   // station is endless and shows nothing.
   readonly property bool barHasProgress: root.hasTrack && !root.onAir() && root.duration > 0
+  // A row with nothing in it has no width, and a widget of zero width cannot be
+  // clicked. Cover, title and artist can all be switched off, and then a stopped
+  // player vanished from the bar entirely — leaving no way back to the panel.
+  // One note stands in for the whole row in that case.
+  readonly property bool barRowEmpty: {
+    if (root.barShowArtwork) return false
+    if (root.barShowTitle || root.barShowArtist) return false
+    if (root.barShowTime && root.hasTrack && !root.onAir()) return false
+    if (root.barShowControls && root.hasTrack) return false
+    if (root.barShowLike && root.hasTrack && !root.onAir()) return false
+    if (root.barShowProgress && root.barHasProgress) return false
+    return true
+  }
   readonly property real barProgress: root.barHasProgress
     ? Math.max(0, Math.min(1, root.displayPosition / root.duration)) : 0
 
@@ -1796,6 +2096,21 @@ Timer {
     id: barRow
     anchors.centerIn: parent
     spacing: Style.space(6)
+
+    // Kept even when the row is otherwise empty: this is the way back to the
+    // panel, so it must exist at the smallest configuration as well.
+    BarGlyph {
+      id: idleGlyph
+      visible: root.barRowEmpty
+      height: root.implicitHeight
+      // Lucide has no bare «music» body; the icon font glyph is the fallback
+      // that keeps this visible even if the set changes again.
+      name: "list-music"
+      icon: "󰝚"
+      filled: false
+      tooltip: "VK Music"
+      onClicked: root.open()
+    }
 
     BorderSurface {
       id: artwork
@@ -2016,8 +2331,13 @@ Timer {
       root._queueIndex = -2
       root.loadQueue()
       root.loadSources()
+      root.loadAccounts()
       afterOpen.restart()
+      return
     }
+    // A password must not outlive the popup that asked for it.
+    root.accountPassword = ""
+    root.accountFieldFocus = 0
   }
 
   // After the panel is mapped, not at the moment it opens: the sizes only exist
@@ -2121,6 +2441,340 @@ Timer {
           onClicked: if (modelData) root.setPreference(choiceRow.key, modelData.value)
         }
       }
+    }
+  }
+
+  // ------------------------------------------------------------ accounts ---
+  //
+  // Accounts are not a preference: they are sessions the daemon holds, and the
+  // panel shows them in the settings page and on the signed-out screen. One
+  // block, used in both places, keeps the two from drifting apart.
+
+  component AccountRow: Row {
+    id: accountRow
+    property var account: null
+    width: parent ? parent.width : 0
+    spacing: Style.space(8)
+
+    CoverTile {
+      id: accountAvatar
+      width: Style.space(28)
+      height: width
+      radius: width / 2
+      anchors.verticalCenter: parent.verticalCenter
+      inset: 0
+      mark: "󰀄"
+      decodeSize: Style.space(28)
+      source: accountRow.account ? String(accountRow.account.photo || "") : ""
+      title: accountRow.account ? root.accountName(accountRow.account) : ""
+    }
+
+    Column {
+      width: Math.max(0, parent.width - accountAvatar.width - accountSwitch.width
+        - accountRemove.width - accountRow.spacing * 3)
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(2)
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        text: root.accountName(accountRow.account)
+        color: root.textColor
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        text: accountRow.account && accountRow.account.active === true
+          ? root.t("Активный") : root.t("Войти")
+        color: root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+    }
+
+    Button {
+      id: accountSwitch
+      anchors.verticalCenter: parent.verticalCenter
+      width: visible ? implicitWidth : 0
+      visible: !(accountRow.account && accountRow.account.active === true)
+      text: root.t("Переключить")
+      foreground: root.textColor
+      onClicked: if (accountRow.account) root.switchAccount(accountRow.account.id)
+    }
+
+    Button {
+      id: accountRemove
+      anchors.verticalCenter: parent.verticalCenter
+      iconText: "󰆴"
+      tooltipText: root.t("Удалить")
+      foreground: root.textColor
+      onClicked: root.pendingAccountRemove = accountRow.account ? String(accountRow.account.id) : ""
+    }
+  }
+
+  component AccountLoginForm: ColumnLayout {
+    id: accountForm
+    spacing: Style.spacing.controlGap
+
+    Text {
+      Layout.fillWidth: true
+      Layout.preferredWidth: 0
+      textFormat: Text.PlainText
+      wrapMode: Text.WordWrap
+      text: root.t("Через браузер — текущая сессия VK. Или войдите по логину и паролю: второй аккаунт в браузере не нужен.")
+      color: root.dim
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    Button {
+      Layout.fillWidth: true
+      text: root.accountBusy ? root.t("Вход…") : root.t("Войти через браузер")
+      foreground: root.textColor
+      enabled: !root.accountBusy
+      onClicked: root.addAccountFromBrowser()
+    }
+
+    Text {
+      Layout.fillWidth: true
+      Layout.preferredWidth: 0
+      visible: root.accountError !== ""
+      textFormat: Text.PlainText
+      wrapMode: Text.WordWrap
+      text: root.accountError
+      color: Color.urgent
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    PanelSeparator { Layout.fillWidth: true; foreground: root.textColor }
+
+    TextField {
+      id: accountLoginField
+      Layout.fillWidth: true
+      placeholderText: root.t("Телефон, email или id")
+      foreground: root.textColor
+      accent: Color.accent
+      enabled: !root.accountBusy && root.accountStep === ""
+      text: root.accountLogin
+      onTextChanged: if (text !== root.accountLogin) root.accountLogin = text
+      onActiveFocusChanged: root.accountFieldFocus = Math.max(0,
+        root.accountFieldFocus + (activeFocus ? 1 : -1))
+      Keys.onEscapePressed: function(event) { root.focusList(); event.accepted = true }
+      onAccepted: root.submitAccountLogin()
+    }
+
+    TextField {
+      id: accountPasswordField
+      Layout.fillWidth: true
+      placeholderText: root.t("Пароль")
+      password: true
+      foreground: root.textColor
+      accent: Color.accent
+      enabled: !root.accountBusy && root.accountStep === ""
+      text: root.accountPassword
+      onTextChanged: if (text !== root.accountPassword) root.accountPassword = text
+      onActiveFocusChanged: root.accountFieldFocus = Math.max(0,
+        root.accountFieldFocus + (activeFocus ? 1 : -1))
+      Keys.onEscapePressed: function(event) { root.focusList(); event.accepted = true }
+      onAccepted: root.submitAccountLogin()
+    }
+
+    RowLayout {
+      Layout.fillWidth: true
+      spacing: Style.space(6)
+
+      Button {
+        text: root.t("Войти")
+        foreground: root.textColor
+        enabled: !root.accountBusy && root.accountStep === ""
+          && root.accountLogin.trim() !== "" && root.accountPassword !== ""
+        onClicked: root.submitAccountLogin()
+      }
+
+      Text {
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
+        horizontalAlignment: Text.AlignRight
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        visible: root.accountBusy
+        text: root.t("Вход…")
+        color: root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+    }
+
+    ColumnLayout {
+      Layout.fillWidth: true
+      spacing: Style.space(4)
+      visible: root.accountStep === "code"
+
+      Text {
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        text: root.t("Код из SMS или приложения") + (root.accountPhoneMask !== ""
+          ? " · " + root.accountPhoneMask : "")
+        color: root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      TextField {
+        id: accountCodeField
+        Layout.fillWidth: true
+        placeholderText: root.t("Код подтверждения")
+        foreground: root.textColor
+        accent: Color.accent
+        enabled: !root.accountBusy
+        text: root.accountCode
+        onVisibleChanged: if (visible) forceActiveFocus()
+        onTextChanged: if (text !== root.accountCode) root.accountCode = text
+        onActiveFocusChanged: root.accountFieldFocus = Math.max(0,
+          root.accountFieldFocus + (activeFocus ? 1 : -1))
+        Keys.onEscapePressed: function(event) { root.focusList(); event.accepted = true }
+        onAccepted: root.submitAccountCode()
+      }
+
+      Button {
+        text: root.t("Подтвердить")
+        foreground: root.textColor
+        enabled: !root.accountBusy && root.accountCode.trim() !== ""
+        onClicked: root.submitAccountCode()
+      }
+    }
+
+    ColumnLayout {
+      Layout.fillWidth: true
+      spacing: Style.space(4)
+      visible: root.accountStep === "captcha"
+
+      Text {
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        text: root.t("VK просит капчу. Откройте ссылку, решите её и вставьте success_token.")
+        color: root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      Button {
+        text: root.t("Открыть в браузере")
+        foreground: root.textColor
+        enabled: root.accountRedirectUri !== ""
+        onClicked: if (root.accountRedirectUri !== "") Qt.openUrlExternally(root.accountRedirectUri)
+      }
+
+      TextField {
+        id: accountCaptchaField
+        Layout.fillWidth: true
+        placeholderText: "success_token"
+        foreground: root.textColor
+        accent: Color.accent
+        enabled: !root.accountBusy
+        text: root.accountSuccessToken
+        onVisibleChanged: if (visible) forceActiveFocus()
+        onTextChanged: if (text !== root.accountSuccessToken) root.accountSuccessToken = text
+        onActiveFocusChanged: root.accountFieldFocus = Math.max(0,
+          root.accountFieldFocus + (activeFocus ? 1 : -1))
+        Keys.onEscapePressed: function(event) { root.focusList(); event.accepted = true }
+        onAccepted: root.submitAccountCaptcha()
+      }
+
+      Button {
+        text: root.t("Подтвердить")
+        foreground: root.textColor
+        enabled: !root.accountBusy && root.accountSuccessToken.trim() !== ""
+        onClicked: root.submitAccountCaptcha()
+      }
+    }
+  }
+
+  component AccountsBlock: Column {
+    id: accountsBlock
+    width: parent ? parent.width : 0
+    spacing: Style.spacing.controlGap
+
+    Repeater {
+      model: root.accounts
+      delegate: AccountRow { account: modelData }
+    }
+
+    Text {
+      width: parent.width
+      visible: root.accounts.length === 0
+      textFormat: Text.PlainText
+      text: root.t("Аккаунтов пока нет")
+      color: root.dim
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    Text {
+      width: parent.width
+      visible: root.accountNotice !== ""
+      textFormat: Text.PlainText
+      wrapMode: Text.WordWrap
+      text: root.accountNotice
+      color: root.textColor
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    Row {
+      width: parent.width
+      spacing: Style.space(6)
+      visible: root.pendingAccountRemove !== ""
+
+      Text {
+        width: parent.width - removeAccountButton.width - cancelAccountButton.width
+          - parent.spacing * 2
+        anchors.verticalCenter: parent.verticalCenter
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        text: root.removeAccountHint()
+        color: root.textColor
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      Button {
+        id: removeAccountButton
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.t("Удалить")
+        foreground: root.textColor
+        onClicked: root.removeAccount(root.pendingAccountRemove)
+      }
+
+      Button {
+        id: cancelAccountButton
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.t("Отмена")
+        foreground: root.textColor
+        onClicked: root.pendingAccountRemove = ""
+      }
+    }
+
+    Button {
+      text: root.accountFormOpen ? root.t("Отмена") : root.t("Добавить аккаунт")
+      foreground: root.textColor
+      onClicked: root.toggleAccountForm()
+    }
+
+    // A ColumnLayout inside a plain Column needs its width said out loud.
+    AccountLoginForm {
+      width: parent.width
+      visible: root.accountFormOpen
     }
   }
 
@@ -3543,13 +4197,20 @@ Timer {
         }
       }
 
-      // Settings. Everything here is a backend preference: the widget only
+      // Settings. Every preference here lives in the backend: the widget only
       // sends the new value and re-reads the status, so the daemon stays the
-      // one place that knows how the plugin behaves.
+      // one place that knows how the plugin behaves. The account block above
+      // the preferences is not a preference — it reads and changes sessions.
       Column {
         width: parent.width
         spacing: Style.spacing.controlGap
         visible: root.view === "settings"
+
+        PanelSectionHeader { text: root.t("Аккаунты"); foreground: root.dim }
+
+        AccountsBlock { width: parent.width }
+
+        PanelSeparator { Layout.fillWidth: true; foreground: root.textColor }
 
         // Eight names never fit one row, and a row that scrolls is a row nobody scrolls.
         // One line with the current language, the rest behind a click.
@@ -3921,19 +4582,16 @@ Timer {
 
     Text {
       Layout.fillWidth: true
+      Layout.preferredWidth: 0
       wrapMode: Text.WordWrap
       textFormat: Text.PlainText
-      text: root.t("Нужен вход в VK. Плагин возьмёт cookie p и remixsid из профиля браузера и обменяет их на токен — пароль не спрашивается.")
+      text: root.t("Нужен вход в VK. Возьмите cookie из браузера или войдите по логину и паролю — подойдёт любой аккаунт.")
       color: root.textColor
       font.family: Style.font.family
       font.pixelSize: Style.font.bodySmall
     }
 
-    Button {
-      text: root.t("Войти через браузер")
-      foreground: root.textColor
-      onClicked: root.signIn()
-    }
+    AccountLoginForm { Layout.fillWidth: true }
   }
 
   // Album art in the two sizes the popup uses. The buffering indicator lives
@@ -4465,7 +5123,7 @@ Timer {
     // 690 rather than 460: with the smaller card the queue showed four tracks and
     // had to be scrolled for a fifth, and the settings page was barely usable.
     contentHeight: panel.fittedContentHeight(
-      root.signedIn ? Style.space(root.isExtended() ? 760 : 690) : Style.space(200))
+      root.signedIn ? Style.space(root.isExtended() ? 760 : 690) : Style.space(460))
 
     PanelKeyCatcher {
       id: keys
@@ -4485,6 +5143,7 @@ Timer {
       // A hidden field cannot own the keyboard, and one that thinks it does blocks
       // every key in the panel: `visible` is part of the question.
       blocked: (root.activeField().visible && root.activeField().activeFocus) || root.filterFocused
+        || root.accountFieldFocus > 0
       // Up and down move the selection instead of the playback: pressing a key
       // to look through a list should not start a track. `n` and `p` below still
       // switch tracks.
