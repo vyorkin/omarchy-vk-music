@@ -2450,18 +2450,24 @@ Timer {
   // panel shows them in the settings page and on the signed-out screen. One
   // block, used in both places, keeps the two from drifting apart.
 
-  component AccountRow: Row {
+  component AccountRow: RowLayout {
     id: accountRow
     property var account: null
     width: parent ? parent.width : 0
     spacing: Style.space(8)
 
+    // A Row positions its children, it does not align them: with the switch
+    // button taller than the two text lines, the anchored column and the two
+    // anchored buttons settled on different heights. A RowLayout aligns every
+    // child on one centre line, which is the thing the screenshot was missing.
     CoverTile {
       id: accountAvatar
+      Layout.preferredWidth: Style.space(28)
+      Layout.preferredHeight: Style.space(28)
+      Layout.alignment: Qt.AlignVCenter
       width: Style.space(28)
       height: width
       radius: width / 2
-      anchors.verticalCenter: parent.verticalCenter
       inset: 0
       mark: "󰀄"
       decodeSize: Style.space(28)
@@ -2469,14 +2475,15 @@ Timer {
       title: accountRow.account ? root.accountName(accountRow.account) : ""
     }
 
-    Column {
-      width: Math.max(0, parent.width - accountAvatar.width - accountSwitch.width
-        - accountRemove.width - accountRow.spacing * 3)
-      anchors.verticalCenter: parent.verticalCenter
+    ColumnLayout {
+      Layout.fillWidth: true
+      Layout.preferredWidth: 0
+      Layout.alignment: Qt.AlignVCenter
       spacing: Style.space(2)
 
       Text {
-        width: parent.width
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
         textFormat: Text.PlainText
         elide: Text.ElideRight
         text: root.accountName(accountRow.account)
@@ -2486,7 +2493,8 @@ Timer {
       }
 
       Text {
-        width: parent.width
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
         textFormat: Text.PlainText
         elide: Text.ElideRight
         text: accountRow.account && accountRow.account.active === true
@@ -2499,8 +2507,7 @@ Timer {
 
     Button {
       id: accountSwitch
-      anchors.verticalCenter: parent.verticalCenter
-      width: visible ? implicitWidth : 0
+      Layout.alignment: Qt.AlignVCenter
       visible: !(accountRow.account && accountRow.account.active === true)
       text: root.t("Переключить")
       foreground: root.textColor
@@ -2509,7 +2516,7 @@ Timer {
 
     Button {
       id: accountRemove
-      anchors.verticalCenter: parent.verticalCenter
+      Layout.alignment: Qt.AlignVCenter
       iconText: "󰆴"
       tooltipText: root.t("Удалить")
       foreground: root.textColor
