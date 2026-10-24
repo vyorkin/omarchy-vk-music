@@ -862,6 +862,10 @@ A delayed load also means the section's SLUG is still the old one for those 600 
   keys act on. The friends page and the search results were the two walls that were still
   drawn whole, and the recent people's offset was counted against the filtered friends
   while their cards were not — the highlight landed one card off with every filter.
+  Radio was the last list outside the rule, and the shape decisions (`galleryMode`,
+  `playlistsShown`) were still counting raw lengths while the rows were filtered: see
+  [ADR-0001](adr/0001-filter-applies-to-every-list.md). Every list now goes through
+  `filtered()`, and the filter and the shape it produces come from one call.
 * A click must have somewhere to show its result. The playlist screen was drawn
   only in the browse view, so a playlist clicked in the search results was fetched,
   remembered and never seen — the click looked dead. The screen now belongs to the
