@@ -80,6 +80,7 @@ Panel {
   property bool queueLoading: false
   property bool searchLoading: false
   property double sourcesLoadedAt: 0
+  property bool sourcesPending: false
   // Where the keyboard is in the list that is on screen: up and down move this,
   // Enter plays what it points at. It is an index into the visible list, so the
   // same number means the same row in every view, and -1 means nothing is picked
@@ -800,10 +801,17 @@ Panel {
   function loadSources() {
     // Opening the popup used to ask for these every time, and each answer queued
     // behind the others; they barely change, so once per ten minutes is plenty.
+    if (root.sourcesPending) return
     if (root.sources.length > 0 && Date.now() - root.sourcesLoadedAt < 600000) return
-    root.sourcesLoadedAt = Date.now()
+    root.sourcesPending = true
     call([root.cli, "sections"], function(answer) {
-      if (answer && answer.ok) root.sources = answer.data
+      root.sourcesPending = false
+      // An answer that did not arrive is not a cache: it is a reason to ask again, or the
+      // sections stay missing for ten minutes and the bar shows nothing but «Люди».
+      if (answer && answer.ok) {
+        root.sources = answer.data
+        root.sourcesLoadedAt = Date.now()
+      }
     })
     call([root.cli, "home"], function(answer) {
       if (answer && answer.ok) {
@@ -4011,7 +4019,7 @@ Panel {
         // The bar does not go away when a playlist is opened: it is where this list says
         // what it is, so it is also where the list says how to leave, and a bar that
         // disappears leaves the reader looking for the way out in a corner.
-        visible: root.view === "browse" || root.view === "search"
+        visible: root.view === "browse" || root.view === "search" || root.view === "queue"
 
         // The way out of a playlist or a person's page, at the bar's own left end.
         readonly property bool backShown: root.view === "browse"
@@ -4085,11 +4093,44 @@ Panel {
           }
         }
 
+        // What fills the queue, drawn as cells of this bar like everything else that is a
+        // choice: two stretched cells with their labels in the middle, flush with the card
+        // and with nothing above or below them. As buttons in the scrolled column they were
+        // rounded pills inset from the card, in a panel where nothing else is.
+        BarCell {
+          visible: root.view === "queue"
+          Layout.fillWidth: true
+          Layout.preferredWidth: 0
+          Layout.minimumWidth: 0
+          Layout.preferredHeight: root.barCellHeight
+          text: root.t("Моя музыка")
+          tooltipText: root.t("Играть всю мою музыку")
+          onClicked: root.playSection("all", root.t("Моя музыка"))
+        }
+
+        Repeater {
+          model: root.view === "queue"
+            ? root.sources.filter(function(s) { return s.url.indexOf("section=updates") !== -1 })
+            : []
+          delegate: BarCell {
+            Layout.fillWidth: true
+            Layout.preferredWidth: 0
+            Layout.minimumWidth: 0
+            Layout.preferredHeight: root.barCellHeight
+            text: modelData ? modelData.title : ""
+            onClicked: if (modelData) root.playSection(modelData.id, modelData.title)
+          }
+        }
+
         // The tools keep to the bar's far end when there are no chips to push them there:
         // a bar whose contents hug its left edge and stop reads as a bar with a hole in it.
         Item {
-          Layout.fillWidth: !sectionChips.visible
-          Layout.preferredWidth: sectionChips.visible ? 0 : 1
+          // Only when nothing else in the bar fills it: inside a playlist or on somebody's
+          // page, where the way back is the whole of the left side. In the queue and in the
+          // search view the cells themselves are what fills the width, and a spacer among
+          // them would squeeze them into a third each.
+          Layout.fillWidth: sectionBar.backShown
+          Layout.preferredWidth: 0
           Layout.preferredHeight: 1
         }
 
@@ -4187,25 +4228,6 @@ Panel {
         width: parent.width
         spacing: Style.space(4)
         visible: root.view === "queue"
-
-        Row {
-          spacing: Style.space(6)
-
-          Button {
-            text: root.t("Моя музыка")
-            foreground: root.textColor
-            onClicked: root.playSection("all", root.t("Моя музыка"))
-          }
-
-          Repeater {
-            model: root.sources.filter(function(s) { return s.url.indexOf("section=updates") !== -1 })
-            delegate: Button {
-              text: modelData ? modelData.title : ""
-              foreground: root.textColor
-              onClicked: if (modelData) root.playSection(modelData.id, modelData.title)
-            }
-          }
-        }
 
         Repeater {
           id: queueRepeater

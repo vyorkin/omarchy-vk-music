@@ -568,6 +568,18 @@ selection. `BarCell` is a Rectangle with `radius: 0`, no border, a `MouseArea` a
 `PanelToolTip`, so a view, a tool and a section chip are one component; the section
 chips row below the list's heading is the same cells without icons.
 
+The queue's own two actions — «Моя музыка» and «Обновления» — were the last buttons of the
+old language in the panel: rounded pills with a border, inset from the card, inside the
+scrolled column, in a panel where nothing else is either. They are cells of the bar now, two
+of them stretched across it with their labels in the middle, flush with the card and with
+nothing above or below, because what fills the queue is a choice between two things in
+exactly the way a section is.
+
+A sections request that failed used to be remembered as if it had succeeded, so a single
+error kept the bar empty of everything but «Люди» for ten minutes. A failed answer is a
+reason to ask again, not a cache: only a successful one stamps the time, and a request in
+flight is not repeated by the next open.
+
 The bar over the list does not go away when a playlist is opened, and it is not the sections
 that stay in it. Inside a playlist, or on somebody's page, the bar holds one cell at its left
 end — «Назад», with an arrow, because a word alone at the edge of a bar is a label and an
