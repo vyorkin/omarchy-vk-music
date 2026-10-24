@@ -267,11 +267,11 @@ number per search). Nothing is searched below two characters.
 When a search finds nothing the suggestions come back under **Ничего не найдено.
 Похожее:** — they are the useful thing left on screen.
 
-Tapping a result queues *those* results: the widget sends their VK keys
-(`play keys … --index N`) rather than the query, so the backend needs one
-`audio.getById` instead of a second search, and the queue is exactly the list the
-user was looking at rather than whatever the same query returns a few seconds
-later.
+Tapping a result queues *those* results: the widget sends the list it is showing
+(`play tracks` with the rows themselves, `--index N` for the row that was tapped)
+rather than the query, so the queue is exactly the list the user was looking at
+rather than whatever the same query returns a few seconds later, and no second
+answer is asked for at all.
 
 ## Starting a track, and where its time goes
 
@@ -989,13 +989,53 @@ playlist: the tracks are fetched (`cmd_playlist_tracks`, the same
 `audio.get(owner_id, album_id, access_key)` the player uses), shown as a numbered
 list with the playing track marked, and the header carries a «Назад» and an
 «Играть» — so playing the whole thing is still one click, and starting from the
-fourth track is a click on the fourth track. That click sends the visible keys to
-`play keys`, so the queue becomes exactly the list on screen, the way search
+fourth track is a click on the fourth track. That click sends the visible rows to
+`play tracks`, so the queue becomes exactly the list on screen, the way search
 results already worked.
 
 The view switch moved in the same round: gallery and list buttons now sit at the
 right end of the tab row rather than beside each list's header. One place, the same
 in both popup shapes, and it no longer competes with the header for room.
+
+## A place that is already playing, and the list a click is about
+
+Two rules, one sentence each, both of them learned by watching the panel do work
+nobody asked for.
+
+**Pressing the place you are already playing does nothing.** The section cells of
+the queue — «Моя музыка» and «Обновления» — are the controls a person presses while
+listening to exactly that section, so the click rebuilt the queue from the section's
+first track: the track that was sounding went back to 0:00, the fifteen waiting
+behind it were replaced by the ninety-nine that come after the first, and the list
+under the bar — a list of the queue — changed under the hand that had just decided
+not to change anything. The daemon already reports where the queue came from
+(`source`: kind, id, title), so the widget asks before it acts (`playingFrom`) and
+the same rule covers a station card (`radio`, whose id lives in its own field
+because a station has no queue), a playlist played from a search, and a section
+reached from the browse page. Playback has to still be going for the answer to be
+«nothing to do»: a queue that ended, or one that was stopped, is a queue to start
+again. A pause is not — the pause button is a centimetre away, and a cell that
+silently resumes is a cell doing two jobs.
+
+«Играть» in an opened playlist's header stays outside the rule on purpose: it says
+play the playlist from the top, and a command with a direction means it. What the
+rule protects is the place you are in, not a button that promises a restart.
+
+**A click on a track queues the list that track is in, as that list.** The click
+used to travel as VK keys and come back through `audio.getById`, which is a second
+answer rather than the one on screen. VK returns the requested order, but it
+drops what it no longer serves — one track of a hundred here — and every row after
+the dropped one then meant something else in the queue than it did in the list,
+while the queue silently lost a row. Beyond a hundred keys the tail was cut off
+outright, so a section page with «Ещё» pressed twice was not the queue at all. The
+widget holds the rows already, so it sends them (`play tracks`, the same payload
+`queue add` uses): the queue is the list in its own order, `index` is the row that
+was clicked, and the request costs no call. A track VK will not serve is no longer
+filtered out in advance — it fails at its own turn and the player says «Пропущен
+трек», which is what should happen: a list that quietly shrinks is worse than one
+row that is skipped out loud. The sending function is one (`playList`), and it also
+names the place, which is what makes the first rule hold for lists reached through
+the browse page, a playlist or a search.
 
 ## Two views for playlists
 
@@ -1307,8 +1347,8 @@ has no cursor and answers 30 items at a time; `next_from` never comes back, but
 `offset` does move).
 
 Playing from a browse page uses the same rule as a search result: the widget
-sends the keys of what is on screen (`play keys … --index N`), so the queue is
-exactly that list and the backend needs no second search.
+sends the rows of what is on screen (`play tracks … --index N`), so the queue is
+exactly that list and nothing has to be asked for twice.
 
 **Radio is not a queue of tracks.** `catalog.getAudio` on the radio section
 returns `radio_stations` beside the catalog rather than inside its blocks: each

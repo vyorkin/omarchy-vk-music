@@ -46,6 +46,17 @@ class TrackAlbumTest(unittest.TestCase):
     def test_the_state_the_panel_reads_carries_the_album(self):
         self.assertEqual(track(album={"id": 5, "title": "Irony"}).to_dict()["album"], "Irony")
 
+    def test_a_queue_sent_back_by_the_panel_keeps_it(self):
+        # The popup queues the rows it is showing by sending them back as they
+        # arrived (`play tracks`), so the state has to survive the trip both ways:
+        # a field read out of it but never written down again would leave the
+        # player's third line empty for a list that had one.
+        import backend  # noqa: PLC0415 - the module is large; only this test needs it
+
+        state = backend.track_to_state(track(album={"id": 5, "title": "Irony"}, access_key="abc"))
+        again = backend.track_to_state(backend.track_from_state(state))
+        self.assertEqual(again, state)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -232,6 +232,10 @@ def track_from_state(data: Mapping[str, Any]) -> Track:
         duration=int(data.get("duration", 0) or 0),
         thumb=str(data.get("thumb", "")),
         access_key=str(data.get("access_key", "")),
+        # The player's third line: the record is what the popup shows under the
+        # artist, and a queue built from the rows on screen used to lose it,
+        # because only `track_to_state` knew about it.
+        album=str(data.get("album", "") or ""),
         has_lyrics=bool(data.get("has_lyrics")),
         is_liked=bool(data.get("is_liked")),
     )

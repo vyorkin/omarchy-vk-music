@@ -1410,8 +1410,51 @@ Panel {
     root.refresh()
   }
 
+  // Where the queue in the player came from, asked before a command replaces it. The
+  // daemon reports the place with the queue (`source`), so a cell, a card or a station can
+  // answer «you are already there» instead of rebuilding what is playing. Playback has to
+  // still be going for that answer: a queue that ended or was stopped is a queue to start
+  // again, and a pause is a pause, not an invitation to begin a hundred tracks over.
+  function playingFrom(kind, id) {
+    if (String(id) === "") return false
+    if (String(kind) === "radio") {
+      return root.onAir() && String(root.radioValue("id", 0)) === String(id)
+    }
+    if (!(root.playing || root.paused || root.loading)) return false
+    var source = root.status.source || ({})
+    return String(source.kind || "") === String(kind) && String(source.id || "") === String(id)
+  }
+
   function playSection(id, title) {
+    // The section cells sit in the queue's own bar, so the hand that presses «Моя музыка»
+    // is often the hand of a person listening to exactly that list: the click built the
+    // queue again from its first track, threw away the fifteen waiting behind the one that
+    // was sounding and began the hundred-track list over. Pressing the place you are
+    // already playing is not a request to start it, and nothing is what it should do.
+    if (root.playingFrom("section", id)) return
     call([root.cli, "play", "section", id, "0", "--title", title], function() { root.watchForTrack() })
+  }
+
+  // A click on a track queues the list it belongs to, and the queue has to BE that list:
+  // the same rows, in the same order, with the clicked row where the click landed. The
+  // click used to travel as VK keys and come back through `audio.getById`, which is a
+  // second answer rather than the one on screen: a track VK no longer serves quietly left
+  // the queue (one of a hundred here), every row after it shifted by one — so the queue
+  // and the list disagreed about which row was which — and past a hundred keys the tail
+  // was cut off. The widget already holds the list, so it sends it whole: no call, no
+  // second answer, order and content untouched. `kind` and `id` name the place it came
+  // from, which is what `playingFrom` reads.
+  function playList(tracks, index, kind, id, title) {
+    if (!tracks || tracks.length === 0) return
+    if (!(index >= 0)) return
+    root.callRequest({
+      command: "play_tracks",
+      tracks: tracks,
+      index: index,
+      kind: String(kind || ""),
+      id: String(id || ""),
+      title: String(title || "")
+    }, function() { root.watchForTrack() })
   }
 
   // Russian counts a noun three ways; a section header that says "1 треков" is
@@ -1627,25 +1670,27 @@ Panel {
   }
 
   function playBrowseTrack(index) {
-    if (!(index >= 0)) return
-    // Same rule as a search result: the queue is exactly the list on screen.
-    var keys = []
-    for (var i = 0; i < root.browseTracks.length; i++) {
-      if (root.browseTracks[i] && root.browseTracks[i].key) keys.push(String(root.browseTracks[i].key))
-    }
-    if (keys.length === 0) return
-    var args = [root.cli, "play", "keys"].concat(keys)
-    args.push("--index", String(index))
-    args.push("--title", root.browseTitle !== "" ? root.browseTitle : root.t("Обзор"))
-    root.call(args, function() { root.watchForTrack() })
+    // The section page is the list; the queue becomes that page, in its own order.
+    root.playList(root.browseTracks, index, "section", root.browseSlug,
+      root.browseTitle !== "" ? root.browseTitle : root.t("Обзор"))
   }
 
   function playStation(station) {
     if (!station || !station.id) return
+    // A station is one stream: pressing the one that is on air would fetch it again,
+    // from the beginning, for nothing.
+    if (root.playingFrom("radio", station.id)) return
     root.call([root.cli, "play", "radio", String(station.id)], function() { root.watchForTrack() })
   }
 
+  function playlistPlace(playlist) {
+    if (!playlist) return ""
+    return String(playlist.owner_id) + "_" + String(playlist.playlist_id)
+  }
+
   function playPlaylist(playlist) {
+    if (!playlist) return
+    if (root.playingFrom("playlist", root.playlistPlace(playlist))) return
     call([
       root.cli, "play", "playlist", String(playlist.owner_id), String(playlist.playlist_id),
       String(playlist.access_key || ""), String(playlist.title || "")
@@ -1703,19 +1748,10 @@ Panel {
   }
 
   function playPlaylistTrack(index) {
-    if (!(index >= 0)) return
-    var keys = []
-    for (var i = 0; i < root.openPlaylistTracks.length; i++) {
-      var key = String(root.openPlaylistTracks[i].key || "")
-      if (key !== "") keys.push(key)
-    }
-    if (keys.length === 0) return
-    var args = [root.cli, "play", "keys"].concat(keys)
-    args.push("--index")
-    args.push(String(index))
-    args.push("--title")
-    args.push(root.openPlaylistTitle)
-    root.call(args, function() { root.watchForTrack() })
+    // «Играть» in the header is the same call with index 0: it says start from the top, so
+    // it stays a command rather than a no-op when the playlist is already playing.
+    root.playList(root.openPlaylistTracks, index, "playlist", root.playlistPlace(root.openPlaylist),
+      root.openPlaylistTitle)
   }
 
   function setPlaylistView(mode) {
@@ -1828,19 +1864,10 @@ Panel {
   }
 
   function playSearchResult(index) {
-    if (!(index >= 0)) return
-    // Hand the backend the keys of the results the user is looking at: one
-    // `audio.getById` instead of a repeated search, and the queue is exactly
-    // this list rather than whatever the same query returns the second time.
-    var keys = []
-    for (var i = 0; i < root.results.length; i++) {
-      if (root.results[i] && root.results[i].key) keys.push(String(root.results[i].key))
-    }
-    if (keys.length === 0) return
-    var args = [root.cli, "play", "keys"].concat(keys)
-    args.push("--index", String(index))
-    args.push("--title", root.t("Поиск: ") + root.query.trim())
-    root.call(args, function() { root.watchForTrack() })
+    // The queue is the results the user is looking at, rather than whatever the same
+    // query returns the second time.
+    root.playList(root.results, index, "search", root.query.trim(),
+      root.t("Поиск: ") + root.query.trim())
   }
 
   function playQueueAt(index) {
@@ -4200,7 +4227,10 @@ Panel {
             Layout.minimumWidth: 0
             Layout.preferredHeight: root.barCellHeight
             text: modelData ? modelData.title : ""
-            onClicked: if (modelData) root.playSection(modelData.id, modelData.title)
+            // The slug, not the catalog id: the place named when this section is played
+            // has to be the same name a click on its page in the browse view gives it,
+            // or pressing one place after arriving from the other starts it again.
+            onClicked: if (modelData) root.playSection(root.sourceSlug(modelData), modelData.title)
           }
         }
 
