@@ -568,6 +568,16 @@ selection. `BarCell` is a Rectangle with `radius: 0`, no border, a `MouseArea` a
 `PanelToolTip`, so a view, a tool and a section chip are one component; the section
 chips row below the list's heading is the same cells without icons.
 
+The bar over the list does not go away when a playlist is opened, and it is not the sections
+that stay in it. Inside a playlist, or on somebody's page, the bar holds one cell at its left
+end — «Назад», with an arrow, because a word alone at the edge of a bar is a label and an
+arrow makes it a way out — and the sections are hidden: a row of section names beside it had
+its tail cut off by the tools at the other end, which reads as a broken bar rather than as a
+way in. The tools keep to the far right either way, held there by a spacer when there are no
+chips to push them. A heading that floats where a bar used to be is what a reader has to hunt
+for the way out in; the bar is where the list says what it is, so it is where the list says
+how to leave it.
+
 The bar over the list is framed by the same rule that closes the player, and the cells sit
 flush between the two: one line above them, one under them, no gap either side. A rule that
 floats a few pixels above a band of cells reads as the bottom border of the block above it

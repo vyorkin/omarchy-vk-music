@@ -1501,6 +1501,11 @@ Panel {
     root.clearFilterQuiet()
     if (!slug || root.browseSlug === slug) return
     root.cursor = -1
+    // A section is a way in of its own: the person whose page we were on is behind us now,
+    // and a page nobody is looking at must not keep the sections off the bar.
+    root.person = null
+    root.personPlaylists = []
+    root.personLoading = false
     root.browseSlug = slug
     root.browseTracks = []
     root.browsePlaylists = []
@@ -3999,11 +4004,46 @@ Panel {
         // give in the search view, and at the right either way the two cells that choose how
         // a list of playlists is drawn. Both kinds of content are cells of this one bar, so
         // the bar is flush with the card and neither of them carries a margin of its own.
-        visible: (root.view === "browse" && root.openPlaylist === null) || root.view === "search"
+        //
+        // The bar does not go away when a playlist is opened: it is where this list says
+        // what it is, so it is also where the list says how to leave, and a bar that
+        // disappears leaves the reader looking for the way out in a corner.
+        visible: root.view === "browse" || root.view === "search"
+
+        // The way out of a playlist or a person's page, at the bar's own left end.
+        readonly property bool backShown: root.view === "browse"
+          && (root.openPlaylist !== null || root.browseSlug === "person")
+
+        BarCell {
+          visible: sectionBar.backShown
+          iconText: "󰁍"
+          text: root.t("Назад")
+          tooltipText: root.openPlaylist !== null
+            ? root.t("К плейлистам")
+            : root.t("К списку людей")
+          onClicked: {
+            if (root.openPlaylist !== null) {
+              root.closePlaylistView()
+              return
+            }
+            root.closePerson()
+            root.browseFriends()
+          }
+        }
+
+        BarDivider {
+          visible: sectionBar.backShown && (sectionChips.visible || root.playlistsShown)
+          Layout.preferredHeight: root.barCellHeight
+        }
 
         Flickable {
           id: sectionChips
-          visible: root.view === "browse"
+          // Inside a playlist or on somebody's page the sections are not what this bar is
+          // about: the way back is, and the chips beside it were cut off by the tools at
+          // the other end — a row of section names with its tail missing reads as a
+          // broken bar, not as a way in.
+          visible: root.view === "browse" && root.openPlaylist === null
+            && root.browseSlug !== "person"
           Layout.fillWidth: true
           Layout.preferredHeight: sectionChipRow.height
           contentWidth: sectionChipRow.width
@@ -4040,6 +4080,14 @@ Panel {
               }
             }
           }
+        }
+
+        // The tools keep to the bar's far end when there are no chips to push them there:
+        // a bar whose contents hug its left edge and stop reads as a bar with a hole in it.
+        Item {
+          Layout.fillWidth: !sectionChips.visible
+          Layout.preferredWidth: sectionChips.visible ? 0 : 1
+          Layout.preferredHeight: 1
         }
 
         // What a search can answer with: two equal halves of what the tools leave, because
@@ -4845,25 +4893,6 @@ Panel {
         Layout.fillWidth: true
         Layout.preferredHeight: root.topBarHeight
         spacing: 0
-
-        // The way back, when there is one: an open playlist or a person's page — and only in
-        // the view they were opened from, or the queue would offer a way back to somebody
-        // else's playlists.
-        BarCell {
-          visible: root.view === "browse" && !root.filtering
-            && (root.openPlaylist !== null || root.person !== null)
-          Layout.preferredHeight: root.topBarHeight
-          text: root.t("Назад")
-          tooltipText: root.openPlaylist !== null ? root.t("К плейлистам") : root.t("К списку людей")
-          onClicked: {
-            if (root.openPlaylist !== null) {
-              root.closePlaylistView()
-              return
-            }
-            root.closePerson()
-            root.browseFriends()
-          }
-        }
 
         // Vim's «/»: the field takes the status line while a filter is being typed, the list
         // above shrinks to what matches, and Enter hands the keyboard back to the list.
