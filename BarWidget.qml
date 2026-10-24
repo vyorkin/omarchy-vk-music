@@ -459,11 +459,15 @@ Panel {
     Process {
       id: commandProcess
       property var onDone
+      // A command nobody asked for — the status poll — must not put «…» on the status
+      // line: it runs once a second while a track plays, and the line blinked with it.
+      property bool quiet: false
       stderr: StdioCollector { id: commandError; waitForEnd: true }
       stdout: StdioCollector {
         id: commandOutput
         waitForEnd: true
-        onStreamFinished: root.finishCommand(text, commandError.text, commandProcess.onDone)
+        onStreamFinished: root.finishCommand(text, commandError.text, commandProcess.onDone,
+          commandProcess.quiet)
       }
       onExited: function(code) { destroy() }
     }
@@ -496,7 +500,7 @@ Panel {
 
   // One parser for both channels: a reply is a reply no matter which process
   // carried it, and an error must paint the same line either way.
-  function finishCommand(rawText, errorText, onDone) {
+  function finishCommand(rawText, errorText, onDone, quiet) {
     var raw = String(rawText || "").trim()
     var answer = null
     try {
@@ -504,7 +508,7 @@ Panel {
     } catch (parseError) {
       answer = null
     }
-    root.busy = ""
+    if (quiet !== true) root.busy = ""
     if (answer && answer.ok) {
       root.errorText = ""
     } else if (answer && answer.error) {
@@ -518,10 +522,14 @@ Panel {
     if (onDone) onDone(answer)
   }
 
-  function call(args, onDone) {
-    var process = commandComponent.createObject(root, { command: args, onDone: onDone })
+  function call(args, onDone, quiet) {
+    var process = commandComponent.createObject(root, {
+      command: args,
+      onDone: onDone,
+      quiet: quiet === true
+    })
     if (!process) return
-    root.busy = args.join(" ")
+    if (quiet !== true) root.busy = args.join(" ")
     process.running = true
   }
 
@@ -731,6 +739,7 @@ Panel {
   }
 
   function refresh() {
+    // Quiet: the poll is the widget breathing, not a command the reader gave it.
     call([root.cli, "status"], function(answer) {
       if (!answer || !answer.ok) return
       root.status = answer.data
@@ -774,7 +783,7 @@ Panel {
           error: root.errorText
         }))
       }
-    })
+    }, true)
   }
 
   function loadQueue() {
@@ -4820,103 +4829,121 @@ Panel {
     // things that can be done with it — under the list and behind a full-width rule.
     // It used to be a heading above the first row, which cost the list a line and made
     // the list's own state look like the first thing in the list.
-    PanelSeparator { Layout.fillWidth: true; foreground: root.textColor }
-
-    RowLayout {
-      id: statusBar
+    //
+    // The rule and the cells are one band with nothing between them, and the cells run to
+    // the card's own edge: the bar that closes the card is drawn like the one that opens
+    // it — a divider before each cell that is a tool, no margins anywhere.
+    ColumnLayout {
+      id: statusBand
       Layout.fillWidth: true
-      Layout.leftMargin: root.cardInset
-      Layout.rightMargin: root.cardInset
-      Layout.topMargin: Style.space(4)
-      Layout.bottomMargin: root.cardInset
-      Layout.preferredHeight: root.topBarHeight
-      spacing: Style.space(4)
+      spacing: 0
 
-      // The way back, when there is one: an open playlist or a person's page — and only in
-      // the view they were opened from, or the queue would offer a way back to somebody
-      // else's playlists.
-      BarCell {
-        visible: root.view === "browse" && !root.filtering
-          && (root.openPlaylist !== null || root.person !== null)
+      PanelSeparator { Layout.fillWidth: true; foreground: root.textColor }
+
+      RowLayout {
+        id: statusBar
+        Layout.fillWidth: true
         Layout.preferredHeight: root.topBarHeight
-        text: root.t("Назад")
-        tooltipText: root.openPlaylist !== null ? root.t("К плейлистам") : root.t("К списку людей")
-        onClicked: {
-          if (root.openPlaylist !== null) {
-            root.closePlaylistView()
-            return
+        spacing: 0
+
+        // The way back, when there is one: an open playlist or a person's page — and only in
+        // the view they were opened from, or the queue would offer a way back to somebody
+        // else's playlists.
+        BarCell {
+          visible: root.view === "browse" && !root.filtering
+            && (root.openPlaylist !== null || root.person !== null)
+          Layout.leftMargin: root.cardInset
+          Layout.preferredHeight: root.topBarHeight
+          text: root.t("Назад")
+          tooltipText: root.openPlaylist !== null ? root.t("К плейлистам") : root.t("К списку людей")
+          onClicked: {
+            if (root.openPlaylist !== null) {
+              root.closePlaylistView()
+              return
+            }
+            root.closePerson()
+            root.browseFriends()
           }
-          root.closePerson()
-          root.browseFriends()
         }
-      }
 
-      // Vim's «/»: the field takes the status line while a filter is being typed, the list
-      // above shrinks to what matches, and Enter hands the keyboard back to the list.
-      TextField {
-        id: filterField
-        Layout.fillWidth: true
-        Layout.alignment: Qt.AlignVCenter
-        visible: root.filtering
-        placeholderText: root.t("Фильтр по списку: название или исполнитель")
-        text: root.filter
-        // Vim-like: «/» puts you in the field, Enter leaves it, Esc clears it.
-        onVisibleChanged: if (visible) forceActiveFocus()
-        onActiveFocusChanged: root.filterFocused = activeFocus
-        onTextChanged: root.filter = text
-        onAccepted: {
-          root.filtering = false
-          root.focusList()
+        // Vim's «/»: the field takes the status line while a filter is being typed, the list
+        // above shrinks to what matches, and Enter hands the keyboard back to the list.
+        TextField {
+          id: filterField
+          Layout.fillWidth: true
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: root.cardInset
+          Layout.alignment: Qt.AlignVCenter
+          visible: root.filtering
+          placeholderText: root.t("Фильтр по списку: название или исполнитель")
+          text: root.filter
+          // Vim-like: «/» puts you in the field, Enter leaves it, Esc clears it.
+          onVisibleChanged: if (visible) forceActiveFocus()
+          onActiveFocusChanged: root.filterFocused = activeFocus
+          onTextChanged: root.filter = text
+          onAccepted: {
+            root.filtering = false
+            root.focusList()
+          }
+          Keys.onEscapePressed: function(event) {
+            root.clearFilter()
+            event.accepted = true
+          }
         }
-        Keys.onEscapePressed: function(event) {
-          root.clearFilter()
-          event.accepted = true
+
+        // What the list is: «Друзья · 3 человека», «Главная · 54 трека · 3ч 44мин»,
+        // «Моя музыка · загрузка…» — and a complaint from the daemon when there is one,
+        // which wins the line because it is the thing the reader cannot guess.
+        Text {
+          Layout.fillWidth: true
+          Layout.preferredWidth: 0
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: Style.space(8)
+          Layout.alignment: Qt.AlignVCenter
+          visible: !root.filtering
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          text: root.statusText !== "" ? root.statusText : root.listHeading()
+          color: root.statusUrgent ? Color.urgent : root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
         }
-      }
 
-      // What the list is: «Друзья · 3 человека», «Главная · 54 трека · 3ч 44мин»,
-      // «Моя музыка · загрузка…» — and a complaint from the daemon when there is one,
-      // which wins the line because it is the thing the reader cannot guess.
-      Text {
-        Layout.fillWidth: true
-        Layout.preferredWidth: 0
-        Layout.alignment: Qt.AlignVCenter
-        visible: !root.filtering
-        textFormat: Text.PlainText
-        elide: Text.ElideRight
-        text: root.statusText !== "" ? root.statusText : root.listHeading()
-        color: root.statusUrgent ? Color.urgent : root.dim
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
-      }
-
-      BarCell {
-        visible: !root.filtering && root.listAction() !== ""
-        Layout.preferredHeight: root.topBarHeight
-        text: root.listAction()
-        tooltipText: root.listAction() === root.t("Играть")
-          ? root.t("Играть весь плейлист")
-          : root.t("Очистить очередь")
-        enabled: root.listAction() === root.t("Играть")
-          ? root.openPlaylistTracks.length > 0
-          : root.queue.length > 0
-        opacity: enabled ? 1.0 : 0.4
-        onClicked: {
-          if (root.listAction() === root.t("Играть")) root.playPlaylistTrack(0)
-          else root.clearQueue()
+        BarDivider {
+          visible: !root.filtering && root.listAction() !== ""
+          Layout.preferredHeight: root.topBarHeight
         }
-      }
 
-      // The key sheet's button, drawn as one more cell: the bar under the list is as tall
-      // as the one above it, and a framed square among flat cells read as a form control
-      // that had strayed into a strip.
-      BarCell {
-        Layout.preferredWidth: root.topBarHeight
-        Layout.preferredHeight: root.topBarHeight
-        horizontalPadding: 0
-        iconText: "?"
-        tooltipText: root.t("Горячие клавиши")
-        onClicked: root.hintsOpen = !root.hintsOpen
+        BarCell {
+          visible: !root.filtering && root.listAction() !== ""
+          Layout.preferredHeight: root.topBarHeight
+          text: root.listAction()
+          tooltipText: root.listAction() === root.t("Играть")
+            ? root.t("Играть весь плейлист")
+            : root.t("Очистить очередь")
+          enabled: root.listAction() === root.t("Играть")
+            ? root.openPlaylistTracks.length > 0
+            : root.queue.length > 0
+          opacity: enabled ? 1.0 : 0.4
+          onClicked: {
+            if (root.listAction() === root.t("Играть")) root.playPlaylistTrack(0)
+            else root.clearQueue()
+          }
+        }
+
+        BarDivider { Layout.preferredHeight: root.topBarHeight }
+
+        // The key sheet's button, one more cell of the bar and the last one, so it carries
+        // the card's corner the way the cell at the bar's other end does.
+        BarCell {
+          Layout.preferredWidth: root.topBarHeight
+          Layout.preferredHeight: root.topBarHeight
+          horizontalPadding: 0
+          bottomRightRadius: root.cardCorner
+          iconText: "?"
+          tooltipText: root.t("Горячие клавиши")
+          onClicked: root.hintsOpen = !root.hintsOpen
+        }
       }
     }
 

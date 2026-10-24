@@ -807,7 +807,15 @@ A delayed load also means the section's SLUG is still the old one for those 600 
   nothing and it is the place a status belongs: the same line the panel already had for
   a skipped track, now shared with the heading, with the filter field while «/» is being
   typed, and with the two cells that act on the list («Назад», «Играть»/«Очистить») and
-  the question mark.
+  the question mark. Those cells are drawn as cells of a bar, not as buttons in a row:
+  the rule above them and the card's own edge below are the bar's edges, a divider marks
+  where the line stops being text, and the last cell carries the card's corner the way
+  the first cell of the top bar does. A bar that closes a card is the bar that opens it.
+* The status line was not the place for «…». Every command raised the marker, the poll
+  among them, so while a track played the line blinked once a second — measured at two
+  frames in seventy with the poll marked, none in seventy without it. The marker belongs
+  to the commands the reader gave; the poll is the widget breathing, and `call` takes a
+  `quiet` flag for it.
 * A caption in a plain `Row` is not aligned with buttons: a Row places every child
   at its top, and a `PanelSectionHeader` is a `Text` whose own height is smaller
   than a button's, so the caption floats above the row's centre line. The three
