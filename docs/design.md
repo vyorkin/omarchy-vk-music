@@ -1135,8 +1135,15 @@ viewport's first row goes rather than scrolled just far enough to be seen, which
 the row above the cursor cut in half. Rows and tracks keep the old behaviour: they are
 lines, not squares, and their height does not divide anything. A gallery with fewer
 items than columns stretches its cards to the width it has — three friends are three
-cards across the panel, not three cards and a hole — but one card alone stops at twice
-the width of a card in a full row, because a cover 640 pixels wide is a poster.
+cards across the panel, not three cards and a hole — but a wall of one is not a wall, and
+is not drawn as one. The friends page usually holds a single friend, and that friend as a
+card was a poster standing next to two thirds of empty row: a section of one is drawn as
+the row it would be with the gallery off. The page has two sections, friends and the
+people opened before, and each answers for itself (`friendsGallery`, `recentGallery`), so
+one friend under three recent people is a row and three cards. `galleryMode` is
+`friendsGallery || recentGallery`: a page of nothing but rows steps the cursor by one,
+and a page with any wall in it keeps the column arithmetic and the edge that stops «j»
+skipping over the rows below.
 
 The captions under a cover are measured from the fonts (`TextMetrics`), not from a
 delegate: a card's height decides how many rows the room holds, and reading it back from

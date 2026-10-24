@@ -1273,11 +1273,11 @@ Panel {
         var friends = root.filtered(root.friends).length
         if (index >= friends) {
           var rest = index - friends
-          return root.gridView
+          return root.recentGallery
             ? root.activeList().recentGrid.itemAt(rest)
             : root.activeList().recentPeopleRepeater.itemAt(rest)
         }
-        return root.gridView
+        return root.friendsGallery
           ? root.activeList().friendsGrid.itemAt(index)
           : root.activeList().friendRepeater.itemAt(index)
       }
@@ -2187,6 +2187,13 @@ Panel {
   // has to leave around its columns.
   readonly property real cardRim: Style.space(4)
   readonly property int galleryColumns: root.isExtended() ? 4 : 3
+  // A gallery is a wall, and one person is not a wall: the friends list usually holds a
+  // single friend, and a card in a row this wide is a poster standing next to nothing.
+  // A section of one is drawn as the row it would be with the gallery off, even when
+  // the other section on the page is a wall — the page has two sections, and each has
+  // its own answer.
+  readonly property bool friendsGallery: root.gridView && root.friends.length > 1
+  readonly property bool recentGallery: root.gridView && root.people.length > 1
   // A grid of cards, as opposed to a one-column list: only then do h and l mean
   // anything, and only then does j move a row rather than a line. It is the list ON
   // SCREEN that decides, never the playlist-view preference alone — a playlist's
@@ -2197,9 +2204,7 @@ Panel {
     if (root.view === "browse") {
       if (root.browseSlug === "radiostations") return false
       if (root.browseSlug === "person") return root.gridView && root.personPlaylists.length > 0
-      if (root.browseSlug === "friends") {
-        return root.gridView && (root.friends.length > 0 || root.people.length > 0)
-      }
+      if (root.browseSlug === "friends") return root.friendsGallery || root.recentGallery
       return root.gridView && root.browsePlaylists.length > 0
     }
     if (root.view === "search") {
@@ -4408,7 +4413,7 @@ Panel {
 
           PeopleGrid {
             id: friendsGrid
-            items: root.gridView ? root.friends : []
+            items: root.friendsGallery ? root.friends : []
             visible: items.length > 0
             onPicked: function(index) {
               if (root.friends[index]) root.openPerson(String(root.friends[index].id))
@@ -4417,7 +4422,7 @@ Panel {
 
           Repeater {
             id: friendRepeater
-            model: root.gridView ? [] : root.friends
+            model: root.friendsGallery ? [] : root.friends
             delegate: PersonRow {
               item: modelData
               selected: index === root.cursor
@@ -4434,7 +4439,7 @@ Panel {
           PeopleGrid {
             id: recentGrid
             baseOffset: root.filtered(root.friends).length
-            items: root.gridView ? root.people : []
+            items: root.recentGallery ? root.people : []
             visible: items.length > 0
             onPicked: function(index) {
               if (root.people[index]) root.openPerson(String(root.people[index].id))
@@ -4443,7 +4448,7 @@ Panel {
 
           Repeater {
             id: recentPeopleRepeater
-            model: root.gridView ? [] : root.people
+            model: root.recentGallery ? [] : root.people
             delegate: PersonRow {
               item: modelData
               selected: (root.filtered(root.friends).length + index) === root.cursor
