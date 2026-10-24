@@ -1328,6 +1328,46 @@ simply asks `index === root.cursor`. `Enter` plays what the selection points at;
 with nothing selected it plays or pauses, as before. `Space` is still play/pause,
 and `n`/`p` still switch tracks.
 
+### What is on screen, as one plan
+
+The list the cursor walks is not one list: a section is its playlists and then the
+tracks under them, the friends page is the friends and then the people opened
+before, and a search is results or the recent queries or the suggestions depending
+on how far the query has got. Seven functions used to give that answer separately
+— `cursorItems`, `galleryBands`, `browseCursorOffset`, `rowAt`, `galleryMode`,
+`playlistsShown`, `barRowEmpty` — and a page that was a gallery for one of them was
+a plain list for another. Every bug in the keys came from two of those disagreeing:
+«j» stepping onto the first card of «Недавние» because the bands and the cursor
+placed the end of «Друзья» differently, and a reveal scrolling to the far end of a
+section because `rowAt` returned a track row for a playlist index.
+
+`ListShape.plan()` answers the whole question once, from one snapshot of the panel's
+state (the view, the browse slug, an open playlist, the search mode and the gallery
+preference) plus the lists themselves. It returns:
+
+* `lists` — every list, filtered. The rows and the cursor read the same arrays here,
+  which is the property that makes them unable to disagree;
+* `segments` — the walls and columns in cursor order, each with the kind of thing it
+  holds, where it starts and how many stand across it. `GalleryWalk.step` walks
+  these; a segment of one column is the rows under a wall;
+* `items` — the segments joined, which is the cursor's list;
+* `gallery`, `showsPlaylists`, `friendsGallery`, `recentGallery` — the four shape
+  questions the controls ask;
+* `slotAt(index)` — which segment an index falls in and where, so a row's delegate
+  can be found without re-deriving the shape. The delegate lookup itself stays in
+  the widget: `repeaterForSlot` maps a segment's `scope` and `kind` to a repeater,
+  because a repeater's id is QML's business and not the module's.
+
+The module is `ListShape.js`, a `.pragma library` like `GalleryWalk.js`, so
+`tests/qml/tst_list_shape.qml` crosses the same interface the widget does: a table
+of pages, and the invariants every page keeps — `items` is the segments joined, no
+segment is empty, and every index falls in exactly one segment.
+
+The plan is read through a function (`listPlan()`) and never cached in a property.
+The file already learned that lesson twice: a `readonly property` whose binding digs
+into a field of a `var` keeps its first value, and a stale plan is a panel whose
+keys act on the page before last.
+
 Three details that were not obvious:
 
 * **Scrolling to the selection uses the delegate item, not arithmetic.**
