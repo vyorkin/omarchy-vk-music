@@ -3618,27 +3618,6 @@ Panel {
     }
   }
 
-  // Gallery or rows: two small buttons in the header, one remembered setting.
-  component PlaylistViewSwitch: Row {
-    spacing: Style.space(4)
-
-    Button {
-      iconText: "󰕳"
-      foreground: root.textColor
-      selected: root.gridView
-      tooltipText: root.t("Галерея обложек")
-      onClicked: root.setPlaylistView("grid")
-    }
-
-    Button {
-      iconText: "󰉹"
-      foreground: root.textColor
-      selected: !root.gridView
-      tooltipText: root.t("Список")
-      onClicked: root.setPlaylistView("list")
-    }
-  }
-
   // What a right-click on a track row offers. It floats over the panel, anchored
   // to the bottom of the key catcher, so nothing moves when it appears.
   component RowMenu: BorderSurface {
@@ -4688,13 +4667,14 @@ Panel {
     }
   }
 
-  component HeaderRow: RowLayout {
+  // The key hints and the status, under the list: the top of the card belongs to the
+  // views and the two switches, and a band of shortcuts above them stood between the
+  // pointer and the tabs.
+  component HintRow: RowLayout {
     id: hints
     Layout.fillWidth: true
     spacing: Style.spacing.controlGap
 
-    // The key hints live here now, where the title used to be: at the bottom of the
-    // card the row sat on the last track of every list.
     Text {
       id: header
       // The hint line must never widen the panel, and it must not be cut either —
@@ -5267,46 +5247,42 @@ Panel {
     }
   }
 
-  component TabsRow: RowLayout {
+  // The row at the very top: a bar of cells, one object, rather than a framed strip
+  // floating inside the card. Settings at the far left, the three views sharing what is
+  // left, and the card's own width at the far right. The cells are flush with each other
+  // — a gap between them is what makes a row of buttons out of a tab bar — and the only
+  // lines in it are the two dividers that end the tools at either side.
+  component TopRow: RowLayout {
+    id: topRow
     Layout.fillWidth: true
-    spacing: Style.space(6)
+    // No gap between the cells, and no padding around them: the fill of the cell in use
+    // has to reach the bar's own edges or it reads as a button lying on top of a strip.
+    spacing: 0
     visible: root.signedIn
 
-    Button {
-      text: root.t("Очередь")
-      foreground: root.textColor
-      selected: root.view === "queue"
-      onClicked: {
-        root.cursor = -1
-        root.view = "queue"
-        root.focusList()
-      }
+    // The bar's height, stated once: one line of text plus the control padding on each
+    // side. A cell that measured its own glyph would leave the fill of the one in use a
+    // pixel off its neighbours, and in a band of flush cells that shows.
+    readonly property real cellHeight: Math.round(cellProbe.implicitHeight)
+      + 2 * Style.spacing.controlPaddingY
+    // The two tools at the ends are as wide as the bar is tall: squares at either end of
+    // a row of cells, which is what keeps the views between them the same width.
+    readonly property real toolWidth: cellHeight
+
+    Text {
+      id: cellProbe
+      visible: false
+      text: "X"
+      font.family: Style.font.family
+      font.pixelSize: Style.font.body
     }
 
+    // Settings is not one of the views, so it stands outside them, at the bar's left
+    // end: a tab that is not a place in the card has no claim on a third of it.
     Button {
-      text: root.t("Обзор")
-      foreground: root.textColor
-      selected: root.view === "browse"
-      onClicked: {
-        root.cursor = -1
-        root.view = "browse"
-        root.scheduleBrowse(root.browseSlug !== "" ? root.browseSlug : "friends")
-        root.focusList()
-      }
-    }
-
-    Button {
-      text: root.t("Поиск")
-      foreground: root.textColor
-      selected: root.view === "search"
-      onClicked: {
-        root.cursor = -1
-        root.view = "search"
-        root.activeField().forceActiveFocus()
-      }
-    }
-
-    Button {
+      Layout.preferredWidth: topRow.toolWidth
+      Layout.preferredHeight: topRow.cellHeight
+      horizontalPadding: 0
       iconText: "󰒓"
       foreground: root.textColor
       selected: root.view === "settings"
@@ -5317,17 +5293,173 @@ Panel {
       }
     }
 
-    Item { Layout.fillWidth: true }
+    BarDivider { Layout.preferredHeight: topRow.cellHeight }
 
-    // Right of the tabs, which is where a view switch belongs: the same place in
-    // both popup shapes, and out of the way of the list's own heading. It is about
-    // how a list of PLAYLISTS is drawn, so it has nothing to say inside one: the
-    // tracks of a playlist are tracks, not a gallery or a list to choose between.
-    PlaylistViewSwitch {
-      // Only where something has two representations: «Моя музыка» is a hundred tracks
-      // and no playlists, so neither the switch nor its keys may claim otherwise.
-      visible: root.playlistsShown
+    // Three equal cells. Equal because each asks for no width of its own and takes a
+    // third of what is left — the bar's width does not depend on the longest label.
+    ViewTab {
+      Layout.preferredHeight: topRow.cellHeight
+      iconText: "󰲸"
+      text: root.t("Очередь")
+      selected: root.view === "queue"
+      onClicked: {
+        root.cursor = -1
+        root.view = "queue"
+        root.focusList()
+      }
     }
+
+    ViewTab {
+      Layout.preferredHeight: topRow.cellHeight
+      iconText: "󰊊"
+      text: root.t("Обзор")
+      selected: root.view === "browse"
+      onClicked: {
+        root.cursor = -1
+        root.view = "browse"
+        root.scheduleBrowse(root.browseSlug !== "" ? root.browseSlug : "friends")
+        root.focusList()
+      }
+    }
+
+    ViewTab {
+      Layout.preferredHeight: topRow.cellHeight
+      iconText: "󰍉"
+      text: root.t("Поиск")
+      selected: root.view === "search"
+      onClicked: {
+        root.cursor = -1
+        root.view = "search"
+        root.activeField().forceActiveFocus()
+      }
+    }
+
+    BarDivider { Layout.preferredHeight: topRow.cellHeight }
+
+    // How a list of PLAYLISTS is drawn: two more cells in the bar's right-hand group of
+    // tools, and only where something has two representations. «Моя музыка» is a hundred
+    // tracks and no playlists, so neither these two nor their keys may claim otherwise.
+    Button {
+      visible: root.playlistsShown
+      Layout.preferredWidth: topRow.toolWidth
+      Layout.preferredHeight: topRow.cellHeight
+      horizontalPadding: 0
+      iconText: "󰕳"
+      foreground: root.textColor
+      selected: root.gridView
+      tooltipText: root.t("Галерея обложек")
+      onClicked: root.setPlaylistView("grid")
+    }
+
+    Button {
+      visible: root.playlistsShown
+      Layout.preferredWidth: topRow.toolWidth
+      Layout.preferredHeight: topRow.cellHeight
+      horizontalPadding: 0
+      iconText: "󰉹"
+      foreground: root.textColor
+      selected: !root.gridView
+      tooltipText: root.t("Список")
+      onClicked: root.setPlaylistView("list")
+    }
+
+    // The card's own width, one click away. It writes the same preference the settings
+    // page writes, so the two cannot disagree, and the card takes the new shape as soon
+    // as the daemon's answer lands.
+    Button {
+      Layout.preferredWidth: topRow.toolWidth
+      Layout.preferredHeight: topRow.cellHeight
+      horizontalPadding: 0
+      iconText: root.isExtended() ? "󰊔" : "󰊓"
+      foreground: root.textColor
+      tooltipText: root.isExtended() ? root.t("Компактный") : root.t("Расширенный")
+      onClicked: root.setPreference("popupView", root.isExtended() ? "compact" : "extended")
+    }
+  }
+
+  // One cell of the bar. Not a Button: three equal cells share one width, and a Button
+  // holds on to the width of its own label — a longer translation would push the bar
+  // past the card. Here the label gives up width and elides, the cell has no radius, and
+  // the fill of the one in use reaches the bar's whole height, the way a tab does.
+  component ViewTab: Rectangle {
+    id: viewTab
+    property string text: ""
+    property string iconText: ""
+    property bool selected: false
+    signal clicked()
+
+    Layout.fillWidth: true
+    Layout.preferredWidth: 0
+    Layout.minimumWidth: 0
+    implicitHeight: tabContent.implicitHeight + 2 * Style.spacing.controlPaddingY
+    radius: 0
+    color: pointer.pressed ? Style.pressedFillFor(root.textColor, Color.accent)
+      : pointer.containsMouse ? Style.hoverFillFor(root.textColor, Color.accent)
+      : viewTab.selected ? Style.selectedFillFor(root.textColor, Color.accent)
+      : "transparent"
+
+    RowLayout {
+      id: tabContent
+      anchors.fill: parent
+      anchors.leftMargin: Style.spacing.controlPaddingX
+      anchors.rightMargin: Style.spacing.controlPaddingX
+      spacing: Style.spacing.controlGap
+
+      Text {
+        id: tabIcon
+        Layout.alignment: Qt.AlignVCenter
+        visible: viewTab.iconText !== ""
+        textFormat: Text.PlainText
+        text: viewTab.iconText
+        color: viewTab.selected ? Style.selectedStateColor(root.textColor, Color.accent) : root.textColor
+        font.family: Style.font.family
+        font.pixelSize: Style.font.icon
+      }
+
+      // The label takes what is left and elides, and a label that grows with the
+      // translation needs both halves of that: `fillWidth` to take the room and a zero
+      // preferred and minimum width so its own text is not the width the layout refuses
+      // to go below.
+      Text {
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
+        Layout.minimumWidth: 0
+        Layout.alignment: Qt.AlignVCenter
+        horizontalAlignment: Text.AlignHCenter
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        text: viewTab.text
+        color: viewTab.selected ? Style.selectedStateColor(root.textColor, Color.accent) : root.textColor
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+        font.bold: viewTab.selected
+      }
+
+      // The icon's width, mirrored on the other side: the label is centred in the room
+      // the icon leaves, so without this the pair sits half an icon right of the cell's
+      // middle. A spacer rather than anchors, because the label's width is the layout's
+      // business — measuring it by hand is the loop that once clipped «Поиск».
+      Item {
+        visible: tabIcon.visible
+        Layout.preferredWidth: tabIcon.visible ? tabIcon.implicitWidth : 0
+        Layout.preferredHeight: 1
+      }
+    }
+
+    MouseArea {
+      id: pointer
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: viewTab.clicked()
+    }
+  }
+
+  // A divider between a tool at the bar's end and the views in the middle. Only there:
+  // between two views the fill of the one in use is the divider.
+  component BarDivider: Rectangle {
+    Layout.preferredWidth: 1
+    color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.14)
   }
 
   component SearchFieldRow: RowLayout {
@@ -5532,15 +5664,15 @@ Panel {
         visible: !root.isExtended()
         spacing: Style.spacing.controlGap
 
-        HeaderRow { Layout.fillWidth: true }
+        TopRow { Layout.fillWidth: true }
         PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
         SignInBlock { Layout.fillWidth: true }
         PlayerColumn { Layout.fillWidth: true }
         PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
-        TabsRow { Layout.fillWidth: true }
         SearchFieldRow { id: compactFieldRow; Layout.fillWidth: true }
         TrackList { id: compactList; Layout.topMargin: Style.space(14) }
         LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
+        HintRow { Layout.fillWidth: true }
       }
 
       // Extended: the player on the left, the list on the right. Two columns need
@@ -5551,7 +5683,7 @@ Panel {
         visible: root.isExtended()
         spacing: Style.spacing.controlGap
 
-        HeaderRow { Layout.fillWidth: true }
+        TopRow { Layout.fillWidth: true }
         PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
         SignInBlock { Layout.fillWidth: true }
         // The player is a band, not a column: everything the list needs is
@@ -5559,10 +5691,10 @@ Panel {
         PlayerBar { Layout.fillWidth: true; visible: root.signedIn }
         PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
 
-        TabsRow { Layout.fillWidth: true }
         SearchFieldRow { id: extendedFieldRow; Layout.fillWidth: true }
         TrackList { id: extendedList; Layout.topMargin: Style.space(14) }
         LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
+        HintRow { Layout.fillWidth: true }
       }
 
       // Last inside the key catcher, so it floats over whichever body is showing.

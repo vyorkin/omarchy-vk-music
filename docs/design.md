@@ -473,11 +473,32 @@ The popup comes in two shapes, chosen in the settings:
   90 pixels, and the gallery went from three covers across to four.
 
 They are not two popups: they are two arrangements of the same blocks, each block
-a component of its own (`HeaderRow`, `SignInBlock`, `PlayerColumn`, `TabsRow`,
-`SearchFieldRow`, `LoadingLine`, `TrackList`). A layout cannot move a block into
+a component of its own (`TopRow`, `SignInBlock`, `PlayerColumn`, `SearchFieldRow`,
+`LoadingLine`, `TrackList`, `HintRow`). A layout cannot move a block into
 another column; a component can be instantiated in either one. Only the visible
 shape takes keys, so `activeList()`, `activeField()` and `activeBody()` pick the
 one in use.
+
+The top of both shapes is a bar of cells, one object, not a row of buttons: settings
+in a square cell at the left end, the three views sharing what is left in three equal
+cells, then the two cells that choose how a list of playlists is drawn, and the card's
+own width in a square cell at the right end. What makes it one object rather than six
+buttons is that the cells are flush — no gap, no padding, no frame around them — and
+that the cell in use is filled for the bar's whole height, square corners and all. The
+only lines in it are the two dividers that close the tools at either end; between two
+views the fill of the one in use is the divider. The bar's height is stated once
+(`cellHeight`, one line of text plus the control padding) instead of measured per cell,
+and the two tools are as wide as that height is tall: a cell that measured its own glyph
+left the fill of the active one a pixel off its neighbours, which in a band of flush
+cells is exactly what the eye picks up.
+
+The views are not `Button`s. A `Button` keeps the width of its own label, and three
+equal cells cannot: a longer translation (German «Warteschlange») would push the bar
+past the card instead of eliding. `ViewTab` is a Rectangle with a RowLayout inside —
+label with `fillWidth`, zero preferred and zero minimum width, `elide: ElideRight` —
+and a spacer the width of the icon at the other end, so the pair is centred in its
+cell without the label measuring itself against the space it is being given, which is
+a binding loop and clipped «Поиск» the first time round.
 
 Three things learned in the move:
 
@@ -616,9 +637,12 @@ Three things learned in the move:
   height, so an idle panel has nothing below the last row. The same one line serves
   every view — the queue, a playlist, a section, a person's playlists, the search —
   so the fix holds wherever a list is.
-* A hint at the bottom of the card is a hint on top of the last row of every list.
-  The key hints took the place of the title at the top instead, where the panel has
-  space that the content never needs, and the list got its last line back.
+* A hint at the bottom of the card is a hint on top of the last row of every list,
+  and the key hints moved to the top for exactly that reason. They moved back: the top
+  of the card is now the bar of views and switches, which is a place the pointer uses,
+  and a band of shortcuts above it stood between the pointer and the tabs. The row is
+  one caption and a half — the hints are translated in two lines — and the list below
+  pays for it, which is the trade the bar is worth.
 * One column of rows is one cursor. A section shows its playlists and then its
   tracks as two Repeaters in one column, and the cursor used to cover only the tracks
   — so k from the first track stopped there instead of reaching the playlist above
@@ -946,7 +970,7 @@ The hints are the only place the popup says which keys it answers to, and they u
 be cut: «/ филь…» teaches nothing. Two things were wrong. The status text beside the
 hint reserved half the row even when it had nothing to say, and the hint elided what it
 could not fit. The status is now capped at a fixed width and elides itself, and the
-hint wraps: nothing is lost, the band at the top is one caption taller. Left to break
+hint wraps: nothing is lost, the band under the list is one caption taller. Left to break
 where it likes the line split «Esc» from «закрыть», so the translation is broken on a
 «·» separator instead — the phrases stay whole, and the order of the keys is the
 translation's own.
