@@ -136,6 +136,10 @@ Panel {
   onViewChanged: {
     root.cursor = -1
     if (root.view === "settings") root.loadAccounts()
+    // A section page that was left empty by an account change while the panel was on
+    // another tab is asked for on arrival: the page on screen is the one the watchdog
+    // covers, and this is the moment it comes on screen.
+    if (root.view === "browse") root.reloadEmptySection()
   }
   onBrowseSlugChanged: root.cursor = -1
   // A new query means a new list, so the selection goes. A search *answer* for
@@ -1945,6 +1949,29 @@ Panel {
     root.searchState = "typing"
     root.cursor = -1
     root._queueIndex = -2
+    // The bar's sections are the one list the panel cannot leave to a retry: their ids
+    // belong to the account that answered, so they go with the rest of the old session,
+    // and the watchdog under `sectionsWatch` would leave the bar with nothing but «Люди»
+    // for five seconds — «the menu vanished» is what that looks like. A page whose three
+    // re-asks were spent stayed «пусто» for the rest of the session, because that counter
+    // survived the switch. Both are reset and asked for here, in the same turn as the
+    // switch.
+    root.emptySectionTries = 0
+    var stale = root.browseSlug
+    root.loadSources()
+    // A person's page and an opened playlist were the old account's, and neither can be
+    // asked for again on behalf of the new one: both step back to the people list.
+    if (stale === "person" || stale === "playlist") {
+      stale = "friends"
+      root.browseSlug = "friends"
+    }
+    // The friend list is the one page the browse tab does not ask for on arrival, so it
+    // is asked for here rather than left saying «Друзья · 0 человек» until a chip is
+    // pressed. A section is re-fetched only while it is the page on screen: asking from
+    // the settings tab would move the keyboard out of the form the user is standing in,
+    // and off screen the page is asked for when the tab is opened.
+    if (stale === "friends") root.loadFriends()
+    else if (root.view === "browse" && stale !== "") root.browseSource(stale, true)
     // The answer already carries the new session's status; using it here keeps
     // the panel from flashing the signed-out form (or the old account's track)
     // while the follow-up status call is on its way.

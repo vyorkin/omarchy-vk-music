@@ -138,6 +138,20 @@ publishes it to MPRIS. The stream URL is deliberately not reused: it was
 resolved for the old session. Removing the active account hands the session to
 the next stored one; removing the last one leaves the panel signed out.
 
+The panel owns its own copy of everything the account answered, and a switch has
+to empty it: a section page, the queue, the people, the sections themselves. The
+sections are the delicate one, because the bar draws them as its chips and their
+ids belong to the account that answered. Clearing them and waiting for the retry
+under `sectionsWatch` left the bar with nothing in it but «Люди» for up to five
+seconds, which reads as the menu having vanished, and a page that had already
+spent its three re-asks stayed «пусто» for the rest of the session because that
+counter survived the switch. `reloadAfterAccountChange` resets the counter and
+asks for the sections, the friend list and — when the browse tab is the one on
+screen — the section page itself, in the same turn as the switch. A person's
+page or an opened playlist cannot be asked for on behalf of another account and
+steps back to «Люди»; a section page that was off screen is asked for when the
+tab is opened, which is where the empty-page re-ask now also happens.
+
 User names and portraits come from one `users.get` call right after sign-in and
 are stored beside the token, so the account list is readable without asking VK
 on every open.
