@@ -868,24 +868,47 @@ size (`sourceSize`), so the 600-pixel cover is not decoded for a 160-pixel card.
 
 ### The size of a card, and the row that is never cut
 
-The columns give a card its width and the list's own height has the last word: a grid
-whose rows do not divide the viewport always leaves one row half under the edge, and
-with `j`/`k` the cursor lands on exactly that row. So the cells are narrowed until a
-whole number of rows fills the list (`GalleryFit.js`, tested in
-`tests/qml/tst_gallery_fit.qml`): one row more than fits at the natural width is the
-row count that fills the viewport, and the cards give up a few pixels of height so
-that the last row is whole. A grid that is shorter than the viewport is left alone —
-there is no edge to be cut by, and smaller covers would be a loss for nothing.
+The columns give a card its width and the card gives the list its height: 160 pixels of
+cover is 160 pixels of cover, and the two rows of caption under it are fixed. The two
+are the same question asked at right angles, and it took three answers to get right.
 
-The reveal follows from that: in a gallery the cursor's row is put at the *top* of the
-list rather than scrolled to the nearest edge. Scrolling just far enough was the other
-half of the problem — it kept the row above the cursor cut in half, which is what the
-gallery showed every time `j` was pressed. Rows and tracks keep the old behaviour: they
-are lines, not squares, and their height does not divide anything.
+The first narrowed the cells until a whole number of rows filled the list, which left a
+strip of empty background at the right edge of every gallery — a grid that looked like
+it had lost a column. The second kept the width and cut the *list* down to whole rows,
+which filled the viewport with a card ending on a row boundary but left the air under
+that last row, and pushed the sticky heading down by the same amount.
+
+What the card does now is grow: `GalleryFit.wholeRoom` says how many whole rows a room
+holds and what height they take, and if one more row is worth asking for, the card asks
+for exactly that many pixels (`BarWidget.qml`, `alignGallery`). The gallery then ends on
+a row boundary at both ends — the cards fill the width, the rows fill the height, no
+card is cut by the edge the keyboard cursor walks into, and no strip is left over to be
+filled with nothing.
+
+Three details make that work. The room the list gets comes from the card's height, so
+the card cannot be *bound* to the rows it holds; the list asks for the height
+imperatively, once per layout change. The request is counted without what the card has
+already grown by, or every answer would find the next row worth asking for and the card
+would climb to the height of the screen one row at a time. And only the body on screen
+aligns: the popup holds two bodies with the same ids, and the hidden one would reset the
+height every frame.
+
+What sits in the scroll above the grid counts too, which is why the section chips are no
+longer in it. At a hundred pixels they stood between the top of the list and the first
+card, so a gallery could align with the top edge of the scroll or with the bottom one,
+never both. Out of the scroll they are always reachable, and the grid starts at the top.
+
+The reveal follows the same boundary: in a gallery the cursor's row is put where the
+viewport's first row goes rather than scrolled just far enough to be seen, which kept
+the row above the cursor cut in half. Rows and tracks keep the old behaviour: they are
+lines, not squares, and their height does not divide anything. A gallery with fewer
+items than columns stretches its cards to the width it has — three friends are three
+cards across the panel, not three cards and a hole — but one card alone stops at twice
+the width of a card in a full row, because a cover 640 pixels wide is a poster.
 
 The captions under a cover are measured from the fonts (`TextMetrics`), not from a
-delegate: a card's width would otherwise feed back into the height that decides that
-width, and the layout would settle wherever the binding loop was broken.
+delegate: a card's height decides how many rows the room holds, and reading it back from
+a laid-out card would make the two depend on each other.
 
 ### The line of key hints
 

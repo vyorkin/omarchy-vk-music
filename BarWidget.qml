@@ -509,7 +509,7 @@ Panel {
   }
 
   // Advances the interpolated position while music plays.
-Timer {
+  Timer {
     id: liveSeek
     interval: 150
     repeat: false
@@ -537,7 +537,16 @@ Timer {
   // write (about 0.4 ms), so this throttle is only here to keep the mpv commands
   // and the MPRIS updates from flooding: 50 ms is under the threshold where a
   // change feels detached from the hand.
-Timer {
+  Timer {
+    id: wheelWrite
+    interval: 400
+    repeat: false
+    // A wheel notch is a whole action, unlike a drag: the volume is written down
+    // once the wheel stops, so a restart does not lose it.
+    onTriggered: if (root.volumeTarget >= 0) root.setVolume(root.volumeTarget, false)
+  }
+
+  Timer {
     id: liveVolume
     interval: 50
     repeat: false
@@ -553,7 +562,14 @@ Timer {
   // search itself after a longer one. Both are restarted by the next keystroke,
   // so a typed query costs a handful of calls and never a burst — and the search
   // also runs immediately on Enter or on a tap of a suggestion.
-Timer {
+  Timer {
+    id: suggestTimer
+    interval: 250
+    repeat: false
+    onTriggered: root.loadSuggestions()
+  }
+
+  Timer {
     id: searchTimer
     interval: 700
     repeat: false
@@ -1212,12 +1228,13 @@ Timer {
     // and the row stayed half under the bottom edge.
     var maxScroll = Math.max(0, list.contentHeight - list.viewHeight)
     if (root.galleryMode) {
-      // A gallery puts the cursor's row at the top of the list, not at the nearest
-      // edge of it: the cells are sized to fill the viewport with whole rows, so a row
-      // that starts where the viewport starts is the only alignment that leaves every
-      // other visible row whole — scrolling just far enough instead cut the row above
-      // the cursor in half, which is what the gallery kept showing.
-      list.contentY = Math.max(0, Math.min(maxScroll, top))
+      // A gallery puts the cursor's row on the row boundary the viewport ends with,
+      // not at the nearest edge of it: the viewport is a whole number of rows tall,
+      // and the content above the grid is what those rows start after. Scrolling just
+      // far enough instead cut the row above the cursor in half, which is what the
+      // gallery kept showing.
+      var rowsAbove = root.activeList() ? root.activeList().galleryRowOffset : 0
+      list.contentY = Math.max(0, Math.min(maxScroll, top - rowsAbove))
       return
     }
     var margin = Style.space(6)
@@ -1997,6 +2014,17 @@ Timer {
   // too small to recognise.
   readonly property string playlistView: String(root.setting("playlistView", root.prefs.playlistView || "list"))
   readonly property bool gridView: root.playlistView === "grid"
+  // The height the card grows by so that a gallery ends where a row ends. The list asks
+  // for it (`TrackList.alignGallery`) instead of the card computing it: the room the list
+  // gets comes from this height, and a binding from one to the other is a loop. Zero
+  // unless a gallery needs the extra row.
+  property real galleryRoom: 0
+  function setGalleryRoom(delta) {
+    var value = delta > 1 ? delta : 0
+    // A pixel of rounding is not worth a re-layout.
+    if (Math.abs(root.galleryRoom - value) < 1) return
+    root.galleryRoom = value
+  }
   // How far the selected fill reaches past a card, and therefore how much room a grid
   // has to leave around its columns.
   readonly property real cardRim: Style.space(4)
@@ -3158,22 +3186,19 @@ Timer {
     }
     readonly property real captionBlock:
       personTitleLine.height + personCountLine.height + 2 * Style.space(3)
-    readonly property int cardRows:
-      items.length === 0 ? 0 : Math.ceil(items.length / Math.max(1, columns))
-    // The size that leaves whole rows on screen, not a row half under the edge — see
-    // `GalleryFit.js`, where the arithmetic is tested.
-    readonly property real cellWidth: GalleryFit.cellWidth(
-      peopleGrid.width - peopleGrid.leftPadding - peopleGrid.rightPadding
-        - peopleGrid.spacing * (peopleGrid.columns - 1),
-      peopleGrid.columns, peopleGrid.spacing, peopleGrid.captionBlock,
-      root.activeList() ? root.activeList().viewHeight - Style.space(2) : 0,
-      peopleGrid.cardRows)
+    // How many cards across and how wide each of them is: both come from
+    // `GalleryFit.plan`, where the arithmetic is tested. The cards fill the width the
+    // column count gives them — including the three friends that are the whole list.
+    readonly property real usable: peopleGrid.width - leftPadding - rightPadding
+    readonly property var plan: GalleryFit.plan(usable, root.galleryColumns,
+      spacing, captionBlock, items.length)
+    readonly property real cellWidth: plan.cellWidth
     signal picked(int index)
 
     function itemAt(index) { return cardRepeater.itemAt(index) }
 
     width: parent ? parent.width : 0
-    columns: root.galleryColumns
+    columns: plan.columns
     spacing: Style.space(6)
     // The selected fill reaches a few pixels past its card, so the grid keeps a rim of
     // its own — otherwise the first column's fill is cut by the edge of the list.
@@ -3539,21 +3564,20 @@ Timer {
     }
     readonly property real captionBlock:
       cellTitleLine.height + cellCountLine.height + 2 * Style.space(3)
-    readonly property int cellRows:
-      items.length === 0 ? 0 : Math.ceil(items.length / Math.max(1, columns))
-    // The size that leaves whole rows on screen — see `GalleryFit.js`.
-    readonly property real cellWidth: GalleryFit.cellWidth(
-      grid.width - grid.leftPadding - grid.rightPadding
-        - grid.spacing * (grid.columns - 1),
-      grid.columns, grid.spacing, grid.captionBlock,
-      root.activeList() ? root.activeList().viewHeight - Style.space(2) : 0,
-      grid.cellRows)
+    // How many cards across and how wide each of them is: both come from
+    // `GalleryFit.plan`, where the arithmetic is tested. A gallery with fewer playlists
+    // than columns stretches its cards to the width it has instead of leaving a hole at
+    // the right edge.
+    readonly property real usable: grid.width - leftPadding - rightPadding
+    readonly property var plan: GalleryFit.plan(usable, root.galleryColumns,
+      spacing, captionBlock, items.length)
+    readonly property real cellWidth: plan.cellWidth
     signal picked(int index)
 
     function itemAt(index) { return cellRepeater.itemAt(index) }
 
     width: parent ? parent.width : 0
-    columns: root.galleryColumns
+    columns: plan.columns
     spacing: Style.space(6)
     // The selected fill reaches a few pixels past its card, so the grid keeps a rim of
     // its own — otherwise the first column's fill is cut by the edge of the list.
@@ -3690,6 +3714,7 @@ Timer {
     // card in a grid, a track row in a block — so their own y is not a scroll
     // position and the reveal has to map into this before comparing.
     property Item contentRoot: scroller.contentItem
+    property Item scrollerItem: scroller
     // The scrolling viewport is the inner Flickable, which is shorter than this
     // component by the sticky row above it. Scrolling maths that used the component's
     // own height was off by exactly that much and left the last row half hidden.
@@ -3700,10 +3725,113 @@ Timer {
     visible: root.signedIn
     spacing: Style.space(4)
 
+    // A gallery fills the list across, and it fills it down as well: the cards take the
+    // width the columns give them and the gap between rows grows until a whole number
+    // of rows fits the room. Nothing is cut by the bottom edge, and no strip of
+    // background is left over to be filled with nothing.
+    property bool isTrackList: true
+    // What sits in the scroll above the grid: the air under the heading. The grid's own
+    // `y` is its parent's, not a scroll position, so it is mapped into the content item
+    // — the same mapping the cursor reveal does. The sections used to stand here, and
+    // at a hundred pixels they were the reason a gallery could not align with either
+    // edge of the scroll.
+    readonly property real galleryRowOffset: {
+      var gallery = activeGallery()
+      if (!gallery) return 0
+      var top = gallery.mapToItem(listColumn, 0, 0).y
+      return top > 0 ? top : 0
+    }
+    // The height the scroller would take if it simply filled the column: what is left
+    // of the column after the sticky heading, its separator and the section chips.
+    readonly property real roomHeight: {
+      var used = 0
+      var chrome = 0
+      for (var i = 0; i < children.length; i++) {
+        var child = children[i]
+        if (!child.visible || child === scroller) continue
+        // The measured height, not the implicit one: a Flickable has no implicit height
+        // at all, and the section chips are exactly that — a row of buttons that scroll
+        // sideways. Counting it as zero made the room a row too big.
+        used += Math.max(child.implicitHeight, child.height)
+        chrome++
+      }
+      // One gap between each of those and its neighbour, the scroller included.
+      return Math.max(0, view.height - used - chrome * spacing)
+    }
+    // The gallery's size, as a value that changes when there is something new to align.
+    readonly property string gallerySignature: {
+      var gallery = activeGallery()
+      if (!gallery) return ""
+      return [gallery.plan.columns, gallery.plan.cellRows,
+        Math.round(gallery.plan.cellWidth), Math.round(gallery.captionBlock)].join(":")
+    }
+    // The card is a fixed height, and a gallery wants it to end where a row ends. The
+    // height is nudged by the leftover, once, from here — a binding from the card's
+    // height to the room it gives the list would be a loop, and QML would break it at
+    // the wrong moment.
+    //
+    // Upwards, never down: a card one row taller shows one row more, while a card cut
+    // down to the rows of a short gallery would change height for every section the user
+    // looks at. What does not fit is left under the last row, where it reads as air.
+    function alignGallery() {
+      // The room the card grows by belongs to the popup, and the popup has one list on
+      // screen: the other body's copy of this list would reset it to zero every frame.
+      if (view !== root.activeList()) return
+      var gallery = activeGallery()
+      if (!gallery || !gallery.plan.cellWidth) {
+        root.setGalleryRoom(0)
+        return
+      }
+      var block = gallery.plan.cellWidth + gallery.captionBlock
+      var gap = gallery.spacing
+      // Counted without what the card already grew by: asked from the current room, every
+      // answer would find the next row worth asking for, and the card would climb to the
+      // height of the screen one row at a time.
+      var space = roomHeight - galleryRowOffset - root.galleryRoom
+      var rows = gallery.plan.cellRows
+      var now = GalleryFit.wholeRoom(space, block, gap, rows)
+      if (now.rows < 1 || now.rows >= rows) {
+        root.setGalleryRoom(0)
+        return
+      }
+      // One row more is worth asking for: the next row needs a card and a gap, and what
+      // it does not use is the height the card is missing today.
+      var next = GalleryFit.wholeRoom(space + block + gap, block, gap, rows)
+      root.setGalleryRoom(next.rows > now.rows ? next.height - space : 0)
+    }
+    onGallerySignatureChanged: Qt.callLater(alignGallery)
+    onRoomHeightChanged: Qt.callLater(alignGallery)
+    onGalleryRowOffsetChanged: Qt.callLater(alignGallery)
+    Component.onCompleted: Qt.callLater(alignGallery)
+    // A grid is on screen only when every block it sits in is: the popup holds two
+    // bodies, and the one that is not showing keeps its own copy of the same ids. Only
+    // an ancestor that is drawn has a row to leave whole.
+    function effectiveVisible(item) {
+      var node = item
+      while (node && node !== root) {
+        if (!node.visible) return false
+        node = node.parent
+      }
+      return true
+    }
+    // The gallery that is on screen, if the list is showing one: the cursor walks one
+    // list at a time, and only a grid that is drawn has a row to leave whole.
+    function activeGallery() {
+      var grids = [browseGrid, searchGrid, friendsGrid, recentGrid]
+      for (var i = 0; i < grids.length; i++) {
+        var gallery = grids[i]
+        // Visibility, not size: the gallery's own width comes from the room this list
+        // gives it, and asking for that width here would make the two bindings a loop.
+        if (gallery && effectiveVisible(gallery)) return gallery
+      }
+      return null
+    }
+
     // The heading of whatever the list is showing, out of the scroll: a heading
     // that slides away with the rows stops being one. One row for every view, with
     // the way back on the left and the view's own action on the right.
     RowLayout {
+      id: headingRow
       Layout.fillWidth: true
       spacing: Style.space(6)
       visible: root.listHeading() !== "" || root.filtering
@@ -3779,6 +3907,49 @@ Timer {
       visible: root.listHeading() !== "" || root.filtering
     }
 
+    // The sections are a way around the catalog, not part of what the list holds. Kept
+    // in the scroll they scrolled away, and their hundred pixels stood between the top
+    // of the list and the first card — which is what made a gallery align with neither
+    // edge of the scroll once the cursor moved. Out here they are always reachable, and
+    // the grid starts at the same place whatever the section shows.
+    Flickable {
+      id: sectionChips
+      Layout.fillWidth: true
+      Layout.preferredHeight: sectionChipRow.height
+      visible: root.view === "browse" && root.openPlaylist === null
+      contentWidth: sectionChipRow.width
+      clip: true
+      boundsBehavior: Flickable.StopAtBounds
+
+      Row {
+        id: sectionChipRow
+        spacing: Style.space(6)
+
+        // First, and deliberately: choosing a person is a way in, not a
+        // section, and it must not hide behind a scrolling row.
+        Button {
+          text: root.t("Люди")
+          foreground: root.textColor
+          selected: root.effectiveBrowse() === "friends" || root.effectiveBrowse() === "person"
+          tooltipText: root.t("Друзья и любой человек по ссылке — их плейлисты")
+          onClicked: root.browseFriends()
+        }
+
+        Repeater {
+          model: root.sources
+          delegate: Button {
+            text: modelData ? (root.sectionName(root.sourceSlug(modelData)) || String(modelData.title || "")) : ""
+            foreground: root.textColor
+            selected: modelData ? root.sourceSlug(modelData) === root.effectiveBrowse() : false
+            onClicked: if (modelData) {
+              root.browseSource(root.sourceSlug(modelData))
+              root.focusList()
+            }
+          }
+        }
+      }
+    }
+
     Flickable {
       id: scroller
       Layout.fillWidth: true
@@ -3852,50 +4023,8 @@ Timer {
         spacing: Style.space(4)
         visible: root.view === "browse" && root.openPlaylist === null
 
-        // The sections do not fit side by side, and wrapping them would
-        // cost a row of height: the row scrolls instead.
-        Flickable {
-          width: parent.width
-          height: sourceRow.height
-          contentWidth: sourceRow.width
-          clip: true
-          boundsBehavior: Flickable.StopAtBounds
-
-          Row {
-            id: sourceRow
-            spacing: Style.space(6)
-
-            // First, and deliberately: choosing a person is a way in, not a
-            // section, and it must not hide behind a scrolling row.
-            Button {
-              text: root.t("Люди")
-              foreground: root.textColor
-              selected: root.effectiveBrowse() === "friends" || root.effectiveBrowse() === "person"
-              tooltipText: root.t("Друзья и любой человек по ссылке — их плейлисты")
-              onClicked: root.browseFriends()
-            }
-
-            Repeater {
-              model: root.sources
-              delegate: Button {
-                text: modelData ? (root.sectionName(root.sourceSlug(modelData)) || String(modelData.title || "")) : ""
-                foreground: root.textColor
-                selected: modelData ? root.sourceSlug(modelData) === root.effectiveBrowse() : false
-                onClicked: if (modelData) {
-                  root.browseSource(root.sourceSlug(modelData))
-                  root.focusList()
-                }
-              }
-            }
-
-          }
-        }
-
-        // Air between the section chips and the first card: the selected fill reaches a
-        // few pixels up and a selected chip's fill reaches down, so the column's four
-        // pixels of spacing made the two read as one shape.
-        Item { width: 1; height: Style.space(14) }
-
+        // The sections are out of the scroll (see above): the list starts with what the
+        // section holds, so the gallery's first row is the list's first row.
         PlaylistGrid {
           id: browseGrid
           items: root.filtered(root.browsePlaylists)
@@ -5015,7 +5144,7 @@ Timer {
       onClicked: {
         root.cursor = -1
         root.view = "search"
-        searchField.forceActiveFocus()
+        root.activeField().forceActiveFocus()
       }
     }
 
@@ -5129,8 +5258,14 @@ Timer {
     // two lines of text and one button would otherwise be mostly empty space.
     // 690 rather than 460: with the smaller card the queue showed four tracks and
     // had to be scrolled for a fifth, and the settings page was barely usable.
+    //
+    // `galleryRoom` is the one part that is not fixed: a gallery asks for the height
+    // that holds one more whole row of cards, and gives it back when it goes away. It is
+    // set from the list (`alignGallery`), not bound to it — the room the list gets comes
+    // from this height, and a binding between the two is a loop.
     contentHeight: panel.fittedContentHeight(
-      root.signedIn ? Style.space(root.isExtended() ? 760 : 690) : Style.space(460))
+      (root.signedIn ? Style.space(root.isExtended() ? 760 : 690) : Style.space(460))
+        + root.galleryRoom)
 
     PanelKeyCatcher {
       id: keys
