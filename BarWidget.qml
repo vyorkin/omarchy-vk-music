@@ -166,17 +166,29 @@ Panel {
     if (root.activeField().activeFocus) return root.t("Enter искать · Tab к списку · Esc выйти из поля")
     return root.t("Space пауза · jk выбор · Enter играть · / фильтр · m вид · [ ] вкладки · ⇧H ⇧L раздел · Esc закрыть")
   }
-  // The hint is one translated string with «·» between its keys, and it is longer than
-  // the card: the line has to break somewhere. Left to itself the layout breaks it
-  // between «Esc» and «закрыть», which reads as two hints rather than one; breaking on
-  // a dot keeps the phrases whole, and the count of keys per line is the translation's
-  // own order, not a Russian assumption.
-  readonly property string keyHintsText: {
+  // Whether the key sheet is up. The line of tiny print that used to sit under the list is
+  // gone: two captions of four-point type that nobody read, and the keys it could not fit
+  // were the ones a beginner needs most. A question mark in the corner opens the sheet.
+  property bool hintsOpen: false
+
+  // The sheet's rows, out of the hint line itself: it is translated as one string with «·»
+  // between the keys, and the sheet is a list of the same phrases, one per row. A phrase
+  // whose first words are keys — latin, short, and never the last word — is drawn as a key
+  // cap with its description beside it; anything else stands as one line, which is what a
+  // pair like «[ ] вкладки» needs.
+  readonly property var keyHelpRows: {
     var parts = String(root.keyHints).split("·")
-    if (parts.length < 4) return String(root.keyHints)
-    var half = Math.ceil(parts.length / 2)
-    return parts.slice(0, half).join("·").trim() + "\n"
-      + parts.slice(half).join("·").trim()
+    var rows = []
+    for (var i = 0; i < parts.length; i++) {
+      var tokens = String(parts[i]).trim().split(/\s+/)
+      var keys = []
+      while (tokens.length > 1 && keys.length < 2
+             && tokens[0].length <= 10 && !/[\u0400-\u04FF]/.test(tokens[0])) {
+        keys.push(tokens.shift())
+      }
+      rows.push({ keys: keys.join(" "), what: tokens.join(" ") })
+    }
+    return rows
   }
 
   // The heading is worth its line only when there is something under it: while
@@ -250,7 +262,7 @@ Panel {
   // the list — because a cell that measured its own glyph leaves the fill of the one in
   // use a pixel off its neighbours, and in a band of flush cells that shows. `barProbe`
   // is the invisible Text at the bottom of this file that measures it.
-  readonly property real barCellHeight: Math.round(barProbe.implicitHeight)
+  readonly property real barCellHeight: Math.ceil(barProbe.implicitHeight)
     + 2 * Style.spacing.controlPaddingY
 
   // Which popup shape is in use: the compact one or the extended two-column one.
@@ -1029,10 +1041,16 @@ Panel {
     if (root.openPlaylist !== null) return false
     if (root.view === "browse") {
       if (root.browseSlug === "radiostations") return false
+      // «Моя музыка» is the one section that is a hundred tracks and never a playlist, so
+      // the switch has nothing to say there and says it without waiting for an answer.
+      if (root.browseSlug === "all") return false
       // People are drawn as cards or as rows as well, so the switch means the same
       // thing on the friends page and on a person's page as it does for playlists.
       if (root.browseSlug === "friends" || root.browseSlug === "person") return true
-      return root.filtered(root.browsePlaylists).length > 0
+      // A section that is still loading has no playlists to count yet: asked on the rows
+      // alone, the two cells vanished for as long as the request took and came back after
+      // it, which read as a control that flickers every time a tab is pressed.
+      return root.browseLoading || root.filtered(root.browsePlaylists).length > 0
     }
     if (root.view === "search") return root.searchMode === "playlists"
     return false
@@ -2401,6 +2419,8 @@ Panel {
     root.accountPassword = ""
     root.accountFieldFocus = 0
     root.playerControlsOpen = false
+    // Neither does a sheet left open over a card that is closed again.
+    root.hintsOpen = false
   }
 
   // After the panel is mapped, not at the moment it opens: the sizes only exist
@@ -3068,8 +3088,8 @@ Panel {
     // as one thing rather than as a picture with a label under it.
     BorderSurface {
       anchors.fill: parent
-      anchors.margins: -Style.space(4)
-      radius: Style.space(6)
+      anchors.margins: -root.cardRim
+      radius: 0
       color: Style.selectedFillFor(Color.foreground, Color.accent)
       borderSpec: Border.none()
       visible: card.selected
@@ -3152,8 +3172,8 @@ Panel {
     // The same selected fill as a playlist card, for the same reason.
     BorderSurface {
       anchors.fill: parent
-      anchors.margins: -Style.space(4)
-      radius: Style.space(6)
+      anchors.margins: -root.cardRim
+      radius: 0
       color: Style.selectedFillFor(Color.foreground, Color.accent)
       borderSpec: Border.none()
       visible: personCard.selected
@@ -3234,10 +3254,12 @@ Panel {
     // How many cards across and how wide each of them is: both come from
     // `GalleryFit.plan`, where the arithmetic is tested. The cards fill the width the
     // column count gives them — including the three friends that are the whole list.
-    readonly property real usable: peopleGrid.width - leftPadding - rightPadding
+    readonly property real usable: peopleGrid.width - 2 * peopleGrid.rim
     readonly property var plan: GalleryFit.plan(usable, root.galleryColumns,
       spacing, captionBlock, items.length)
     readonly property real cellWidth: plan.cellWidth
+    readonly property real tableWidth: plan.columns * plan.cellWidth
+      + Math.max(0, plan.columns - 1) * spacing
     signal picked(int index)
 
     function itemAt(index) { return cardRepeater.itemAt(index) }
@@ -3251,8 +3273,8 @@ Panel {
     // own inset is on top of it now that the list runs edge to edge: the gallery is not a
     // row, and a wall of covers flush with the card reads as a crop, not as a gallery.
     readonly property real rim: root.cardRim
-    leftPadding: rim
-    rightPadding: rim
+    leftPadding: Math.max(rim, Math.round((width - tableWidth) / 2))
+    rightPadding: leftPadding
 
     Repeater {
       id: cardRepeater
@@ -3671,10 +3693,18 @@ Panel {
     // `GalleryFit.plan`, where the arithmetic is tested. A gallery with fewer playlists
     // than columns stretches its cards to the width it has instead of leaving a hole at
     // the right edge.
-    readonly property real usable: grid.width - leftPadding - rightPadding
+    // Measured against the rim, not against the padding the table ends up with: the
+    // padding is derived from the plan below, and a plan derived from the padding that
+    // depends on it is a binding loop.
+    readonly property real usable: grid.width - 2 * grid.rim
     readonly property var plan: GalleryFit.plan(usable, root.galleryColumns,
       spacing, captionBlock, items.length)
     readonly property real cellWidth: plan.cellWidth
+    // What the columns actually take, and then the same air on both sides of them. Left to
+    // the grid, the leftover of the column arithmetic all landed on the right, so a
+    // gallery had a wider margin on one side than on the other.
+    readonly property real tableWidth: plan.columns * plan.cellWidth
+      + Math.max(0, plan.columns - 1) * spacing
     signal picked(int index)
 
     function itemAt(index) { return cellRepeater.itemAt(index) }
@@ -3688,8 +3718,8 @@ Panel {
     // own inset is on top of it now that the list runs edge to edge: the gallery is not a
     // row, and a wall of covers flush with the card reads as a crop, not as a gallery.
     readonly property real rim: root.cardRim
-    leftPadding: rim
-    rightPadding: rim
+    leftPadding: Math.max(rim, Math.round((width - tableWidth) / 2))
+    rightPadding: leftPadding
 
     Repeater {
       id: cellRepeater
@@ -3988,10 +4018,11 @@ Panel {
       }
     }
 
+    // A separator runs the width of the card, like the bar's own rule: a line that stops
+    // short of the edges reads as a line inside a block rather than as the edge between
+    // two of them.
     PanelSeparator {
       Layout.fillWidth: true
-      Layout.leftMargin: root.cardInset
-      Layout.rightMargin: root.cardInset
       foreground: root.textColor
       visible: root.listHeading() !== "" || root.filtering
     }
@@ -4682,7 +4713,12 @@ Panel {
           }
         }
 
-        PanelSeparator { width: parent.width; foreground: root.textColor }
+        // Out of the column's inset and across the card: see the heading separator.
+        PanelSeparator {
+          x: -root.cardInset
+          width: parent.width + 2 * root.cardInset
+          foreground: root.textColor
+        }
 
         PanelSectionHeader { text: root.t("Попап"); foreground: root.dim }
 
@@ -4696,7 +4732,12 @@ Panel {
           ]
         }
 
-        PanelSeparator { width: parent.width; foreground: root.textColor }
+        // Out of the column's inset and across the card: see the heading separator.
+        PanelSeparator {
+          x: -root.cardInset
+          width: parent.width + 2 * root.cardInset
+          foreground: root.textColor
+        }
 
         PanelSectionHeader { text: root.t("Воспроизведение"); foreground: root.dim }
 
@@ -4722,7 +4763,12 @@ Panel {
           ChipToggle { text: root.t("Громкость"); key: "restoreVolume"; on: root.prefs.restoreVolume !== false }
         }
 
-        PanelSeparator { width: parent.width; foreground: root.textColor }
+        // Out of the column's inset and across the card: see the heading separator.
+        PanelSeparator {
+          x: -root.cardInset
+          width: parent.width + 2 * root.cardInset
+          foreground: root.textColor
+        }
 
         PanelSectionHeader { text: root.t("Уведомления"); foreground: root.dim }
 
@@ -4736,7 +4782,12 @@ Panel {
           ]
         }
 
-        PanelSeparator { width: parent.width; foreground: root.textColor }
+        // Out of the column's inset and across the card: see the heading separator.
+        PanelSeparator {
+          x: -root.cardInset
+          width: parent.width + 2 * root.cardInset
+          foreground: root.textColor
+        }
 
         PanelSectionHeader { text: root.t("Кеш"); foreground: root.dim }
 
@@ -4812,48 +4863,187 @@ Panel {
     }
   }
 
-  // The key hints and the status, under the list: the top of the card belongs to the
-  // views and the two switches, and a band of shortcuts above them stood between the
-  // pointer and the tabs.
-  component HintRow: RowLayout {
-    id: hints
+  // The bottom of the card: the status on the left, the question mark that opens the key
+  // sheet on the right. The line of tiny print that used to sit here is gone — see
+  // `keyHelpRows` — and what is left is one row the height of the sheet's own cells.
+  component FooterRow: RowLayout {
+    id: footer
     Layout.fillWidth: true
-    spacing: Style.spacing.controlGap
+    Layout.leftMargin: root.cardInset
+    Layout.rightMargin: root.cardInset
+    Layout.topMargin: Style.space(4)
+    Layout.bottomMargin: root.cardInset
+    spacing: Style.space(8)
 
     Text {
-      id: header
-      // The hint line must never widen the panel, and it must not be cut either —
-      // «/ филь…» teaches nothing. It takes the room the status is not using, and wraps
-      // onto a second line when that is not enough: nothing is lost, the band is one
-      // caption taller.
-      textFormat: Text.PlainText
-      wrapMode: Text.WordWrap
+      // The status is one line and it elides: a skipped track carries ffmpeg's whole
+      // complaint. `preferredWidth: 0` keeps it from asking the row for room, which is
+      // what a wrapping label in a RowLayout otherwise does.
       Layout.fillWidth: true
       Layout.preferredWidth: 0
       verticalAlignment: Text.AlignVCenter
       Layout.alignment: Qt.AlignVCenter
-      text: root.keyHintsText
-      color: root.dim
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-    }
-
-    Text {
-      // The status is one line and it elides: a skipped track carries ffmpeg's whole
-      // complaint. It is capped at a fixed width — taking a share of the row would make
-      // the row's own width depend on its children, and Qt answers that with a
-      // recursive layout.
-      Layout.fillWidth: false
-      Layout.preferredWidth: Math.min(implicitWidth, Style.space(160))
-      horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
       elide: Text.ElideRight
-      verticalAlignment: Text.AlignVCenter
-      Layout.alignment: Qt.AlignVCenter
       text: root.statusText
       color: root.statusUrgent ? Color.urgent : root.dim
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
+    }
+
+    HintButton {
+      tooltipText: root.t("Горячие клавиши")
+      onClicked: root.hintsOpen = !root.hintsOpen
+    }
+  }
+
+  // The question mark in the card's bottom-right corner. A square with a border of its own:
+  // a bare «?» in the corner reads as a letter that fell off the list, not as a control.
+  component HintButton: BorderSurface {
+    id: hintButton
+    property string tooltipText: ""
+    signal clicked()
+
+    width: root.barCellHeight
+    height: root.barCellHeight
+    radius: 0
+    color: pointer.containsMouse ? Style.hoverFillFor(root.textColor, Color.accent) : "transparent"
+    borderSpec: Border.controlSpec(pointer.containsMouse ? "hover-cursor" : "normal",
+      root.textColor, Color.accent)
+
+    Text {
+      anchors.centerIn: parent
+      textFormat: Text.PlainText
+      text: "?"
+      color: root.textColor
+      font.family: Style.font.family
+      font.pixelSize: Style.font.body
+      font.bold: true
+    }
+
+    MouseArea {
+      id: pointer
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: hintButton.clicked()
+    }
+
+    PanelToolTip {
+      visible: hintButton.tooltipText !== "" && pointer.containsMouse
+      text: hintButton.tooltipText
+    }
+  }
+
+  // The key sheet the question mark opens: a sheet over the card rather than a line under
+  // the list, because the line could be read at a glance and taught nothing, and because
+  // the keys it could not fit are the ones a beginner needs most.
+  component HintsPanel: Item {
+    id: hintsPanel
+    anchors.fill: parent
+    visible: root.hintsOpen
+
+    // The sheet is a dialog: the list behind it does not take clicks while it is up, which
+    // is also what makes «click anywhere to close» work.
+    Rectangle {
+      anchors.fill: parent
+      color: Color.popups.background
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      onClicked: root.hintsOpen = false
+    }
+
+    RowLayout {
+      id: hintsHeader
+      anchors.top: parent.top
+      anchors.left: parent.left
+      anchors.right: parent.right
+      height: root.barCellHeight
+      spacing: 0
+
+      Text {
+        Layout.leftMargin: root.cardInset
+        Layout.alignment: Qt.AlignVCenter
+        textFormat: Text.PlainText
+        text: root.t("Горячие клавиши")
+        color: root.textColor
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+        font.bold: true
+      }
+
+      Item { Layout.fillWidth: true }
+
+      BarCell {
+        Layout.preferredWidth: root.barCellHeight
+        Layout.preferredHeight: root.barCellHeight
+        horizontalPadding: 0
+        iconText: "󰅖"
+        tooltipText: root.t("Закрыть")
+        onClicked: root.hintsOpen = false
+      }
+    }
+
+    BarEdge {
+      id: hintsRule
+      anchors.top: hintsHeader.bottom
+      anchors.left: parent.left
+      anchors.right: parent.right
+      visible: root.signedIn
+    }
+
+    Flickable {
+      anchors.top: hintsRule.bottom
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      clip: true
+      contentWidth: width
+      contentHeight: hintsColumn.implicitHeight + 2 * root.cardInset
+      boundsBehavior: Flickable.StopAtBounds
+
+      Column {
+        id: hintsColumn
+        x: root.cardInset
+        y: root.cardInset
+        width: hintsPanel.width - 2 * root.cardInset
+        spacing: Style.space(10)
+
+        Repeater {
+          model: root.keyHelpRows
+          delegate: RowLayout {
+            required property var modelData
+            width: parent.width
+            spacing: Style.space(12)
+
+            // The key column is a fixed width, so the descriptions line up under each
+            // other instead of following the length of each key.
+            Text {
+              Layout.preferredWidth: Style.space(90)
+              Layout.alignment: Qt.AlignTop
+              textFormat: Text.PlainText
+              text: modelData.keys
+              color: root.textColor
+              font.family: Style.font.family
+              font.pixelSize: Style.font.bodySmall
+              font.bold: true
+            }
+
+            Text {
+              Layout.fillWidth: true
+              Layout.preferredWidth: 0
+              textFormat: Text.PlainText
+              wrapMode: Text.WordWrap
+              text: modelData.what
+              color: root.dim
+              font.family: Style.font.family
+              font.pixelSize: Style.font.bodySmall
+            }
+          }
+        }
+      }
     }
   }
 
@@ -5518,8 +5708,10 @@ Panel {
 
     implicitWidth: 2 * horizontalPadding + barCell.iconSlot + barCell.labelSlot
       + (barCell.text !== "" ? 0 : (barCell.iconText !== "" ? barIcon.implicitWidth : 0))
-    implicitHeight: Math.max(barIcon.implicitHeight, barLabel.implicitHeight)
-      + 2 * Style.spacing.controlPaddingY
+    // The bar's height, not its own content's: a cell that measured its own line came out
+    // a pixel or two taller than the tool next to it, and in a row of flush cells that is
+    // the first thing the eye finds.
+    implicitHeight: root.barCellHeight
     radius: 0
     color: pointer.pressed ? Style.pressedFillFor(root.textColor, Color.accent)
       : pointer.containsMouse ? Style.hoverFillFor(root.textColor, Color.accent)
@@ -5771,9 +5963,13 @@ Panel {
         }
         root.togglePause()
       }
-      // Esc backs out one step at a time: the search it can clear, the popup it
-      // closes.
+      // Esc backs out one step at a time: the key sheet it can close, the search it can
+      // clear, the popup it closes.
       onCloseRequested: {
+        if (root.hintsOpen) {
+          root.hintsOpen = false
+          return
+        }
         if (root.filterActive() || root.filtering) {
           root.clearFilter()
           return
@@ -5838,8 +6034,6 @@ Panel {
         }
         PanelSeparator {
           Layout.fillWidth: true
-          Layout.leftMargin: root.cardInset
-          Layout.rightMargin: root.cardInset
           foreground: root.textColor
           visible: root.signedIn
         }
@@ -5856,12 +6050,7 @@ Panel {
           Layout.rightMargin: root.cardInset
           Layout.preferredHeight: Math.max(2, Style.space(2))
         }
-        HintRow {
-          Layout.fillWidth: true
-          Layout.leftMargin: root.cardInset
-          Layout.rightMargin: root.cardInset
-          Layout.bottomMargin: root.cardInset
-        }
+        FooterRow { }
       }
 
       // Extended: the player on the left, the list on the right. Two columns need
@@ -5893,8 +6082,6 @@ Panel {
         }
         PanelSeparator {
           Layout.fillWidth: true
-          Layout.leftMargin: root.cardInset
-          Layout.rightMargin: root.cardInset
           foreground: root.textColor
           visible: root.signedIn
         }
@@ -5912,16 +6099,12 @@ Panel {
           Layout.rightMargin: root.cardInset
           Layout.preferredHeight: Math.max(2, Style.space(2))
         }
-        HintRow {
-          Layout.fillWidth: true
-          Layout.leftMargin: root.cardInset
-          Layout.rightMargin: root.cardInset
-          Layout.bottomMargin: root.cardInset
-        }
+        FooterRow { }
       }
 
-      // Last inside the key catcher, so it floats over whichever body is showing.
+      // Last inside the key catcher, so they float over whichever body is showing.
       RowMenu { }
+      HintsPanel { }
     }
   }
 }

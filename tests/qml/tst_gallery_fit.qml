@@ -23,13 +23,15 @@ TestCase {
     return rows * (width + caption) + (rows - 1) * rowGap
   }
 
-  // Four cards and their three gaps are the whole width, with nothing left over.
+  // Four cards and their three gaps are the whole width, with nothing left over. The
+  // gaps used to come on top of the cards' share, so a full row was a gap too wide and
+  // the last column hung over the edge of the list.
   function test_cells_fill_the_width() {
     var plan = GalleryFit.plan(640, columns, gap, caption, 12)
     compare(plan.columns, 4)
-    compare(plan.cellWidth, 160)
+    compare(plan.cellWidth, (640 - 3 * gap) / 4)
     compare(plan.cellRows, 3)
-    compare(4 * plan.cellWidth, 640)
+    compare(4 * plan.cellWidth + 3 * gap, 640)
   }
 
   // Three friends out of a possible four: the row is filled by stretching the cards
@@ -37,7 +39,7 @@ TestCase {
   function test_a_short_row_stretches() {
     var plan = GalleryFit.plan(640, columns, gap, caption, 3)
     compare(plan.columns, 3)
-    verify(Math.abs(plan.cellWidth - 640 / 3) < 0.01, "three cards share the width")
+    verify(Math.abs(plan.cellWidth - (640 - 2 * gap) / 3) < 0.01, "three cards and two gaps share the width")
     compare(plan.cellRows, 1)
   }
 
@@ -52,10 +54,11 @@ TestCase {
   // What a room holds: two whole rows in a room too short for three, and the height they
   // take is what the card has to end at.
   function test_whole_room_counts_rows_that_fit() {
-    var block = GalleryFit.plan(640, columns, gap, caption, 12).cellWidth + caption
+    var width = GalleryFit.plan(640, columns, gap, caption, 12).cellWidth
+    var block = width + caption
     var room = GalleryFit.wholeRoom(500, block, gap, 3)
     compare(room.rows, 2)
-    compare(room.height, rowsHeight(160, 2, gap))
+    compare(room.height, rowsHeight(width, 2, gap))
     verify(room.height <= 500, "two rows fit: " + room.height)
   }
 

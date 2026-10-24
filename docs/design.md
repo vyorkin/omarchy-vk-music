@@ -543,6 +543,16 @@ keeps `cardRim` as its padding on top of the column's inset, because a wall of c
 flush with the card edge reads as a crop rather than as a gallery, and because that
 padding is what the column arithmetic in `GalleryFit` is measured against.
 
+Two things about that arithmetic were wrong and both showed as margins. `plan()` divided
+the row by the column count and then the grid added the gaps *between* the cards on top,
+so a full row was (columns - 1) gaps wider than the list and the last column hung over the
+edge. The gaps are taken out of the row first now, which is what the test's own comment
+always said. And the leftover of the division all landed on the right, so a gallery's left
+margin was the rim and its right margin was the rim plus a few pixels: the columns are
+centred in what the plan leaves, and the two margins are equal by construction. A selected
+card's fill is square, like a row's — a rounded one around a square cover was the last
+rounding left in the panel.
+
 The one-line rows of a search — a suggestion while typing, a query searched before — are
 the same row language, and they are the ones that used to be `Button`s: a rounded pill
 with a border, inset from the card and narrower than the text under it.
@@ -593,7 +603,13 @@ Three things learned in the move:
   spend traffic on a tab that was already left. Measured with a log on every daemon call:
   six tab presses in a row issue no section request at all. A click on a source chip
   still loads at once:
-  A delayed load also means the section's SLUG is still the old one for those 600 ms, so
+  A section's playlists are empty while its request is in flight, so the two cells that
+choose how a list is drawn — asked on the loaded rows alone — vanished for as long as the
+request took and came back after it. They are shown while the section is loading as well;
+a control that flickers every time a tab is pressed is worse than a control that is
+occasionally redundant.
+
+A delayed load also means the section's SLUG is still the old one for those 600 ms, so
   a second ⇧L must count from the *scheduled* one — otherwise the second press asks for
   the same section again and the first press looks like it did nothing. `effectiveBrowse()`
   is what both the cycle and the source chips read, so the chip lights up on the press
@@ -703,12 +719,12 @@ Three things learned in the move:
   height, so an idle panel has nothing below the last row. The same one line serves
   every view — the queue, a playlist, a section, a person's playlists, the search —
   so the fix holds wherever a list is.
-* A hint at the bottom of the card is a hint on top of the last row of every list,
-  and the key hints moved to the top for exactly that reason. They moved back: the top
-  of the card is now the bar of views and switches, which is a place the pointer uses,
-  and a band of shortcuts above it stood between the pointer and the tabs. The row is
-  one caption and a half — the hints are translated in two lines — and the list below
-  pays for it, which is the trade the bar is worth.
+* A hint at the bottom of the card is a hint on top of the last row of every list, and
+  the key hints moved to the top for exactly that reason; then back down when the top
+  became a bar of views and switches; and finally out of the card altogether, into a sheet
+  behind a question mark. Three homes in three rounds is the honest history: a line of
+  tiny print is either in the way of the list or in the way of the controls, and the only
+  place it fits is somewhere nobody has to look at it until they want to.
 * One column of rows is one cursor. A section shows its playlists and then its
   tracks as two Repeaters in one column, and the cursor used to cover only the tracks
   — so k from the first track stopped there instead of reaching the playlist above
@@ -1032,14 +1048,21 @@ a laid-out card would make the two depend on each other.
 
 ### The line of key hints
 
-The hints are the only place the popup says which keys it answers to, and they used to
-be cut: «/ филь…» teaches nothing. Two things were wrong. The status text beside the
-hint reserved half the row even when it had nothing to say, and the hint elided what it
-could not fit. The status is now capped at a fixed width and elides itself, and the
-hint wraps: nothing is lost, the band under the list is one caption taller. Left to break
-where it likes the line split «Esc» from «закрыть», so the translation is broken on a
-«·» separator instead — the phrases stay whole, and the order of the keys is the
-translation's own.
+The hints are the only place the popup says which keys it answers to, and for a long time
+they were a line of caption type under the list: two lines of five-point print, read once
+and never again, and the keys it could not fit were the ones a beginner needs most. The
+line is gone. A question mark in the card's bottom-right corner — a square with a border of
+its own, because a bare «?» in the corner reads as a letter that fell off the list — opens
+a sheet: a title, a rule, and one row per key, the key in the left column and what it does
+in the right.
+
+The sheet is built from the same translated string the line used: the hint is one string
+with «·» between its keys, and the sheet is those phrases, one per row. A phrase whose
+first words look like keys — short, latin, and never the last word — is drawn as a key cap
+with its description beside it; anything else stands as one line, which is what «[ ] вкладки»
+needs. No new translations, and the sheet follows the panel's language for free.
+
+What the footer keeps is the status: a skipped track still says why, on one line, eliding.
 
 ## The scrolling label, and why it stops at both ends
 

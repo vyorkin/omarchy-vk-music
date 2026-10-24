@@ -24,7 +24,7 @@ function cellWidth(usable, columns, cap) {
 
 // Everything a gallery needs to place itself.
 //
-// usable   – the grid's inner width, column gaps still in it
+// usable   – the grid's inner width, column gaps still in it and taken out below
 // columns  – the most cards the layout allows across
 // gap      – the gap between two rows
 // caption  – what sits under a cover: two lines of text and their spacing
@@ -35,9 +35,14 @@ function plan(usable, columns, gap, caption, count) {
   var base = columns >= 1 ? usable / columns : 0
   var across = count > 0 ? Math.max(1, Math.min(columns, count)) : Math.max(1, columns)
   var rows = count > 0 ? Math.ceil(count / across) : 0
+  // The gaps are part of the width the row has to share, not something that comes on
+  // top of it: `usable` is the whole row, so a card's share is what is left once the gaps
+  // between the cards are taken out. Divided without that, a gallery overflowed its own
+  // width by (columns - 1) * gap, and the last column hung over the edge.
+  var room = usable - Math.max(0, across - 1) * (gap > 0 ? gap : 0)
   // One card in a panel this wide is not «filling the space», it is a poster: the
   // stretch stops at twice the width of a card in a full row.
-  return { columns: across, cellRows: rows, cellWidth: cellWidth(usable, across, base * 2) }
+  return { columns: across, cellRows: rows, cellWidth: cellWidth(room, across, base * 2) }
 }
 
 // How many whole rows a room holds, and the height they take. The gap is the designed
