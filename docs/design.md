@@ -365,9 +365,13 @@ costs no extra request.
 
 Every track row carries a heart as well, at its right end: filled when the track is in
 «Моя музыка», outlined when it is not, and a left click toggles it without disturbing
-playback. VK keeps a copy of a track in each list it appears in, so the panel remembers
-nothing between rows — it bumps a counter after a like, and every heart on screen is bound
-to it. In the extended player band the heart sits just left of the volume slider: it
+playback. The heart cannot be flipped by writing into the track inside the list: a
+delegate over a JS array model is handed a copy of the element, so that write changes the
+list and nothing on screen. `Likes.js` returns a rebuilt list instead, with every copy of
+that key carrying the new state, and the panel assigns it back to the lists that hold the
+track — replacing the model is what rebuilds the rows.
+
+In the extended player band the heart sits just left of the volume slider: it
 belongs with the things that act on the sound, not after them. The compact player puts it
 at the end of the title block instead, on the first line of what is playing, where the eye
 already is.

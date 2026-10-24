@@ -19,6 +19,7 @@ import "LucideIcons.js" as Lucide
 import "i18n.js" as I18n
 import "CoverTint.js" as CoverTint
 import "GalleryFit.js" as GalleryFit
+import "Likes.js" as Likes
 
 Panel {
   id: root
@@ -702,26 +703,19 @@ Panel {
     })
   }
 
-  // Likes made from a row: the same list holds its own copy of the track, so the
-  // panel keeps an epoch that every heart depends on and bumps it after a change.
-  property int likeEpoch: 0
-
+  // Likes made from a row: the list keeps its own copy of the track, and a delegate is
+  // handed a copy of that copy, so the heart cannot be flipped by editing the track in
+  // the list — only by handing the rows a new list. `Likes.js` does that rebuild and
+  // says why; this assigns its answer back to every list that holds the track.
   function isLiked(track) {
-    root.likeEpoch
     return track ? track.is_liked === true : false
   }
 
   function markLiked(key, liked) {
-    function mark(list) {
-      for (var i = 0; i < (list ? list.length : 0); i++) {
-        if (list[i] && String(list[i].key) === key) list[i].is_liked = liked
-      }
-    }
-    mark(root.queue)
-    mark(root.browseTracks)
-    mark(root.openPlaylistTracks)
-    mark(root.results)
-    root.likeEpoch = root.likeEpoch + 1
+    root.queue = Likes.mark(root.queue, key, liked)
+    root.browseTracks = Likes.mark(root.browseTracks, key, liked)
+    root.openPlaylistTracks = Likes.mark(root.openPlaylistTracks, key, liked)
+    root.results = Likes.mark(root.results, key, liked)
   }
 
   function toggleLikeFor(track) {
