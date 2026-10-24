@@ -3628,7 +3628,9 @@ Panel {
         ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.18)
         : Style.normalFillFor(Color.foreground, Color.accent)
       borderSpec: Border.none()
-      visible: trackRow.selected || trackArea.containsMouse
+      // A row lit while the heart is under the pointer too: the heart is above the row's
+      // own MouseArea, so the pointer leaves it the moment it reaches the heart.
+      visible: trackRow.selected || trackArea.containsMouse || heartGlyph.under
     }
 
     Text {
@@ -3736,10 +3738,15 @@ Panel {
       anchors.verticalCenter: parent.verticalCenter
       width: Style.space(14)
       height: trackRow.height
+      // Above the row's MouseArea, which fills the row and is declared after this heart:
+      // siblings stack in declaration order, so without this the whole row's target wins
+      // the left click over the heart and a press on it restarts the track instead.
+      z: 1
 
       BarGlyph {
+        id: heartGlyph
         anchors.fill: parent
-      name: "heart"
+        name: "heart"
         fillOnHover: true
         filled: root.isLiked(trackRow.track)
         iconColor: root.isLiked(trackRow.track) ? Color.accent : (trackRow.playing ? Color.accent : root.dim)
