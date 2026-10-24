@@ -5681,8 +5681,23 @@ Panel {
         visible: !root.isExtended()
         spacing: Style.spacing.controlGap
 
-        TopRow { Layout.fillWidth: true }
-        PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
+        // The bar is the card's own top edge, not a block inside its padding: it takes
+        // the card's padding back on three sides, so the cell in use is filled from the
+        // border and the bar reads as the lid of the card rather than as a strip lying
+        // on it. Everything under it keeps the padding.
+        TopRow {
+          Layout.fillWidth: true
+          Layout.leftMargin: -panel.padding
+          Layout.rightMargin: -panel.padding
+          Layout.topMargin: -panel.padding
+        }
+        PanelSeparator {
+          Layout.fillWidth: true
+          Layout.leftMargin: -panel.padding
+          Layout.rightMargin: -panel.padding
+          foreground: root.textColor
+          visible: root.signedIn
+        }
         SignInBlock { Layout.fillWidth: true }
         PlayerColumn { Layout.fillWidth: true }
         PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
@@ -5700,8 +5715,20 @@ Panel {
         visible: root.isExtended()
         spacing: Style.spacing.controlGap
 
-        TopRow { Layout.fillWidth: true }
-        PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
+        // Same lid on the wide card: see the compact body.
+        TopRow {
+          Layout.fillWidth: true
+          Layout.leftMargin: -panel.padding
+          Layout.rightMargin: -panel.padding
+          Layout.topMargin: -panel.padding
+        }
+        PanelSeparator {
+          Layout.fillWidth: true
+          Layout.leftMargin: -panel.padding
+          Layout.rightMargin: -panel.padding
+          foreground: root.textColor
+          visible: root.signedIn
+        }
         SignInBlock { Layout.fillWidth: true }
         // The player is a band, not a column: everything the list needs is
         // underneath it, across the whole card.

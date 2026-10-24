@@ -497,6 +497,12 @@ and the two tools are as wide as that height is tall: a cell that measured its o
 left the fill of the active one a pixel off its neighbours, which in a band of flush
 cells is exactly what the eye picks up.
 
+The bar is the card's lid, not a block inside its padding: it takes the card's
+`padding` back on three sides (negative layout margins, and the same on the separator
+under it), so the cell in use is filled from the border itself. Everything below the
+bar keeps the padding. An inset bar was the first version, and it read as a strip lying
+on the card with its own inner margins rather than as the top of it.
+
 The cells are not `Button`s. A `Button` keeps the width of its own label, and three
 equal cells cannot: a longer translation (German «Warteschlange») would push the bar
 past the card instead of eliding. It also paints a rounded fill with a border of its
