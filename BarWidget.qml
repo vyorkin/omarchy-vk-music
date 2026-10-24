@@ -5467,6 +5467,16 @@ Panel {
     }
   }
 
+  // The bar's bottom edge: a solid rule the width of the card's own border, and the
+  // reason it is solid rather than one of the panel's 12 % separators is that the cell in
+  // use has to run into it. A soft line under a hard fill leaves the fill floating, and
+  // the eye reads the gap between them as a margin the bar does not have.
+  component BarEdge: Rectangle {
+    Layout.fillWidth: true
+    Layout.preferredHeight: Math.max(1, Style.space(2))
+    color: root.textColor
+  }
+
   // A divider between a tool at the bar's end and the views in the middle. Only there:
   // between two views the fill of the one in use is the divider.
   //
@@ -5690,12 +5700,13 @@ Panel {
           Layout.leftMargin: -panel.padding
           Layout.rightMargin: -panel.padding
           Layout.topMargin: -panel.padding
+          // And the column's own gap, so the fill of the cell in use reaches the rule
+          // under the bar instead of stopping a gap short of it.
+          Layout.bottomMargin: -Style.spacing.controlGap
         }
-        PanelSeparator {
-          Layout.fillWidth: true
+        BarEdge {
           Layout.leftMargin: -panel.padding
           Layout.rightMargin: -panel.padding
-          foreground: root.textColor
           visible: root.signedIn
         }
         SignInBlock { Layout.fillWidth: true }
@@ -5721,12 +5732,11 @@ Panel {
           Layout.leftMargin: -panel.padding
           Layout.rightMargin: -panel.padding
           Layout.topMargin: -panel.padding
+          Layout.bottomMargin: -Style.spacing.controlGap
         }
-        PanelSeparator {
-          Layout.fillWidth: true
+        BarEdge {
           Layout.leftMargin: -panel.padding
           Layout.rightMargin: -panel.padding
-          foreground: root.textColor
           visible: root.signedIn
         }
         SignInBlock { Layout.fillWidth: true }

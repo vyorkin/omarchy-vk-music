@@ -498,10 +498,16 @@ left the fill of the active one a pixel off its neighbours, which in a band of f
 cells is exactly what the eye picks up.
 
 The bar is the card's lid, not a block inside its padding: it takes the card's
-`padding` back on three sides (negative layout margins, and the same on the separator
-under it), so the cell in use is filled from the border itself. Everything below the
-bar keeps the padding. An inset bar was the first version, and it read as a strip lying
-on the card with its own inner margins rather than as the top of it.
+`padding` back on three sides (negative layout margins, and the same on the rule under
+it) and the column's own gap back underneath, so the cell in use is filled from the top
+border to the bottom edge. Everything below the bar keeps the padding. An inset bar was
+the first version, and it read as a strip lying on the card with its own inner margins
+rather than as the top of it.
+
+That bottom edge is a solid two-pixel rule the width of the card's border, not one of
+the panel's 12 % separators: the cell in use has to run into it. Under a soft line the
+fill stopped a gap short and floated, and the eye read the gap as a margin the bar does
+not have — which is exactly what «я всё ещё вижу отступ снизу» was looking at.
 
 The cells are not `Button`s. A `Button` keeps the width of its own label, and three
 equal cells cannot: a longer translation (German «Warteschlange») would push the bar
