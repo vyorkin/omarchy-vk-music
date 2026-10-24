@@ -80,7 +80,11 @@ Panel {
   property bool queueLoading: false
   property bool searchLoading: false
   property double sourcesLoadedAt: 0
-  property bool sourcesPending: false
+  property double sourcesAskedAt: 0
+  // How many times this session has asked again for a section that came back empty: a
+  // section can be empty on purpose, and a panel that keeps asking is a panel that keeps
+  // flickering.
+  property int emptySectionTries: 0
   // Where the keyboard is in the list that is on screen: up and down move this,
   // Enter plays what it points at. It is an index into the visible list, so the
   // same number means the same row in every view, and -1 means nothing is picked
@@ -433,6 +437,27 @@ Panel {
     running: true
     triggeredOnStart: true
     onTriggered: root.refresh()
+  }
+
+  // The sections are the one thing on the bar that can come back empty and stay empty: a
+  // request that failed, or a reply lost while the panel was closing, left nothing to draw
+  // and nothing to ask again. While the popup is up and the list of sections is empty, this
+  // asks again every five seconds — the answer is cached for ten minutes, so a bar that has
+  // its sections costs one request and nothing more.
+  Timer {
+    id: sectionsWatch
+    interval: 5000
+    repeat: true
+    // Either the sections could not be fetched or the section that is chosen came back
+    // with nothing in it: both leave a bar whose every item looks empty.
+    running: root.opened && root.signedIn && (root.sources.length === 0
+      || (root.view === "browse" && root.browseTracks.length === 0
+          && root.browsePlaylists.length === 0 && !root.browseLoading
+          && root.browseSlug !== "" && root.openPlaylist === null))
+    onTriggered: {
+      root.loadSources()
+      root.reloadEmptySection()
+    }
   }
 
   // A change is watched closely for a moment; after that the poll goes back to its rhythm.
@@ -799,17 +824,23 @@ Panel {
   }
 
   function loadSources() {
-    // Opening the popup used to ask for these every time, and each answer queued
-    // behind the others; they barely change, so once per ten minutes is plenty.
-    if (root.sourcesPending) return
-    if (root.sources.length > 0 && Date.now() - root.sourcesLoadedAt < 600000) return
-    root.sourcesPending = true
+    // Opening the popup used to ask for these every time, and each answer queued behind the
+    // others; they barely change, so one answer serves ten minutes.
+    //
+    // Nothing here may be able to block the next ask for good. `sourcesLoadedAt` is stamped
+    // by a successful answer only — a failure used to be remembered as if it had succeeded,
+    // and the bar sat there with nothing in it but «Люди» for ten minutes — and the "in
+    // flight" guard is a four-second window rather than a flag, because a reply that never
+    // arrives (a process destroyed before its output was read) would leave that flag set
+    // for the life of the shell. Together with the retry under `sectionsWatch` the bar fills
+    // itself in, whatever went wrong.
+    var now = Date.now()
+    if (root.sources.length > 0 && now - root.sourcesLoadedAt < 600000) return
+    if (now - root.sourcesAskedAt < 4000) return
+    root.sourcesAskedAt = now
     call([root.cli, "sections"], function(answer) {
-      root.sourcesPending = false
-      // An answer that did not arrive is not a cache: it is a reason to ask again, or the
-      // sections stay missing for ten minutes and the bar shows nothing but «Люди».
       if (answer && answer.ok) {
-        root.sources = answer.data
+        root.sources = answer.data || []
         root.sourcesLoadedAt = Date.now()
       }
     })
@@ -1478,6 +1509,20 @@ Panel {
   // backend accepts either, and the url is what lets the UI label them.
   // The section's own name, known from the section list before its page arrives:
   // root.t("Раздел · загрузка…") tells the user nothing about what is loading.
+  // A section that is chosen but has nothing in it is a list nobody loaded. The widget's
+  // state is cleared by a plugin reload or an account change while the choice of section
+  // survives, and what is left is a page that says «пусто», a stray «Ещё» and a bar in which
+  // every section looks empty. Opening the popup asks for it again.
+  function reloadEmptySection() {
+    if (root.view !== "browse") return
+    var slug = root.browseSlug
+    if (slug === "" || slug === "friends" || slug === "person" || slug === "playlist") return
+    if (root.browseTracks.length > 0 || root.browsePlaylists.length > 0) return
+    if (root.emptySectionTries >= 3) return
+    root.emptySectionTries = root.emptySectionTries + 1
+    root.browseSource(slug, true)
+  }
+
   // VK's section titles come in Russian: the slugs are stable, so the name shown is
   // translated by slug and VK's own title is only the fallback.
   function sectionName(slug) {
@@ -1508,15 +1553,16 @@ Panel {
   }
 
   // Browsing: a catalog section page by page, or the live stations.
-  function browseSource(slug) {
+  function browseSource(slug, force) {
     root.clearFilterQuiet()
-    if (!slug || root.browseSlug === slug) return
+    if (!slug || (root.browseSlug === slug && force !== true)) return
     root.cursor = -1
     // A section is a way in of its own: the person whose page we were on is behind us now,
     // and a page nobody is looking at must not keep the sections off the bar.
     root.person = null
     root.personPlaylists = []
     root.personLoading = false
+    if (force !== true) root.emptySectionTries = 0
     root.browseSlug = slug
     root.browseTracks = []
     root.browsePlaylists = []
@@ -1545,6 +1591,9 @@ Panel {
 
   function adoptSection(page) {
     if (!page) return
+    if ((page.tracks || []).length > 0 || (page.playlists || []).length > 0) {
+      root.emptySectionTries = 0
+    }
     root.browseTitle = root.sectionTitle(root.browseSlug) || String(page.title || "")
     root.browseTracks = page.tracks || []
     root.browsePlaylists = page.playlists || []
@@ -2443,6 +2492,7 @@ Panel {
       root.loadQueue()
       root.loadSources()
       root.loadAccounts()
+      root.reloadEmptySection()
       afterOpen.restart()
       return
     }

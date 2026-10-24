@@ -577,8 +577,18 @@ exactly the way a section is.
 
 A sections request that failed used to be remembered as if it had succeeded, so a single
 error kept the bar empty of everything but «Люди» for ten minutes. A failed answer is a
-reason to ask again, not a cache: only a successful one stamps the time, and a request in
-flight is not repeated by the next open.
+reason to ask again, not a cache: only a successful one stamps the time, and the "in flight"
+guard is a four-second window rather than a flag, because a reply that never arrives — a
+process destroyed before its output was read — would leave a flag set for the life of the
+shell, and there is no worse bug than one that only a restart clears.
+
+Two more states look like a broken panel and are not: a section that is chosen but has no
+rows (the widget's state is cleared by a plugin reload or an account change while the choice
+of section survives, and what is left is a page that says «пусто», a stray «Ещё» and a bar
+in which the section in use is filled and empty), and the same for the sections themselves.
+Both are re-asked — once when the popup opens, and every five seconds while the popup is up
+and the answer is still empty, capped at three tries per section because a section can be
+empty on purpose and a panel that keeps asking is a panel that keeps flickering.
 
 The bar over the list does not go away when a playlist is opened, and it is not the sections
 that stay in it. Inside a playlist, or on somebody's page, the bar holds one cell at its left
