@@ -353,8 +353,16 @@ Every track row carries a heart as well, at its right end: filled when the track
 «Моя музыка», outlined when it is not, and a left click toggles it without disturbing
 playback. VK keeps a copy of a track in each list it appears in, so the panel remembers
 nothing between rows — it bumps a counter after a like, and every heart on screen is bound
-to it. In the player band the heart sits just left of the volume slider: it belongs with
-the things that act on the sound, not after them.
+to it. In the extended player band the heart sits just left of the volume slider: it
+belongs with the things that act on the sound, not after them. The compact player puts it
+at the end of the title block instead, on the first line of what is playing, where the eye
+already is.
+
+The record under the artist is `album.title` from VK's catalog payloads, or the free-form
+`subtitle` the older `audio.get` answers carry. Both are in the track state the daemon
+sends, so the player needs no second request; when a track has neither — most of what
+`audio.get` returns — the same line shows `0:00 / 4:06`, which is what it showed before
+the record was in it.
 
 ## Languages
 
@@ -434,7 +442,29 @@ Notes from building it:
 
 The popup comes in two shapes, chosen in the settings:
 
-* **Compact** — 400x690, the player above the list, the size it has always been.
+* **Compact** — 480x690: the player above the list, laid out the way VK's own player
+  lays its controls out, and scaled from it. That reference is 415 pixels of content
+  wide and this card is 524, so every size in the player is the reference's times 1.26:
+  a bare 106-pixel cover — no rim, no inset, square corners, unlike every other cover in
+  the panel — beside three lines, the title bold at 23, the artist at 18 and the record
+  (or the position, when the track has none) at 17, all three in the same ink, since it
+  is the bold title that separates the first line from the two under it. The block is
+  centred against the cover rather than hung from its top edge, and the heart — 22
+  pixels — sits at the row's far end on the block's centre line, not the row's.
+
+  The lines under it are the reference's too: 29 pixels of air, then one row of
+  controls, the transport with a 53-pixel round play button in the middle, the seek line
+  between the transport and the two buttons at the right with a dot for a handle, its
+  two times under it — elapsed at the start of the line, the track's length at its end,
+  both at 18 — then the speaker and a menu button. Shuffle, repeat and the volume slider
+  did not fit that row and are not worth losing, so the menu button opens them as one
+  more line below. The card is 480 wide rather than 400 for that row: at 400 the times
+  and the two buttons crowded the seek line, and the extra 80 pixels are also what lets
+  the gallery put three covers across instead of two.
+
+  The player logs its own geometry once per popup, the way the bar row does: these
+  numbers were measured against the reference art, and a later complaint about them
+  should be answered from the journal rather than by eye.
 * **Extended** — 620x760: the player is one band across the top — a 56 px cover,
   the title and the artist with the time, then shuffle, repeat, the transport, mute
   and the volume slider in the same row, with a thin seek line under it — and

@@ -109,6 +109,22 @@ Panel {
   property int accountFieldFocus: 0
   property string pendingAccountRemove: ""
 
+  // The line under the artist in the player: the record, or the position when the
+  // track has no record. A live stream says it is one instead.
+  function captionLine() {
+    if (root.onAir()) return root.t("Радио · в эфире")
+    if (!root.hasTrack) return ""
+    var album = String(root.trackValue("album", ""))
+    if (album !== "") return album
+    if (!(root.duration > 0)) return ""
+    return root.clock(root.displayPosition) + " / " + root.clock(root.duration)
+  }
+
+  // Shuffle, repeat and the volume slider live behind the player's menu button, so
+  // whether they are showing is a state of the panel. It closes with the panel: a
+  // row that is open under a card that was just reopened is a surprise.
+  property bool playerControlsOpen: false
+
   onViewChanged: {
     root.cursor = -1
     if (root.view === "settings") root.loadAccounts()
@@ -2028,7 +2044,7 @@ Panel {
   // How far the selected fill reaches past a card, and therefore how much room a grid
   // has to leave around its columns.
   readonly property real cardRim: Style.space(4)
-  readonly property int galleryColumns: root.isExtended() ? 4 : 2
+  readonly property int galleryColumns: root.isExtended() ? 4 : 3
   // A grid of cards, as opposed to a one-column list: only then do h and l mean
   // anything, and only then does j move a row rather than a line. It is the list ON
   // SCREEN that decides, never the playlist-view preference alone — a playlist's
@@ -2366,6 +2382,7 @@ Panel {
     // A password must not outlive the popup that asked for it.
     root.accountPassword = ""
     root.accountFieldFocus = 0
+    root.playerControlsOpen = false
   }
 
   // After the panel is mapped, not at the moment it opens: the sizes only exist
@@ -2832,6 +2849,10 @@ Panel {
     property string icon: ""
     property bool filled: false
     property real strokeWidth: 2
+    // How large the drawn glyph is inside its target. The bar's own controls keep the
+    // 14 px icon they have always had; the player, which is not a 30 px row, asks for
+    // a bigger one and gets it without a second copy of this component.
+    property real iconSize: Style.space(14)
     property string tooltip: ""
     property color iconColor: root.fg
     signal clicked()
@@ -2868,7 +2889,7 @@ Panel {
 
     Image {
       anchors.centerIn: parent
-      width: Style.space(14)
+      width: glyph.iconSize
       height: width
       visible: glyph.body !== ""
       smooth: true
@@ -4735,19 +4756,23 @@ Panel {
   component CoverArt: BorderSurface {
     id: coverArt
     property real size: Style.space(64)
+    // A framed cover is a picture inside a rim, the way every other card in the panel
+    // draws one. The compact player follows its reference and draws the picture bare:
+    // no rim, no inset between the rim and the picture, square corners.
+    property bool framed: true
 
     width: size
     height: size
-    radius: Style.spacing.labelGap
+    radius: coverArt.framed ? Style.spacing.labelGap : 0
     color: Style.normalFillFor(root.textColor, Color.accent)
-    borderSpec: root.buffering
+    borderSpec: root.buffering || !coverArt.framed
       ? Border.none()
       : Border.controlSpec("normal", root.textColor, Color.accent)
 
     CoverTile {
       anchors.fill: parent
-      anchors.margins: Style.space(2)
-      radius: Math.max(0, coverArt.radius - Style.space(2))
+      anchors.margins: coverArt.framed ? Style.space(2) : 0
+      radius: Math.max(0, coverArt.radius - (coverArt.framed ? Style.space(2) : 0))
       inset: 0
       decodeSize: coverArt.size
       source: root.onAir()
@@ -4936,177 +4961,310 @@ Panel {
     }
   }
 
+  // The player, arranged the way VK's own player arranges it: the cover with what is
+  // playing beside it and the heart at the far end; under them one row — transport, the
+  // seek line with its two times under it, the speaker, and a menu. The arrangement is
+  // the point: the title is read first, the times belong to the line they describe, and
+  // the heart sits where the eye already is rather than at the end of a row of buttons.
+  //
+  // Shuffle, repeat and the volume slider did not fit that row and are not worth losing:
+  // the menu button opens them as one more line under it.
   component PlayerColumn: ColumnLayout {
     id: playerColumn
     spacing: Style.spacing.controlGap
 
-  RowLayout {
-    Layout.fillWidth: true
-    spacing: Style.space(10)
-    visible: root.signedIn
+    // What is playing: cover, the three lines, and the heart at the right end. The
+    // three lines are centred against the cover rather than hung from its top: the
+    // cover is a fifth of the card's width now, and a block of text starting at the
+    // picture's top edge would leave all of its air at the bottom.
+    RowLayout {
+      id: metaRow
+      Layout.fillWidth: true
+      spacing: Style.space(20)
+      visible: root.signedIn
 
-    CoverArt {
-      Layout.alignment: Qt.AlignTop
-      size: Style.space(64)
+      CoverArt {
+        id: playerCover
+        Layout.alignment: Qt.AlignVCenter
+        framed: false
+        size: Style.space(91)
+      }
+
+      ColumnLayout {
+        id: metaColumn
+        Layout.fillWidth: true
+        // Centred, not stretched: filling this column vertically made the
+        // whole row swallow the height the list below needs, and the list —
+        // the only thing here with `Layout.fillHeight` — was left 2 px tall.
+        Layout.alignment: Qt.AlignVCenter
+        // The lines are set by their own leading, not by extra air between them: the
+        // reference's three lines are one block, and the bold title is what separates
+        // the first from the two under it.
+        spacing: Style.space(8)
+
+        Text {
+          id: titleText
+          Layout.fillWidth: true
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          text: root.onAir()
+            ? String(root.radioValue("name", root.t("Радио")))
+            : (root.hasTrack ? root.trackValue("title") : root.t("Ничего не играет"))
+          color: root.textColor
+          font.family: Style.font.family
+          font.pixelSize: Math.round(Style.font.heading * 1.2)
+          font.bold: true
+        }
+
+        Text {
+          id: artistText
+          Layout.fillWidth: true
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          visible: root.hasTrack || root.onAir()
+          text: root.onAir() ? root.t("Радио · в эфире") : root.trackValue("artist", "")
+          // The artist is not a second headline and not a colour of its own: the
+          // reference draws the three lines below the title in one weight and one
+          // colour, and it is the bold title that separates them.
+          color: root.textColor
+          font.family: Style.font.family
+          font.pixelSize: Math.round(Style.font.subtitle * 1.2)
+        }
+
+        Text {
+          id: captionText
+          Layout.fillWidth: true
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          // The record, or the position when there is no record: a line that is
+          // always there and always says something. A live stream has neither.
+          visible: root.signedIn && (root.hasTrack || root.onAir())
+          text: root.captionLine()
+          color: root.textColor
+          font.family: Style.font.family
+          font.pixelSize: Math.round(Style.font.subtitle * 1.15)
+        }
+      }
+
+      // The heart sits at the far end of what is playing, on the block's own centre
+      // line: it is not a control of the sound, it is a statement about the track.
+      Item {
+        Layout.preferredWidth: Style.space(24)
+        Layout.preferredHeight: Style.space(24)
+        Layout.alignment: Qt.AlignVCenter
+        visible: root.hasTrack && !root.onAir()
+
+        BarGlyph {
+          anchors.fill: parent
+          iconSize: Math.round(Style.font.iconLarge * 1.2)
+          name: "heart"
+          filled: root.liked
+          iconColor: root.liked ? Color.accent : root.textColor
+          tooltip: root.liked ? root.t("Убрать из моей музыки") : root.t("В мою музыку")
+          onClicked: root.toggleLike()
+        }
+      }
     }
 
-    ColumnLayout {
+    // The controls: what a hand reaches for, in one line, with the seek line taking
+    // whatever room is left between the transport and the two buttons at the right.
+    RowLayout {
+      id: controlsRow
       Layout.fillWidth: true
-      // Top-aligned, not stretched: filling this column vertically made the
-      // whole row swallow the height the list below needs, and the list —
-      // the only thing here with `Layout.fillHeight` — was left 2 px tall.
-      Layout.alignment: Qt.AlignTop
-      spacing: Style.space(2)
+      // The reference leaves more air under the cover than between the controls
+      // themselves: the picture and the row of buttons are two bands, not one block.
+      Layout.topMargin: Style.space(17)
+      spacing: Style.space(6)
+      visible: root.signedIn
 
-      Text {
+      Button {
+        id: prevButton
+        iconText: "󰒮"
+        foreground: root.textColor
+        enabled: root.queue.length > 0
+        opacity: enabled ? 1.0 : 0.4
+        iconSize: Math.round(Style.font.iconLarge * 1.1)
+        tooltipText: root.t("Предыдущий трек")
+        onClicked: root.skipPrevious()
+      }
+
+      // The one round control in the panel: the accent ring is where the eye looks
+      // first, and a circle says «this is the play button» without a word. The box is
+      // square because a circle drawn from a glyph's own width is an ellipse.
+      Item {
+        Layout.preferredWidth: Style.space(45)
+        Layout.preferredHeight: Style.space(45)
+        Layout.alignment: Qt.AlignVCenter
+
+        Button {
+          id: playButton
+          anchors.fill: parent
+          iconText: root.playing ? "󰏤" : "󰐊"
+          foreground: Color.accent
+          background: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.16)
+          radius: width / 2
+          bordered: true
+          iconSize: Math.round(Style.font.iconLarge * 1.05)
+          enabled: root.hasTrack || root.queue.length > 0
+          opacity: !enabled ? 0.4 : (root.loading ? 0.5 : 1.0)
+          tooltipText: root.playing ? root.t("Пауза") : root.t("Играть")
+          onClicked: root.togglePause()
+        }
+      }
+
+      Button {
+        iconText: "󰒭"
+        foreground: root.textColor
+        enabled: root.queue.length > 0
+        opacity: enabled ? 1.0 : 0.4
+        iconSize: Math.round(Style.font.iconLarge * 1.1)
+        tooltipText: root.t("Следующий трек")
+        onClicked: root.skipNext()
+      }
+
+      // The seek line and its two times: under the line, where they describe it,
+      // with the elapsed time at the start and what is left of the track at the end.
+      ColumnLayout {
         Layout.fillWidth: true
-        textFormat: Text.PlainText
-        elide: Text.ElideRight
-        text: root.onAir()
-          ? String(root.radioValue("name", root.t("Радио")))
-          : (root.hasTrack ? root.trackValue("title") : root.t("Ничего не играет"))
-        color: root.textColor
-        font.family: Style.font.family
-        font.pixelSize: Style.font.subtitle
-        font.bold: true
+        Layout.leftMargin: Style.space(16)
+        Layout.rightMargin: Style.space(6)
+        Layout.alignment: Qt.AlignVCenter
+        spacing: 0
+        visible: root.hasTrack && !root.onAir() && root.duration > 0
+
+        PanelSlider {
+          Layout.fillWidth: true
+          // Seeking means nothing until the file is on disk: the position would
+          // move the track that is still playing, not the one being fetched.
+          enabled: !root.buffering
+          opacity: root.buffering ? 0.5 : 1.0
+          // The reference's handle is a dot on the line, not the kit's 14 px handle:
+          // at this size the bigger one hides the start of a track that just began.
+          knobSize: Style.space(9)
+          minimum: 0
+          maximum: Math.max(1, root.duration)
+          value: root.displayPosition
+          integer: true
+          bar: root.bar
+          onMoved: function(value) { root.seekLive(value) }
+          onReleased: function(value) { root.seekFinal(value) }
+        }
+
+        RowLayout {
+          Layout.fillWidth: true
+          Layout.topMargin: -Style.space(2)
+          spacing: Style.space(4)
+
+          Text {
+            id: elapsedText
+            Layout.alignment: Qt.AlignLeft
+            textFormat: Text.PlainText
+            text: root.clock(root.displayPosition)
+            color: root.textColor
+            font.family: Style.font.family
+            font.pixelSize: Math.round(Style.font.body * 1.25)
+          }
+
+          Item { Layout.fillWidth: true }
+
+          Text {
+            id: totalText
+            Layout.alignment: Qt.AlignRight
+            textFormat: Text.PlainText
+            text: root.clock(root.duration)
+            color: root.textColor
+            font.family: Style.font.family
+            font.pixelSize: Math.round(Style.font.body * 1.25)
+          }
+        }
+      }
+
+      Button {
+        id: speakerButton
+        iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
+        foreground: root.textColor
+        iconSize: Math.round(Style.font.iconLarge * 1.25)
+        tooltipText: root.displayVolume <= 0 ? root.t("Включить звук") : root.t("Выключить звук")
+        onClicked: root.toggleMute()
+      }
+
+      // The three dots: the controls that did not fit the row, one line below it.
+      Button {
+        iconText: "󰇙"
+        foreground: root.playerControlsOpen ? Color.accent : root.textColor
+        iconSize: Math.round(Style.font.iconLarge * 1.25)
+        tooltipText: root.playerControlsOpen
+          ? root.t("Свернуть управление")
+          : root.t("Перемешать, повтор и громкость")
+        onClicked: root.playerControlsOpen = !root.playerControlsOpen
+      }
+    }
+
+    // What the menu button opens: the three controls the row above has no place for.
+    RowLayout {
+      Layout.fillWidth: true
+      spacing: Style.space(6)
+      visible: root.signedIn && root.playerControlsOpen
+
+      Button {
+        iconText: "󰒟"
+        foreground: root.shuffled ? Color.accent : root.textColor
+        tooltipText: root.shuffled ? root.t("Перемешивание включено") : root.t("Перемешать")
+        onClicked: root.toggleShuffle()
+      }
+
+      Button {
+        iconText: root.repeatGlyph
+        foreground: root.repeatMode === "off" ? root.textColor : Color.accent
+        tooltipText: root.repeatMode === "off" ? root.t("Повтор выключен")
+          : (root.repeatMode === "one" ? root.t("Повторять трек") : root.t("Повторять очередь"))
+        onClicked: root.cycleRepeat()
+      }
+
+      PanelSlider {
+        Layout.fillWidth: true
+        Layout.alignment: Qt.AlignVCenter
+        minimum: 0
+        maximum: 100
+        value: root.displayVolume
+        integer: true
+        bar: root.bar
+        onMoved: function(value) { root.setVolume(value, true) }
+        onReleased: function(value) { root.setVolume(value, false) }
       }
 
       Text {
-        Layout.fillWidth: true
+        Layout.preferredWidth: Style.space(38)
+        Layout.alignment: Qt.AlignVCenter
+        horizontalAlignment: Text.AlignRight
         textFormat: Text.PlainText
-        elide: Text.ElideRight
-        visible: root.hasTrack || root.onAir()
-        text: root.onAir() ? root.t("Радио · в эфире") : root.trackValue("artist", "")
-        color: root.dim
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
-      }
-
-      Text {
-        Layout.fillWidth: true
-        textFormat: Text.PlainText
-        // A live stream has no position and no length to show.
-        visible: root.hasTrack && !root.onAir()
-        text: root.clock(root.displayPosition) + " / " + root.clock(root.duration)
+        text: Math.round(root.displayVolume) + "%"
         color: root.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
       }
     }
-  }
 
-  PanelSlider {
-    Layout.fillWidth: true
-    // Seeking means nothing until the file is on disk: the position would
-    // move the track that is still playing, not the one being fetched.
-    enabled: !root.buffering
-    opacity: root.buffering ? 0.5 : 1.0
-    visible: root.hasTrack && root.duration > 0
-    minimum: 0
-    maximum: Math.max(1, root.duration)
-    value: root.displayPosition
-    integer: true
-    bar: root.bar
-    onMoved: function(value) { root.seekLive(value) }
-    onReleased: function(value) { root.seekFinal(value) }
-  }
-
-  RowLayout {
-    Layout.fillWidth: true
-    spacing: Style.space(6)
-    visible: root.signedIn
-
-    Button {
-      visible: !root.onAir()
-      // Filled is `mdi-heart`, outline is `mdi-heart-outline`: the filled one
-      // means the track is in «Моя музыка».
-      iconText: root.liked ? "󰋑" : "󰋕"
-      foreground: root.liked ? Color.urgent : root.textColor
-      enabled: root.hasTrack
-      opacity: enabled ? 1.0 : 0.4
-      tooltipText: root.liked ? root.t("Убрать из моей музыки") : root.t("В мою музыку")
-      onClicked: root.toggleLike()
+    // The geometry this player ends up with, once per popup, the way the bar row
+    // reports its own. A complaint about proportions is answered with numbers
+    // instead of a screenshot, and nothing has to be re-measured by hand.
+    property bool _reported: false
+    onHeightChanged: {
+      if (playerColumn._reported || playerColumn.width <= 0 || playerColumn.height <= 0) return
+      playerColumn._reported = true
+      console.log("[vk-music] player", JSON.stringify({
+        column: [playerColumn.width, playerColumn.height],
+        cover: [playerCover.width, playerCover.height],
+        coverToText: metaColumn.x - (playerCover.x + playerCover.width),
+        metaRow: metaRow.height,
+        controlsRow: controlsRow.height,
+        rowGap: controlsRow.y - (metaRow.y + metaRow.height),
+        play: [playButton.width, playButton.height],
+        glyphs: [playButton.iconSize, prevButton.iconSize, speakerButton.iconSize],
+        type: [titleText.font.pixelSize, artistText.font.pixelSize,
+               captionText.font.pixelSize, elapsedText.font.pixelSize]
+      }))
     }
-
-    Button {
-      iconText: "󰒟"
-      foreground: root.shuffled ? Color.accent : root.textColor
-      tooltipText: root.shuffled ? root.t("Перемешивание включено") : root.t("Перемешать")
-      onClicked: root.toggleShuffle()
-    }
-
-    Button {
-      iconText: root.repeatGlyph
-      foreground: root.repeatMode === "off" ? root.textColor : Color.accent
-      tooltipText: root.repeatMode === "off" ? root.t("Повтор выключен")
-        : (root.repeatMode === "one" ? root.t("Повторять трек") : root.t("Повторять очередь"))
-      onClicked: root.cycleRepeat()
-    }
-
-    Item { Layout.fillWidth: true }
-
-    Button {
-      iconText: "󰒮"
-      foreground: root.textColor
-      enabled: root.queue.length > 0
-      opacity: enabled ? 1.0 : 0.4
-      onClicked: root.skipPrevious()
-    }
-
-    Button {
-      iconText: root.playing ? "󰏤" : "󰐊"
-      foreground: root.textColor
-      enabled: root.hasTrack || root.queue.length > 0
-      opacity: !enabled ? 0.4 : (root.loading ? 0.5 : 1.0)
-      onClicked: root.togglePause()
-    }
-
-    Button {
-      iconText: "󰒭"
-      foreground: root.textColor
-      enabled: root.queue.length > 0
-      opacity: enabled ? 1.0 : 0.4
-      onClicked: root.skipNext()
-    }
-
-    Item { Layout.fillWidth: true }
-  }
-
-  RowLayout {
-    Layout.fillWidth: true
-    spacing: Style.space(6)
-    visible: root.signedIn
-
-    Button {
-      iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
-      foreground: root.textColor
-      tooltipText: root.displayVolume <= 0 ? root.t("Включить звук") : root.t("Выключить звук")
-      onClicked: root.toggleMute()
-    }
-
-    PanelSlider {
-      Layout.fillWidth: true
-      Layout.alignment: Qt.AlignVCenter
-      minimum: 0
-      maximum: 100
-      value: root.displayVolume
-      integer: true
-      bar: root.bar
-      onMoved: function(value) { root.setVolume(value, true) }
-      onReleased: function(value) { root.setVolume(value, false) }
-    }
-
-    Text {
-      Layout.preferredWidth: Style.space(38)
-      Layout.alignment: Qt.AlignVCenter
-      horizontalAlignment: Text.AlignRight
-      textFormat: Text.PlainText
-      text: Math.round(root.displayVolume) + "%"
-      color: root.dim
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-    }
-  }
   }
 
   component TabsRow: RowLayout {
@@ -5253,7 +5411,7 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keys
-    contentWidth: panel.fittedContentWidth(Style.space(root.isExtended() ? 620 : 400))
+    contentWidth: panel.fittedContentWidth(Style.space(root.isExtended() ? 620 : 480))
     // Fixed height, but not one height for everything: a signed-out card holding
     // two lines of text and one button would otherwise be mostly empty space.
     // 690 rather than 460: with the smaller card the queue showed four tracks and

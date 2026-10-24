@@ -188,6 +188,9 @@ class Track:
     genre_id: int | None = None
     date: int | None = None
     subtitle: str = ""
+    # What the player shows under the artist: VK sends the record as `album.title`
+    # in the newer payloads and as a free-form `subtitle` in the old ones.
+    album: str = ""
     thumb: str = ""
     has_lyrics: bool = False
     is_liked: bool = False
@@ -214,6 +217,7 @@ class Track:
             genre_id=_optional_int(item.get("genre_id")),
             date=_optional_int(item.get("date")),
             subtitle=str(item.get("subtitle") or ""),
+            album=_extract_album(item),
             thumb=_extract_thumb(item),
             has_lyrics=bool(item.get("has_lyrics")) or bool(item.get("lyrics_id")),
             is_liked=bool(item.get("like")),
@@ -246,6 +250,7 @@ class Track:
             "is_liked": self.is_liked,
             "has_thumb": bool(self.thumb),
             "subtitle": self.subtitle,
+            "album": self.album,
         }
 
 
@@ -405,6 +410,21 @@ def _optional_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _extract_album(item: Mapping[str, Any]) -> str:
+    """The record a track belongs to, as the player's third line wants it.
+
+    `album.title` is there in catalog payloads and `subtitle` carries the record in
+    the legacy `audio.get` ones; either is better than an empty line, and an empty
+    string lets the caller fall back to something else it knows.
+    """
+    album = item.get("album")
+    if isinstance(album, Mapping):
+        title = str(album.get("title") or "").strip()
+        if title:
+            return title
+    return str(item.get("subtitle") or "").strip()
 
 
 def _extract_thumb(item: Mapping[str, Any]) -> str:

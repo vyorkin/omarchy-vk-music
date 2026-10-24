@@ -175,6 +175,7 @@ def track_to_state(track: Track) -> dict[str, Any]:
         "artist": track.artist,
         "duration": track.duration,
         "thumb": track.thumb,
+        "album": track.album,
         "access_key": track.access_key,
         "has_lyrics": track.has_lyrics,
         "is_liked": track.is_liked,
