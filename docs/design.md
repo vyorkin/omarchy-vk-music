@@ -497,17 +497,36 @@ and the two tools are as wide as that height is tall: a cell that measured its o
 left the fill of the active one a pixel off its neighbours, which in a band of flush
 cells is exactly what the eye picks up.
 
-The bar is the card's lid, not a block inside its padding: it takes the card's
-`padding` back on three sides (negative layout margins, and the same on the rule under
-it) and the column's own gap back underneath, so the cell in use is filled from the top
-border to the bottom edge. Everything below the bar keeps the padding. An inset bar was
-the first version, and it read as a strip lying on the card with its own inner margins
-rather than as the top of it.
+The card has no padding of its own (`padding: 0` on the panel) and everything is placed
+inside `cardInset` instead: the bar takes none, so it is the card's lid and the cell in
+use is filled from the top border to the rule under it, and every block below the bar
+carries the inset as its own left and right margin. An inset bar was the first version,
+and it read as a strip lying on the card with its own inner margins rather than as the
+top of it.
+
+The insets moved out of the panel and into the blocks for a second reason, and it is the
+one that mattered: a first attempt kept the panel's padding and pulled the bar over it
+with negative layout margins. The bar looked right — the fill reached the border — and
+half of every cell stopped answering the pointer. The cells that hung outside the content
+area were dead over the part that hung out, which for a bar 14 pixels above the content
+area meant everything except the lower half of each glyph, and the pointer stayed an
+arrow everywhere else. An item that is drawn outside its parent is an item the pointer
+can miss; the bar's own cells are now inside their ancestors like any other control, and
+nothing in the panel overhangs its parent for paint either.
 
 That bottom edge is a solid two-pixel rule the width of the card's border, not one of
 the panel's 12 % separators: the cell in use has to run into it. Under a soft line the
 fill stopped a gap short and floated, and the eye read the gap as a margin the bar does
 not have — which is exactly what «я всё ещё вижу отступ снизу» was looking at.
+
+A list row is the same shape as the bar's cells: square, and as wide as the card. The
+scroller is the width of the card, a row is the width of the scroller, so a selected or
+hovered row is filled from border to border; what carries `cardInset` is the row's own
+content — the number, the cover, the title and the heart — through each item's anchor
+margin. The gallery is the exception: a grid of cards keeps `cardRim + cardInset` as its
+padding, because a wall of covers flush with the card edge reads as a crop rather than as
+a gallery, and because that padding is what the column arithmetic in `GalleryFit` is
+measured against.
 
 The cells are not `Button`s. A `Button` keeps the width of its own label, and three
 equal cells cannot: a longer translation (German «Warteschlange») would push the bar

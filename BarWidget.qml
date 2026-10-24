@@ -235,6 +235,17 @@ Panel {
   readonly property string notice: String(status.notice || "")
   readonly property string halted: String(status.halted || "")
   readonly property var prefs: status.preferences || ({})
+  // The card's own inset, in one place. The card is given no padding of its own and
+  // everything is placed inside this: a bar or a row that is meant to reach the card's
+  // edge needs an ancestor that reaches it too, and an item that hangs outside its parent
+  // — which is what the padding of the panel and a negative margin amount to — is an item
+  // the pointer can miss on the part that hangs out.
+  readonly property real cardInset: Style.spacing.popupPadding
+  // What is left of the card's rounding inside its own border. The two cells at the ends
+  // of the bar follow it: a square fill there paints over the card's corner, and in the
+  // settings view — where the first cell is the filled one — that shows.
+  readonly property real cardCorner: Math.max(0, Style.cornerRadius - Style.space(2))
+
   // Which popup shape is in use: the compact one or the extended two-column one.
   // Both are built from the same blocks, and only the visible one takes keys.
   //
@@ -3223,7 +3234,10 @@ Panel {
     spacing: Style.space(6)
     // The selected fill reaches a few pixels past its card, so the grid keeps a rim of
     // its own — otherwise the first column's fill is cut by the edge of the list.
-    readonly property real rim: root.cardRim
+    // The rim keeps a selected card's fill from being cut by the list's edge. The card's
+    // own inset is on top of it now that the list runs edge to edge: the gallery is not a
+    // row, and a wall of covers flush with the card reads as a crop, not as a gallery.
+    readonly property real rim: root.cardRim + root.cardInset
     leftPadding: rim
     rightPadding: rim
 
@@ -3252,7 +3266,7 @@ Panel {
 
     BorderSurface {
       anchors.fill: parent
-      radius: Style.space(6)
+      radius: 0
       color: person.selected
         ? Style.selectedFillFor(Color.foreground, Color.accent)
         : Style.normalFillFor(Color.foreground, Color.accent)
@@ -3266,7 +3280,7 @@ Panel {
       height: width
       radius: width / 2
       anchors.left: parent.left
-      anchors.leftMargin: Style.space(4)
+      anchors.leftMargin: Style.space(4) + root.cardInset
       anchors.verticalCenter: parent.verticalCenter
       // Flush with the frame: an inset shows the surface colour as a ring around the
       // portrait, which reads as a white gap in a light theme.
@@ -3281,7 +3295,7 @@ Panel {
       anchors.left: avatar.right
       anchors.leftMargin: Style.space(8)
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(6)
+      anchors.rightMargin: Style.space(6) + root.cardInset
       anchors.verticalCenter: parent.verticalCenter
       textFormat: Text.PlainText
       elide: Text.ElideRight
@@ -3324,7 +3338,7 @@ Panel {
     // cursor takes the accent tint instead: two facts, two marks, no confusion.
     BorderSurface {
       anchors.fill: parent
-      radius: Style.space(8)
+      radius: 0
       color: Style.selectedFillFor(Color.foreground, Color.accent)
       borderSpec: Border.none()
       visible: trackRow.playing && !trackRow.selected
@@ -3332,7 +3346,7 @@ Panel {
 
     BorderSurface {
       anchors.fill: parent
-      radius: Style.space(8)
+      radius: 0
       color: trackRow.selected
         ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.18)
         : Style.normalFillFor(Color.foreground, Color.accent)
@@ -3347,7 +3361,7 @@ Panel {
       // the two paddings match without either side depending on what the row contains.
       width: Style.space(20)
       anchors.left: parent.left
-      anchors.leftMargin: Style.space(8)
+      anchors.leftMargin: Style.space(8) + root.cardInset
       anchors.verticalCenter: parent.verticalCenter
       // Flush left, not centred: a centred glyph sits ten pixels deeper than a flush one,
       // and the row's two side paddings then look nothing alike. The column is a fixed
@@ -3365,7 +3379,7 @@ Panel {
       id: durationText
       width: Style.space(42)
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(28)
+      anchors.rightMargin: Style.space(28) + root.cardInset
       anchors.verticalCenter: parent.verticalCenter
       horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
@@ -3441,7 +3455,7 @@ Panel {
       // four before the cover, so 32 on both sides. Symmetry is worth the width here —
       // the alternative was a cover that jumps when the play glyph appears.
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(8)
+      anchors.rightMargin: Style.space(8) + root.cardInset
       anchors.verticalCenter: parent.verticalCenter
       width: Style.space(14)
       height: trackRow.height
@@ -3498,7 +3512,7 @@ Panel {
         // The cursor's fill, the same language as a filled row anywhere else.
         BorderSurface {
           anchors.fill: parent
-          radius: Style.space(6)
+          radius: 0
           color: row.selected
             ? Style.selectedFillFor(Color.foreground, Color.accent)
             : Style.normalFillFor(Color.foreground, Color.accent)
@@ -3511,7 +3525,7 @@ Panel {
           width: Style.space(28)
           height: width
           anchors.left: parent.left
-          anchors.leftMargin: Style.space(6)
+          anchors.leftMargin: Style.space(6) + root.cardInset
           anchors.verticalCenter: parent.verticalCenter
           inset: Style.space(1)
           decodeSize: Style.space(28)
@@ -3525,7 +3539,7 @@ Panel {
           anchors.left: rowCover.right
           anchors.leftMargin: Style.space(8)
           anchors.right: parent.right
-          anchors.rightMargin: Style.space(6)
+          anchors.rightMargin: Style.space(6) + root.cardInset
           anchors.verticalCenter: parent.verticalCenter
           spacing: Style.space(1)
 
@@ -3602,7 +3616,10 @@ Panel {
     spacing: Style.space(6)
     // The selected fill reaches a few pixels past its card, so the grid keeps a rim of
     // its own — otherwise the first column's fill is cut by the edge of the list.
-    readonly property real rim: root.cardRim
+    // The rim keeps a selected card's fill from being cut by the list's edge. The card's
+    // own inset is on top of it now that the list runs edge to edge: the gallery is not a
+    // row, and a wall of covers flush with the card reads as a crop, not as a gallery.
+    readonly property real rim: root.cardRim + root.cardInset
     leftPadding: rim
     rightPadding: rim
 
@@ -3833,6 +3850,8 @@ Panel {
     RowLayout {
       id: headingRow
       Layout.fillWidth: true
+      Layout.leftMargin: root.cardInset
+      Layout.rightMargin: root.cardInset
       spacing: Style.space(6)
       visible: root.listHeading() !== "" || root.filtering
 
@@ -3903,6 +3922,8 @@ Panel {
 
     PanelSeparator {
       Layout.fillWidth: true
+      Layout.leftMargin: root.cardInset
+      Layout.rightMargin: root.cardInset
       foreground: root.textColor
       visible: root.listHeading() !== "" || root.filtering
     }
@@ -3915,6 +3936,8 @@ Panel {
     Flickable {
       id: sectionChips
       Layout.fillWidth: true
+      Layout.leftMargin: root.cardInset
+      Layout.rightMargin: root.cardInset
       Layout.preferredHeight: sectionChipRow.height
       visible: root.view === "browse" && root.openPlaylist === null
       contentWidth: sectionChipRow.width
@@ -3968,6 +3991,10 @@ Panel {
       // selected row's fill touches the selected tab's fill and the two read as one.
       Item { width: 1; height: Style.space(10) }
 
+      // The scroller is the width of the card, so a row is too: its fill reaches both
+      // edges because the row does. The content inside a row carries `cardInset` itself,
+      // which is what keeps the number, the cover and the title on the lines they were on
+      // when the card still had padding.
       width: scroller.width
       spacing: Style.space(4)
 
@@ -5286,6 +5313,7 @@ Panel {
       Layout.preferredWidth: topRow.toolWidth
       Layout.preferredHeight: topRow.cellHeight
       horizontalPadding: 0
+      topLeftRadius: root.cardCorner
       iconText: "󰒓"
       selected: root.view === "settings"
       tooltipText: root.t("Настройки")
@@ -5379,6 +5407,7 @@ Panel {
       Layout.preferredWidth: topRow.toolWidth
       Layout.preferredHeight: topRow.cellHeight
       horizontalPadding: 0
+      topRightRadius: root.cardCorner
       iconText: root.isExtended() ? "󰊔" : "󰊓"
       tooltipText: root.isExtended() ? root.t("Компактный") : root.t("Расширенный")
       onClicked: root.setPreference("popupView", root.isExtended() ? "compact" : "extended")
@@ -5569,7 +5598,14 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
+    // The card carries no padding: `cardInset` is applied by the blocks inside it, so the
+    // bar and the rows can reach the card's edges without anything hanging out.
+    padding: 0
     focusTarget: keys
+    // The card keeps the width it had with the panel's own padding: the blocks now carry
+    // `cardInset` themselves, so the two add up to the same number. The height is the one
+    // number that grows — the bar no longer pays for the card's top padding, so the same
+    // card is 2 * cardInset taller in content terms and the list keeps its room.
     contentWidth: panel.fittedContentWidth(Style.space(root.isExtended() ? 620 : 480))
     // Fixed height, but not one height for everything: a signed-out card holding
     // two lines of text and one button would otherwise be mostly empty space.
@@ -5582,7 +5618,7 @@ Panel {
     // from this height, and a binding between the two is a loop.
     contentHeight: panel.fittedContentHeight(
       (root.signedIn ? Style.space(root.isExtended() ? 760 : 690) : Style.space(460))
-        + root.galleryRoom)
+        + root.galleryRoom + 2 * root.cardInset)
 
     PanelKeyCatcher {
       id: keys
@@ -5691,31 +5727,52 @@ Panel {
         visible: !root.isExtended()
         spacing: Style.spacing.controlGap
 
-        // The bar is the card's own top edge, not a block inside its padding: it takes
-        // the card's padding back on three sides, so the cell in use is filled from the
-        // border and the bar reads as the lid of the card rather than as a strip lying
-        // on it. Everything under it keeps the padding.
+        // The bar is the card's own top edge and the blocks under it are inset by
+        // `cardInset`: the card itself has no padding, so nothing here hangs outside its
+        // parent and every cell answers the pointer over its whole rectangle.
         TopRow {
           Layout.fillWidth: true
-          Layout.leftMargin: -panel.padding
-          Layout.rightMargin: -panel.padding
-          Layout.topMargin: -panel.padding
-          // And the column's own gap, so the fill of the cell in use reaches the rule
-          // under the bar instead of stopping a gap short of it.
+          // The column's own gap, so the fill of the cell in use reaches the rule under
+          // the bar instead of stopping a gap short of it.
           Layout.bottomMargin: -Style.spacing.controlGap
         }
-        BarEdge {
-          Layout.leftMargin: -panel.padding
-          Layout.rightMargin: -panel.padding
+        BarEdge { visible: root.signedIn }
+        SignInBlock {
+          Layout.fillWidth: true
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: root.cardInset
+        }
+        PlayerColumn {
+          Layout.fillWidth: true
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: root.cardInset
+        }
+        PanelSeparator {
+          Layout.fillWidth: true
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: root.cardInset
+          foreground: root.textColor
           visible: root.signedIn
         }
-        SignInBlock { Layout.fillWidth: true }
-        PlayerColumn { Layout.fillWidth: true }
-        PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
-        SearchFieldRow { id: compactFieldRow; Layout.fillWidth: true }
+        SearchFieldRow {
+          id: compactFieldRow
+          Layout.fillWidth: true
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: root.cardInset
+        }
         TrackList { id: compactList; Layout.topMargin: Style.space(14) }
-        LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
-        HintRow { Layout.fillWidth: true }
+        LoadingLine {
+          Layout.fillWidth: true
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: root.cardInset
+          Layout.preferredHeight: Math.max(2, Style.space(2))
+        }
+        HintRow {
+          Layout.fillWidth: true
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: root.cardInset
+          Layout.bottomMargin: root.cardInset
+        }
       }
 
       // Extended: the player on the left, the list on the right. Two columns need
@@ -5726,29 +5783,52 @@ Panel {
         visible: root.isExtended()
         spacing: Style.spacing.controlGap
 
-        // Same lid on the wide card: see the compact body.
+        // The same lid on the wide card: see the compact body.
         TopRow {
           Layout.fillWidth: true
-          Layout.leftMargin: -panel.padding
-          Layout.rightMargin: -panel.padding
-          Layout.topMargin: -panel.padding
           Layout.bottomMargin: -Style.spacing.controlGap
         }
-        BarEdge {
-          Layout.leftMargin: -panel.padding
-          Layout.rightMargin: -panel.padding
-          visible: root.signedIn
+        BarEdge { visible: root.signedIn }
+        SignInBlock {
+          Layout.fillWidth: true
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: root.cardInset
         }
-        SignInBlock { Layout.fillWidth: true }
         // The player is a band, not a column: everything the list needs is
         // underneath it, across the whole card.
-        PlayerBar { Layout.fillWidth: true; visible: root.signedIn }
-        PanelSeparator { Layout.fillWidth: true; foreground: root.textColor; visible: root.signedIn }
+        PlayerBar {
+          Layout.fillWidth: true
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: root.cardInset
+          visible: root.signedIn
+        }
+        PanelSeparator {
+          Layout.fillWidth: true
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: root.cardInset
+          foreground: root.textColor
+          visible: root.signedIn
+        }
 
-        SearchFieldRow { id: extendedFieldRow; Layout.fillWidth: true }
+        SearchFieldRow {
+          id: extendedFieldRow
+          Layout.fillWidth: true
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: root.cardInset
+        }
         TrackList { id: extendedList; Layout.topMargin: Style.space(14) }
-        LoadingLine { Layout.fillWidth: true; Layout.preferredHeight: Math.max(2, Style.space(2)) }
-        HintRow { Layout.fillWidth: true }
+        LoadingLine {
+          Layout.fillWidth: true
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: root.cardInset
+          Layout.preferredHeight: Math.max(2, Style.space(2))
+        }
+        HintRow {
+          Layout.fillWidth: true
+          Layout.leftMargin: root.cardInset
+          Layout.rightMargin: root.cardInset
+          Layout.bottomMargin: root.cardInset
+        }
       }
 
       // Last inside the key catcher, so it floats over whichever body is showing.
