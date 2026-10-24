@@ -446,8 +446,8 @@ The popup comes in two shapes, chosen in the settings:
   lays its controls out, and scaled from it. That reference is 415 pixels of content
   wide and this card is 524, so every size in the player is the reference's times 1.26:
   a bare 106-pixel cover — no rim, no inset, square corners, unlike every other cover in
-  the panel — beside three lines, the title bold at 23, the artist at 18 and the record
-  (or the position, when the track has none) at 17, all three in the same ink, since it
+  the panel — beside three lines, the title bold at 21, the artist at 17 and the record
+  (or the position, when the track has none) at 16, all three in the same ink, since it
   is the bold title that separates the first line from the two under it. The block is
   centred against the cover rather than hung from its top edge, and the heart — 22
   pixels — sits at the row's far end on the block's centre line, not the row's.
@@ -461,6 +461,11 @@ The popup comes in two shapes, chosen in the settings:
   more line below. The card is 480 wide rather than 400 for that row: at 400 the times
   and the two buttons crowded the seek line, and the extra 80 pixels are also what lets
   the gallery put three covers across instead of two.
+
+  The three lines came down from 23/18/17 on request — the block read as one size too
+  loud beside a cover that is the same 106 pixels — and the reference's proportions
+  survive it: the title is still the largest and the bold one, the artist still a step
+  above the record.
 
   The player logs its own geometry once per popup, the way the bar row does: these
   numbers were measured against the reference art, and a later complaint about them
@@ -492,13 +497,24 @@ and the two tools are as wide as that height is tall: a cell that measured its o
 left the fill of the active one a pixel off its neighbours, which in a band of flush
 cells is exactly what the eye picks up.
 
-The views are not `Button`s. A `Button` keeps the width of its own label, and three
+The cells are not `Button`s. A `Button` keeps the width of its own label, and three
 equal cells cannot: a longer translation (German «Warteschlange») would push the bar
-past the card instead of eliding. `ViewTab` is a Rectangle with a RowLayout inside —
-label with `fillWidth`, zero preferred and zero minimum width, `elide: ElideRight` —
-and a spacer the width of the icon at the other end, so the pair is centred in its
-cell without the label measuring itself against the space it is being given, which is
-a binding loop and clipped «Поиск» the first time round.
+past the card instead of eliding. It also paints a rounded fill with a border of its
+own, and a rounded fill that a divider runs past reads as one fuzzy edge — the two
+were the same foreground tint, nine levels apart, and the divider disappeared into the
+selection. `BarCell` is a Rectangle with `radius: 0`, no border, a `MouseArea` and a
+`PanelToolTip`, so a view, a tool and a section chip are one component; the section
+chips row below the list's heading is the same cells without icons.
+
+The glyph and the label are centred as one pair: the content is a `Row` with
+`anchors.centerIn`, and the label gives up width — `Math.min(implicitWidth, cell width
+minus the padding and the glyph's slot)`, `elide: ElideRight` — only when the pair is
+too wide. Centring the label inside the room the glyph leaves instead put the pair half
+a glyph left of the middle, which is what the bar looked like; and deriving the label's
+width from the layout's own width is the binding loop that clipped «Поиск» the first
+time round. The divider between a tool and the views is 30 % rather than the
+separator's 12 % for the same reason: the bar's line has to win against a filled cell
+by a margin, or it reads as that cell's border.
 
 Three things learned in the move:
 

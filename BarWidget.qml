@@ -3921,15 +3921,18 @@ Panel {
       clip: true
       boundsBehavior: Flickable.StopAtBounds
 
+      // The sections as cells of a bar, the way the views at the top of the card are
+      // drawn — square, flush, the one in use filled — and without icons, because a
+      // section's name is the whole of it.
       Row {
         id: sectionChipRow
-        spacing: Style.space(6)
+        spacing: 0
 
         // First, and deliberately: choosing a person is a way in, not a
         // section, and it must not hide behind a scrolling row.
-        Button {
+        BarCell {
+          width: implicitWidth
           text: root.t("Люди")
-          foreground: root.textColor
           selected: root.effectiveBrowse() === "friends" || root.effectiveBrowse() === "person"
           tooltipText: root.t("Друзья и любой человек по ссылке — их плейлисты")
           onClicked: root.browseFriends()
@@ -3937,9 +3940,9 @@ Panel {
 
         Repeater {
           model: root.sources
-          delegate: Button {
+          delegate: BarCell {
+            width: implicitWidth
             text: modelData ? (root.sectionName(root.sourceSlug(modelData)) || String(modelData.title || "")) : ""
-            foreground: root.textColor
             selected: modelData ? root.sourceSlug(modelData) === root.effectiveBrowse() : false
             onClicked: if (modelData) {
               root.browseSource(root.sourceSlug(modelData))
@@ -4992,7 +4995,7 @@ Panel {
             : (root.hasTrack ? root.trackValue("title") : root.t("Ничего не играет"))
           color: root.textColor
           font.family: Style.font.family
-          font.pixelSize: Math.round(Style.font.heading * 1.2)
+          font.pixelSize: Math.round(Style.font.heading * 1.1)
           font.bold: true
         }
 
@@ -5008,7 +5011,7 @@ Panel {
           // colour, and it is the bold title that separates them.
           color: root.textColor
           font.family: Style.font.family
-          font.pixelSize: Math.round(Style.font.subtitle * 1.2)
+          font.pixelSize: Math.round(Style.font.subtitle * 1.1)
         }
 
         Text {
@@ -5022,7 +5025,7 @@ Panel {
           text: root.captionLine()
           color: root.textColor
           font.family: Style.font.family
-          font.pixelSize: Math.round(Style.font.subtitle * 1.15)
+          font.pixelSize: Math.round(Style.font.subtitle * 1.05)
         }
       }
 
@@ -5279,12 +5282,11 @@ Panel {
 
     // Settings is not one of the views, so it stands outside them, at the bar's left
     // end: a tab that is not a place in the card has no claim on a third of it.
-    Button {
+    BarCell {
       Layout.preferredWidth: topRow.toolWidth
       Layout.preferredHeight: topRow.cellHeight
       horizontalPadding: 0
       iconText: "󰒓"
-      foreground: root.textColor
       selected: root.view === "settings"
       tooltipText: root.t("Настройки")
       onClicked: {
@@ -5297,7 +5299,10 @@ Panel {
 
     // Three equal cells. Equal because each asks for no width of its own and takes a
     // third of what is left — the bar's width does not depend on the longest label.
-    ViewTab {
+    BarCell {
+      Layout.fillWidth: true
+      Layout.preferredWidth: 0
+      Layout.minimumWidth: 0
       Layout.preferredHeight: topRow.cellHeight
       iconText: "󰲸"
       text: root.t("Очередь")
@@ -5309,7 +5314,10 @@ Panel {
       }
     }
 
-    ViewTab {
+    BarCell {
+      Layout.fillWidth: true
+      Layout.preferredWidth: 0
+      Layout.minimumWidth: 0
       Layout.preferredHeight: topRow.cellHeight
       iconText: "󰊊"
       text: root.t("Обзор")
@@ -5322,7 +5330,10 @@ Panel {
       }
     }
 
-    ViewTab {
+    BarCell {
+      Layout.fillWidth: true
+      Layout.preferredWidth: 0
+      Layout.minimumWidth: 0
       Layout.preferredHeight: topRow.cellHeight
       iconText: "󰍉"
       text: root.t("Поиск")
@@ -5339,25 +5350,23 @@ Panel {
     // How a list of PLAYLISTS is drawn: two more cells in the bar's right-hand group of
     // tools, and only where something has two representations. «Моя музыка» is a hundred
     // tracks and no playlists, so neither these two nor their keys may claim otherwise.
-    Button {
+    BarCell {
       visible: root.playlistsShown
       Layout.preferredWidth: topRow.toolWidth
       Layout.preferredHeight: topRow.cellHeight
       horizontalPadding: 0
       iconText: "󰕳"
-      foreground: root.textColor
       selected: root.gridView
       tooltipText: root.t("Галерея обложек")
       onClicked: root.setPlaylistView("grid")
     }
 
-    Button {
+    BarCell {
       visible: root.playlistsShown
       Layout.preferredWidth: topRow.toolWidth
       Layout.preferredHeight: topRow.cellHeight
       horizontalPadding: 0
       iconText: "󰉹"
-      foreground: root.textColor
       selected: !root.gridView
       tooltipText: root.t("Список")
       onClicked: root.setPlaylistView("list")
@@ -5366,83 +5375,81 @@ Panel {
     // The card's own width, one click away. It writes the same preference the settings
     // page writes, so the two cannot disagree, and the card takes the new shape as soon
     // as the daemon's answer lands.
-    Button {
+    BarCell {
       Layout.preferredWidth: topRow.toolWidth
       Layout.preferredHeight: topRow.cellHeight
       horizontalPadding: 0
       iconText: root.isExtended() ? "󰊔" : "󰊓"
-      foreground: root.textColor
       tooltipText: root.isExtended() ? root.t("Компактный") : root.t("Расширенный")
       onClicked: root.setPreference("popupView", root.isExtended() ? "compact" : "extended")
     }
   }
 
-  // One cell of the bar. Not a Button: three equal cells share one width, and a Button
-  // holds on to the width of its own label — a longer translation would push the bar
-  // past the card. Here the label gives up width and elides, the cell has no radius, and
-  // the fill of the one in use reaches the bar's whole height, the way a tab does.
-  component ViewTab: Rectangle {
-    id: viewTab
+  // One cell of a bar of cells: a view, a tool, or a section chip. Not a Button. A bar
+  // of cells is flush and square — a rounded fill next to the divider that closes a
+  // group reads as one blurry edge, which is what «the divider merges into the
+  // selection» looked like — and the fill of the cell in use reaches the bar's whole
+  // height, the way a tab does.
+  component BarCell: Rectangle {
+    id: barCell
     property string text: ""
     property string iconText: ""
     property bool selected: false
+    property string tooltipText: ""
+    // A tool at the end of the bar is a square with nothing but a glyph in it, so it sets
+    // this to zero and the glyph is centred in the cell rather than in a padded one.
+    property real horizontalPadding: Style.spacing.controlPaddingX
     signal clicked()
 
-    Layout.fillWidth: true
-    Layout.preferredWidth: 0
-    Layout.minimumWidth: 0
-    implicitHeight: tabContent.implicitHeight + 2 * Style.spacing.controlPaddingY
+    // The two slots, measured from the glyphs' own natural widths and never from the
+    // widths the layout hands out: a width derived from a width is the loop that once
+    // clipped «Поиск» off the end of its cell.
+    readonly property real iconSlot: barCell.iconText !== "" && barCell.text !== ""
+      ? barIcon.implicitWidth + Style.spacing.controlGap : 0
+    readonly property real labelSlot: barCell.text !== "" ? barLabel.implicitWidth : 0
+
+    implicitWidth: 2 * horizontalPadding + barCell.iconSlot + barCell.labelSlot
+      + (barCell.text !== "" ? 0 : (barCell.iconText !== "" ? barIcon.implicitWidth : 0))
+    implicitHeight: Math.max(barIcon.implicitHeight, barLabel.implicitHeight)
+      + 2 * Style.spacing.controlPaddingY
     radius: 0
     color: pointer.pressed ? Style.pressedFillFor(root.textColor, Color.accent)
       : pointer.containsMouse ? Style.hoverFillFor(root.textColor, Color.accent)
-      : viewTab.selected ? Style.selectedFillFor(root.textColor, Color.accent)
+      : barCell.selected ? Style.selectedFillFor(root.textColor, Color.accent)
       : "transparent"
 
-    RowLayout {
-      id: tabContent
-      anchors.fill: parent
-      anchors.leftMargin: Style.spacing.controlPaddingX
-      anchors.rightMargin: Style.spacing.controlPaddingX
+    // The glyph and the label, centred as one pair: a Row centred in the cell is centred
+    // as a whole, and the label gives up its width only when the pair is too wide to fit.
+    // Centring the label inside the room the glyph leaves put the pair half a glyph left
+    // of the middle, which is what the cell looked like.
+    Row {
+      id: barContent
+      anchors.centerIn: parent
       spacing: Style.spacing.controlGap
 
       Text {
-        id: tabIcon
-        Layout.alignment: Qt.AlignVCenter
-        visible: viewTab.iconText !== ""
+        id: barIcon
+        anchors.verticalCenter: parent.verticalCenter
+        visible: barCell.iconText !== ""
         textFormat: Text.PlainText
-        text: viewTab.iconText
-        color: viewTab.selected ? Style.selectedStateColor(root.textColor, Color.accent) : root.textColor
+        text: barCell.iconText
+        color: barCell.selected ? Style.selectedStateColor(root.textColor, Color.accent) : root.textColor
         font.family: Style.font.family
         font.pixelSize: Style.font.icon
       }
 
-      // The label takes what is left and elides, and a label that grows with the
-      // translation needs both halves of that: `fillWidth` to take the room and a zero
-      // preferred and minimum width so its own text is not the width the layout refuses
-      // to go below.
       Text {
-        Layout.fillWidth: true
-        Layout.preferredWidth: 0
-        Layout.minimumWidth: 0
-        Layout.alignment: Qt.AlignVCenter
-        horizontalAlignment: Text.AlignHCenter
+        id: barLabel
+        anchors.verticalCenter: parent.verticalCenter
+        visible: barCell.text !== ""
+        width: Math.min(implicitWidth, barCell.width - 2 * barCell.horizontalPadding - barCell.iconSlot)
         textFormat: Text.PlainText
         elide: Text.ElideRight
-        text: viewTab.text
-        color: viewTab.selected ? Style.selectedStateColor(root.textColor, Color.accent) : root.textColor
+        text: barCell.text
+        color: barCell.selected ? Style.selectedStateColor(root.textColor, Color.accent) : root.textColor
         font.family: Style.font.family
         font.pixelSize: Style.font.body
-        font.bold: viewTab.selected
-      }
-
-      // The icon's width, mirrored on the other side: the label is centred in the room
-      // the icon leaves, so without this the pair sits half an icon right of the cell's
-      // middle. A spacer rather than anchors, because the label's width is the layout's
-      // business — measuring it by hand is the loop that once clipped «Поиск».
-      Item {
-        visible: tabIcon.visible
-        Layout.preferredWidth: tabIcon.visible ? tabIcon.implicitWidth : 0
-        Layout.preferredHeight: 1
+        font.bold: barCell.selected
       }
     }
 
@@ -5451,15 +5458,25 @@ Panel {
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      onClicked: viewTab.clicked()
+      onClicked: barCell.clicked()
+    }
+
+    PanelToolTip {
+      visible: barCell.tooltipText !== "" && pointer.containsMouse
+      text: barCell.tooltipText
     }
   }
 
   // A divider between a tool at the bar's end and the views in the middle. Only there:
   // between two views the fill of the one in use is the divider.
+  //
+  // Darker than the separator under the bar on purpose. A tool cell can be *selected*, and
+  // its fill is the same foreground tint: at the separator's 12 % the line and the fill
+  // measured nine levels apart and the two ran together into one soft edge. The bar's own
+  // line has to win that comparison by a margin, or it reads as the fill's own border.
   component BarDivider: Rectangle {
     Layout.preferredWidth: 1
-    color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.14)
+    color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.3)
   }
 
   component SearchFieldRow: RowLayout {
