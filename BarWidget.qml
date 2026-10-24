@@ -740,11 +740,14 @@ Panel {
     var key = root.trackValue("key", "")
     if (key === "") return
     root.call([root.cli, root.liked ? "unlike" : "like", key], function(answer) {
+      if (!answer || !answer.ok || !answer.data) return
       // The answer carries the refreshed status, so the heart flips in one round
       // trip instead of waiting for the next poll.
-      if (answer && answer.ok && answer.data && answer.data.status) {
-        root.status = answer.data.status
-      }
+      if (answer.data.status) root.status = answer.data.status
+      // Every list holds its own copy of the track, and this key is in one of them:
+      // the player's heart and the row of the very same track are one fact, so the
+      // row flips with it instead of waiting for the list to be fetched again.
+      root.markLiked(key, answer.data.liked === true)
     })
   }
 
