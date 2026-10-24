@@ -87,6 +87,11 @@ accounts`, `account switch <id>` and `account remove <id>` do the same from a te
 The tokens and cookies live in `~/.config/omarchy-vk-music/accounts.json` with mode 600.
 They are never written to the repository, the journal, or anywhere else.
 
+A resolved stream URL is a signed, short-lived link bound to this address, so it is kept off
+command lines, where any local user could read it out of the process list: mpv receives it
+over its IPC socket, and ffmpeg reads it from a one-entry playlist with mode 600 that is
+deleted as soon as the download ends.
+
 ## Controls
 
 | Where | What |

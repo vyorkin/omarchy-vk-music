@@ -32,6 +32,9 @@ DOWNLOAD_TIMEOUT = 300
 # Written next to the finished file so a crash mid-download leaves no
 # half-file that looks playable.
 TMP_SUFFIX = ".part"
+# What the concat demuxer may open on behalf of a track: the playlist it is
+# pointed at, a plain stream, and an HLS stream with its AES-128 keys.
+CONCAT_PROTOCOLS = "file,crypto,data,http,https,tcp,tls"
 
 
 class CacheError(RuntimeError):
@@ -132,6 +135,12 @@ class AudioCache:
     def _download_fresh(self, url: str, key: str, on_progress=None) -> Path:
         """Run ffmpeg and, when asked, report progress in audio seconds.
 
+        The URL is handed to ffmpeg through a one-entry playlist, never as an
+        argument: `/proc/<pid>/cmdline` is world readable, and a signed VK
+        stream link is short-lived and bound to this address, so another local
+        user could lift it out of the process list and use it from the same
+        machine. The playlist appears mode 600 and is removed afterwards.
+
         `-progress pipe:1` makes ffmpeg print `out_time_us=` lines, which is the
         position inside the *audio*, not the download: for a track of a known
         duration that is exactly the percentage the interface wants to show.
@@ -139,38 +148,49 @@ class AudioCache:
         final = self.tracks_dir / f"{_safe(key)}.mp3"
         tmp = final.with_suffix(final.suffix + TMP_SUFFIX)
         tmp.parent.mkdir(parents=True, exist_ok=True)
+        playlist = tmp.with_name(f"{_safe(key)}.concat")
 
         last_error = ""
-        for codec_args in (["-c:a", "copy"], ["-c:a", "libmp3lame", "-q:a", "2"]):
-            command = [
-                "ffmpeg",
-                "-nostdin",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-progress",
-                "pipe:1",
-                "-nostats",
-                "-y",
-                "-i",
-                url,
-                "-vn",
-                *codec_args,
-                "-f",
-                "mp3",
-                str(tmp),
-            ]
-            ok, last_error = self._run_ffmpeg(command, tmp, on_progress)
-            if ok:
-                break
-            tmp.unlink(missing_ok=True)
-        else:
-            # The notice this becomes is shown in the panel, where a signed
-            # stream URL is unreadable noise: the message has room for the
-            # reason, not for a link that has already expired by the time
-            # anyone reads it.
-            detail = last_error.replace(url, "the stream") if url else last_error
-            raise CacheError(f"could not download the track: {detail}")
+        try:
+            _write_private(playlist, _concat_entry(url))
+            for codec_args in (["-c:a", "copy"], ["-c:a", "libmp3lame", "-q:a", "2"]):
+                command = [
+                    "ffmpeg",
+                    "-nostdin",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-protocol_whitelist",
+                    CONCAT_PROTOCOLS,
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    str(playlist),
+                    "-progress",
+                    "pipe:1",
+                    "-nostats",
+                    "-y",
+                    "-vn",
+                    *codec_args,
+                    "-f",
+                    "mp3",
+                    str(tmp),
+                ]
+                ok, last_error = self._run_ffmpeg(command, tmp, on_progress)
+                if ok:
+                    break
+                tmp.unlink(missing_ok=True)
+            else:
+                # The notice this becomes is shown in the panel, where a signed
+                # stream URL is unreadable noise: the message has room for the
+                # reason, not for a link that has already expired by the time
+                # anyone reads it.
+                detail = last_error.replace(url, "the stream") if url else last_error
+                raise CacheError(f"could not download the track: {detail}")
+        finally:
+            playlist.unlink(missing_ok=True)
 
         os.replace(tmp, final)
         size = final.stat().st_size
@@ -299,6 +319,30 @@ class AudioCache:
 
 def _safe(key: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in key)[:120]
+
+
+def _concat_entry(url: str) -> str:
+    """One `file` line for the concat demuxer.
+
+    Inside its quotes only a backslash and a single quote are special, and a VK
+    stream URL carries neither; both are escaped anyway, so a URL that does
+    carry one cannot break out of the quoted line.
+    """
+    escaped = url.replace("\\", "\\\\").replace("'", "'\\''")
+    return f"file '{escaped}'\n"
+
+
+def _write_private(path: Path, text: str) -> None:
+    """Write a file only this user can read, before its first byte lands."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            fd = -1
+            handle.write(text)
+    finally:
+        if fd != -1:
+            os.close(fd)
 
 
 def free_bytes(path: Path) -> int:
