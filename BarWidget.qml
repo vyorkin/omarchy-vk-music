@@ -140,6 +140,9 @@ Panel {
     // another tab is asked for on arrival: the page on screen is the one the watchdog
     // covers, and this is the moment it comes on screen.
     if (root.view === "browse") root.reloadEmptySection()
+    // The queue is drawn whole, so the row that is playing is not necessarily the first
+    // one: arriving at the tab is one of the two moments the list may scroll to it.
+    if (root.view === "queue") Qt.callLater(root.revealPlayingRow)
   }
   onBrowseSlugChanged: root.cursor = -1
   // A new query means a new list, so the selection goes. A search *answer* for
@@ -385,18 +388,21 @@ Panel {
     ? Color.popups.background
     : Color.background
 
-  // The queue starts AT the current track, not after it: a list that hides the row you
-  // are listening to cannot show that it is playing, and the playing row is the one place
-  // the pill and the play glyph exist to be seen.
+  // The queue is drawn whole, from its first track to its last, and the row that is
+  // playing is marked in the place it already has. It used to be a window that started
+  // at the current track, which meant a click on a row below it re-anchored the window:
+  // the rows above the new track vanished, every number that stayed meant a different
+  // track than a second before, and the list under the hand changed while the hand was
+  // on it. Every other list in the panel — a section, a playlist, the search results —
+  // stays where it is when a row is clicked, and the queue is a list too.
   readonly property int upcomingStart:
     Math.max(0, Number(status.index === undefined ? -1 : status.index))
 
-  // The upcoming few tracks, taken from the queue the service already holds.
+  // What is left to play, from the current track on: the footer's summary. The list
+  // itself is the whole queue, so this is what the line says, not what is drawn.
   readonly property var upcoming: {
     if (!queue || queue.length === 0) return []
-    var out = []
-    for (var i = root.upcomingStart; i < queue.length && out.length < 20; i++) out.push(queue[i])
-    return out
+    return queue.slice(root.upcomingStart)
   }
 
   // Refresh while a popup is open or music is playing; otherwise idle cheaply.
@@ -824,6 +830,10 @@ Panel {
     call([root.cli, "queue"], function(answer) {
       root.queueLoading = false
       if (answer && answer.ok) root.queue = answer.data
+      // The other moment the list may move: the queue just arrived, or the track that is
+      // playing is a different one and its row has to be found in a list that is drawn
+      // from the first track and does not otherwise follow the player.
+      Qt.callLater(root.revealPlayingRow)
     })
   }
 
@@ -1180,7 +1190,7 @@ Panel {
   function cursorItems() {
     // Whatever view it was opened from, an open playlist is the list on screen.
     if (root.openPlaylist !== null) return root.filtered(root.openPlaylistTracks)
-    if (root.view === "queue") return root.filtered(root.upcoming)
+    if (root.view === "queue") return root.filtered(root.queue)
     if (root.view === "browse") {
       if (root.browseSlug === "person") return root.filtered(root.personPlaylists)
       if (root.browseSlug === "friends") {
@@ -1327,6 +1337,33 @@ Panel {
 
   function revealCursor() {
     var row = root.cursorRow()
+    if (!row) return
+    root.revealRow(row)
+    // Again once the layout has settled: the list's height is still changing while
+    // the panel opens, and a scroll computed against the old height lands short.
+    Qt.callLater(root.revealCursor)
+  }
+
+  // The queue is drawn whole, so the row that is playing can be far below the fold:
+  // the list is scrolled to it when the queue comes into view and when the track
+  // changes, and never between those, because a list that moves while it is being read
+  // is exactly what drawing it whole was meant to stop.
+  function revealPlayingRow() {
+    if (root.view !== "queue" || !root.hasTrack) return
+    var key = root.trackValue("key", "")
+    if (key === "") return
+    var items = root.cursorItems()
+    for (var i = 0; i < items.length; i++) {
+      if (items[i] && String(items[i].key) === key) {
+        var row = root.rowAt(i)
+        root.revealRow(row)
+        Qt.callLater(root.revealRow, row)
+        return
+      }
+    }
+  }
+
+  function revealRow(row) {
     if (!row) return
     var list = root.activeList()
     // A row's own `y` is the y its parent block gave it, not a position in the
@@ -4343,10 +4380,13 @@ Panel {
 
         Repeater {
           id: queueRepeater
-          model: root.filtered(root.upcoming)
+          model: root.filtered(root.queue)
           delegate: TrackRow {
             track: modelData
-            position: root.upcomingStart + index + 1
+            // The number of a row is its place in the queue, not its place in what is
+            // left of it after a filter: a row that says 8 is the eighth track of the
+            // queue whether the other 99 are shown or not.
+            position: root.indexOfItem(root.queue, modelData) + 1
             selected: index === root.cursor
             onActivated: root.playQueueAt(root.indexOfItem(root.queue, modelData))
             onContextRequested: root.openRowMenu(modelData, root.indexOfItem(root.queue, modelData))

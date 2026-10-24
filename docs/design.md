@@ -1037,12 +1037,30 @@ row that is skipped out loud. The sending function is one (`playList`), and it a
 names the place, which is what makes the first rule hold for lists reached through
 the browse page, a playlist or a search.
 
+**The queue is a list too.** It was the one list in the panel whose content depended on
+what was playing: a window of the next twenty tracks, starting at the current one, so a
+click on a row further down re-anchored the window, the rows above the new current track
+disappeared, and the list changed under the hand that had clicked. It is now the whole
+queue, numbered absolutely, with the playing row marked wherever it is — so a click moves
+the mark and nothing else, the same way a click in a section, a playlist or the search
+results moves nothing. The playing row can then be below the fold, so the list scrolls to
+it when the queue arrives and when the track changes, and never between.
+
 ## Two views for playlists
 
-The queue starts AT the current track rather than after it. A list that hides the row you
-are listening to cannot show that it is playing — and the pill and the play glyph exist to
-be seen on exactly that row. Everything the list says about a place number stays absolute,
-so the track you are on is still number 8 of 8.
+The queue is drawn whole, from its first track to its last. It used to be a window that
+started at the current track, and the cost of that window was a list that moved under the
+hand: a click on a row below the current one re-anchored it, the rows above the new track
+vanished, and every number that stayed meant a different track than a second before. A
+queue is the list of what is playing, so it is drawn like every other list in the panel —
+section, playlist, search results — where a click marks a row and moves nothing. The row
+that is playing keeps its own mark (the pill and the play glyph exist to be seen on
+exactly that row), and the numbers are places in the queue, absolute under a filter as
+well: a row that says 8 is the eighth track whether the other 99 are on screen or not. The
+price is that the playing row can be far below the fold, so the list scrolls to it in the
+two moments it may move — the queue arriving, and the track changing — and never between
+them. The heading still describes what is *left*, from the current track on, because that
+is the question the line answers.
 
 The same holds for people: the friends and the people opened recently are one list on
 screen, so the cursor walks both, and a grid's cards know their offset in it — the
