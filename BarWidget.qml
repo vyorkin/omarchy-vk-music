@@ -4852,7 +4852,6 @@ Panel {
         BarCell {
           visible: root.view === "browse" && !root.filtering
             && (root.openPlaylist !== null || root.person !== null)
-          Layout.leftMargin: root.cardInset
           Layout.preferredHeight: root.topBarHeight
           text: root.t("Назад")
           tooltipText: root.openPlaylist !== null ? root.t("К плейлистам") : root.t("К списку людей")
@@ -5197,48 +5196,48 @@ Panel {
         }
       }
 
-      Button {
+      GlyphButton {
         iconText: "󰒟"
-        foreground: root.shuffled ? Color.accent : root.textColor
+        tint: root.shuffled ? Color.accent : root.textColor
         tooltipText: root.shuffled ? root.t("Перемешивание включено") : root.t("Перемешать")
         onClicked: root.toggleShuffle()
       }
 
-      Button {
+      GlyphButton {
         iconText: root.repeatGlyph
-        foreground: root.repeatMode === "off" ? root.textColor : Color.accent
+        tint: root.repeatMode === "off" ? root.textColor : Color.accent
         tooltipText: root.repeatMode === "off" ? root.t("Повтор выключен")
           : (root.repeatMode === "one" ? root.t("Повторять трек") : root.t("Повторять очередь"))
         onClicked: root.cycleRepeat()
       }
 
-      Button {
+      GlyphButton {
         iconText: "󰒮"
-        foreground: root.textColor
+        tint: root.textColor
         enabled: root.queue.length > 0
         opacity: enabled ? 1.0 : 0.4
         onClicked: root.skipPrevious()
       }
 
-      Button {
+      GlyphButton {
         iconText: root.playing ? "󰏤" : "󰐊"
-        foreground: root.textColor
+        tint: root.textColor
         enabled: root.hasTrack || root.queue.length > 0
         opacity: !enabled ? 0.4 : (root.loading ? 0.5 : 1.0)
         onClicked: root.togglePause()
       }
 
-      Button {
+      GlyphButton {
         iconText: "󰒭"
-        foreground: root.textColor
+        tint: root.textColor
         enabled: root.queue.length > 0
         opacity: enabled ? 1.0 : 0.4
         onClicked: root.skipNext()
       }
 
-      Button {
+      GlyphButton {
         iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
-        foreground: root.textColor
+        tint: root.textColor
         tooltipText: root.displayVolume <= 0 ? root.t("Включить звук") : root.t("Выключить звук")
         onClicked: root.toggleMute()
       }
@@ -5408,13 +5407,13 @@ Panel {
       spacing: Style.space(6)
       visible: root.signedIn
 
-      Button {
+      GlyphButton {
         id: prevButton
         iconText: "󰒮"
-        foreground: root.textColor
+        tint: root.textColor
         enabled: root.queue.length > 0
         opacity: enabled ? 1.0 : 0.4
-        iconSize: Math.round(Style.font.iconLarge * 1.1)
+        glyphSize: Math.round(Style.font.iconLarge * 1.1)
         tooltipText: root.t("Предыдущий трек")
         onClicked: root.skipPrevious()
       }
@@ -5443,12 +5442,12 @@ Panel {
         }
       }
 
-      Button {
+      GlyphButton {
         iconText: "󰒭"
-        foreground: root.textColor
+        tint: root.textColor
         enabled: root.queue.length > 0
         opacity: enabled ? 1.0 : 0.4
-        iconSize: Math.round(Style.font.iconLarge * 1.1)
+        glyphSize: Math.round(Style.font.iconLarge * 1.1)
         tooltipText: root.t("Следующий трек")
         onClicked: root.skipNext()
       }
@@ -5510,20 +5509,20 @@ Panel {
         }
       }
 
-      Button {
+      GlyphButton {
         id: speakerButton
         iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
-        foreground: root.textColor
-        iconSize: Math.round(Style.font.iconLarge * 1.25)
+        tint: root.textColor
+        glyphSize: Math.round(Style.font.iconLarge * 1.25)
         tooltipText: root.displayVolume <= 0 ? root.t("Включить звук") : root.t("Выключить звук")
         onClicked: root.toggleMute()
       }
 
       // The three dots: the controls that did not fit the row, one line below it.
-      Button {
+      GlyphButton {
         iconText: "󰇙"
-        foreground: root.playerControlsOpen ? Color.accent : root.textColor
-        iconSize: Math.round(Style.font.iconLarge * 1.25)
+        tint: root.playerControlsOpen ? Color.accent : root.textColor
+        glyphSize: Math.round(Style.font.iconLarge * 1.25)
         tooltipText: root.playerControlsOpen
           ? root.t("Свернуть управление")
           : root.t("Перемешать, повтор и громкость")
@@ -5537,16 +5536,18 @@ Panel {
       spacing: Style.space(6)
       visible: root.signedIn && root.playerControlsOpen
 
-      Button {
+      GlyphButton {
         iconText: "󰒟"
-        foreground: root.shuffled ? Color.accent : root.textColor
+        tint: root.shuffled ? Color.accent : root.textColor
+        glyphSize: Math.round(Style.font.iconLarge * 1.1)
         tooltipText: root.shuffled ? root.t("Перемешивание включено") : root.t("Перемешать")
         onClicked: root.toggleShuffle()
       }
 
-      Button {
+      GlyphButton {
         iconText: root.repeatGlyph
-        foreground: root.repeatMode === "off" ? root.textColor : Color.accent
+        tint: root.repeatMode === "off" ? root.textColor : Color.accent
+        glyphSize: Math.round(Style.font.iconLarge * 1.1)
         tooltipText: root.repeatMode === "off" ? root.t("Повтор выключен")
           : (root.repeatMode === "one" ? root.t("Повторять трек") : root.t("Повторять очередь"))
         onClicked: root.cycleRepeat()
@@ -5781,6 +5782,52 @@ Panel {
     PanelToolTip {
       visible: barCell.tooltipText !== "" && pointer.containsMouse
       text: barCell.tooltipText
+    }
+  }
+
+  // A glyph control of the player. The kit's Button paints a rounded square with a border
+  // under the pointer, and beside a play button drawn as a circle — the one round control
+  // in the panel — that square is the shape that does not belong. This is the same hover
+  // fill and the same hover border in a circle: the box is square, so the radius is half
+  // of it and the fill cannot become an ellipse.
+  component GlyphButton: BorderSurface {
+    id: glyphButton
+    property string iconText: ""
+    property color tint: root.textColor
+    property real glyphSize: Style.font.icon
+    property string tooltipText: ""
+    signal clicked()
+
+    implicitWidth: Style.space(30)
+    implicitHeight: Style.space(30)
+    radius: width / 2
+    color: pointer.pressed ? Style.pressedFillFor(root.textColor, Color.accent)
+      : pointer.containsMouse ? Style.hoverFillFor(root.textColor, Color.accent)
+      : "transparent"
+    borderSpec: pointer.containsMouse
+      ? Border.controlSpec("hover-cursor", root.textColor, Color.accent)
+      : Border.none()
+
+    Text {
+      anchors.centerIn: parent
+      textFormat: Text.PlainText
+      text: glyphButton.iconText
+      color: glyphButton.tint
+      font.family: Style.font.family
+      font.pixelSize: glyphButton.glyphSize
+    }
+
+    MouseArea {
+      id: pointer
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: glyphButton.clicked()
+    }
+
+    PanelToolTip {
+      visible: glyphButton.tooltipText !== "" && pointer.containsMouse
+      text: glyphButton.tooltipText
     }
   }
 

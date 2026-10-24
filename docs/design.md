@@ -576,6 +576,13 @@ so the rule the player ends with is the rule the bar starts with — the same se
 once — and the bar of status at the card's bottom is drawn to the height of the bar at its
 top: the two close the card, and two bars that frame a card should be the same bar.
 
+The transport buttons are the one place a circle is the right shape. The kit's `Button`
+paints a rounded square with a hover border, and beside a play button drawn as a circle it
+is the shape that does not belong; `GlyphButton` paints the same hover fill and the same
+hover border in a circle — a square box, `radius: width / 2`, so the fill cannot become an
+ellipse. Every glyph in the player rows uses it: shuffle, repeat, previous, play, next,
+volume, and the dots that open the rest.
+
 A glyph that says what it is by lighting a box is not always right: under a 14 px outline
 heart a 24 px rectangle is four times the shape it points at, and it reads as a button
 while the heart reads as the thing being offered. `BarGlyph` takes `fillOnHover` for that,
@@ -810,7 +817,10 @@ A delayed load also means the section's SLUG is still the old one for those 600 
   the question mark. Those cells are drawn as cells of a bar, not as buttons in a row:
   the rule above them and the card's own edge below are the bar's edges, a divider marks
   where the line stops being text, and the last cell carries the card's corner the way
-  the first cell of the top bar does. A bar that closes a card is the bar that opens it.
+  the first cell of the top bar does. A bar that closes a card is the bar that opens it —
+  which is why «Назад», the first cell on that line, starts at the card's edge and not at
+  the inset the text beside it keeps: the cell's fill is what has to reach the edge, and a
+  fill that starts an inset later reads as a margin the bar does not have.
 * The status line was not the place for «…». Every command raised the marker, the poll
   among them, so while a track played the line blinked once a second — measured at two
   frames in seventy with the poll marked, none in seventy without it. The marker belongs
