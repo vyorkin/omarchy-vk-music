@@ -1196,7 +1196,9 @@ Panel {
         // cursor walks both, the same way a section walks its playlists and tracks.
         return root.filtered(root.friends).concat(root.filtered(root.people))
       }
-      if (root.browseSlug === "radiostations") return root.stations
+      // Radio is a list like any other: stations carry a `name`, and a filter that walked
+      // past them left the field looking broken on the one page where it changed nothing.
+      if (root.browseSlug === "radiostations") return root.filtered(root.stations)
       var lists = root.filtered(root.browsePlaylists)
       // The cursor walks what is on screen: one column of playlists and then tracks in
       // the list view, a grid of cards with the same tracks under it in the gallery.
@@ -1455,7 +1457,7 @@ Panel {
           : root.filtered(root.people)[index - friendCount]
         if (person) root.openPerson(String(person.id))
       }
-      else if (root.browseSlug === "radiostations") root.playStation(root.stations[index])
+      else if (root.browseSlug === "radiostations") root.playStation(root.filtered(root.stations)[index])
       else root.playBrowseTrack(index)
     } else if (root.view === "search") {
       if (root.searchMode === "playlists") root.playPlaylist(root.filtered(root.foundPlaylists)[index])
@@ -2304,12 +2306,16 @@ Panel {
     if (root.openPlaylist !== null) return false
     if (root.view === "browse") {
       if (root.browseSlug === "radiostations") return false
-      if (root.browseSlug === "person") return root.gridView && root.personPlaylists.length > 0
+      // Counted on the filtered list, like `friendsGallery`, `recentGallery` and
+      // `playlistsShown` above: a filter that hides every playlist leaves nothing to walk
+      // sideways, and the switch has already left with it. The raw length here kept `h` and
+      // `l` walking a wall that was no longer on screen.
+      if (root.browseSlug === "person") return root.gridView && root.filtered(root.personPlaylists).length > 0
       if (root.browseSlug === "friends") return root.friendsGallery || root.recentGallery
-      return root.gridView && root.browsePlaylists.length > 0
+      return root.gridView && root.filtered(root.browsePlaylists).length > 0
     }
     if (root.view === "search") {
-      return root.gridView && root.searchMode === "playlists" && root.foundPlaylists.length > 0
+      return root.gridView && root.searchMode === "playlists" && root.filtered(root.foundPlaylists).length > 0
     }
     return false
   }
@@ -4588,7 +4594,9 @@ Panel {
 
         Repeater {
           id: stationRepeater
-          model: root.browseSlug === "radiostations" ? root.stations : []
+          // The cursor walks the filtered list, so the rows must be the same list: a raw
+          // model under a filtered cursor plays the station above the one that was clicked.
+          model: root.browseSlug === "radiostations" ? root.filtered(root.stations) : []
           delegate: Button {
             width: listColumn.width
             leftAlign: true
@@ -5121,13 +5129,25 @@ Panel {
 
         // Vim's «/»: the field takes the status line while a filter is being typed, the list
         // above shrinks to what matches, and Enter hands the keyboard back to the list.
+        //
+        // The field IS the line: it runs from the card's own edge to the `?` cell, so the
+        // heading it replaces keeps its place, and it paints no box of its own. The bar is a
+        // band of flush cells, and a rounded input sitting inside it with a margin of its own
+        // was the one shape in the band that belonged somewhere else: the border landed a
+        // pixel inside the card's border and the rounding cut a corner the band does not have.
+        // `horizontalPadding` is the inset the heading reads from, so the first character of
+        // the filter starts on the same line as the text it took over.
         TextField {
           id: filterField
           Layout.fillWidth: true
-          Layout.leftMargin: root.cardInset
-          Layout.rightMargin: root.cardInset
+          Layout.fillHeight: true
           Layout.alignment: Qt.AlignVCenter
           visible: root.filtering
+          background: null
+          horizontalPadding: root.cardInset
+          verticalPadding: 0
+          foreground: root.textColor
+          placeholderTextColor: root.dim
           placeholderText: root.t("Фильтр по списку: название или исполнитель")
           text: root.filter
           // Vim-like: «/» puts you in the field, Enter leaves it, Esc clears it.
