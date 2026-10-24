@@ -155,12 +155,6 @@ Panel {
 
   readonly property int _queryLength: root.query.trim().length
   readonly property bool resultsShowing: root.searchState === "results" && root._queryLength >= 2
-  readonly property var resultsShown: root.resultsShowing ? root.results : []
-  // Suggestions stand in for the results while the query is still being typed,
-  // and come back when a search found nothing: they are the useful thing left.
-  readonly property var suggestionsShown: root._queryLength < 2 ? [] : (root.resultsShowing
-    ? (root.results.length === 0 ? root.suggestions : [])
-    : root.suggestions)
   readonly property string searchHeader: {
     if (root._queryLength < 2) return ""
     // A playlist search answers in playlists, so its heading counts those.
@@ -173,7 +167,7 @@ Panel {
     if (root.searchState === "searching") return root.t("Ищу…")
     if (!root.resultsShowing) return root.t("Подсказки")
     if (root.results.length === 0) {
-      return root.suggestionsShown.length > 0 ? root.t("Ничего не найдено. Похожее:") : root.t("Ничего не найдено")
+      return root.listPlan().lists.suggestions.length > 0 ? root.t("Ничего не найдено. Похожее:") : root.t("Ничего не найдено")
     }
     var span = root.tracksSpan(root.results)
     return root.t("Найдено ") + root.results.length + (span === "" ? "" : " · " + span)
@@ -212,7 +206,7 @@ Panel {
   // The heading is worth its line only when there is something under it: while
   // the query is still short nothing is shown at all.
   readonly property bool searchHeaderVisible: root.searchHeader !== ""
-    && (root.searchState !== "typing" || root.suggestionsShown.length > 0)
+    && (root.searchState !== "typing" || root.listPlan().lists.suggestions.length > 0)
 
   // «6 ч 12 мин» for a list of tracks: the queue and a section page are both
   // worth summarising, and VK already sent us every duration.
@@ -961,31 +955,8 @@ Panel {
     return root.filter.trim() !== ""
   }
 
-  function matchesFilter(item) {
-    if (!root.filterActive()) return true
-    if (!item) return false
-    var haystack = String(item.title || "") + " " + String(item.artist || "")
-      + " " + String(item.name || "")
-    return haystack.toLowerCase().indexOf(root.filter.trim().toLowerCase()) >= 0
-  }
-
-  // With a filter on, a row's position in the list on screen is not its position in
-  // the queue or the playlist: everything that acts on a row acts on the item.
-  // A row can hold a copy rather than the very object, and identity then fails while the
-  // track is the same one. The key is what identifies a track, so it is the fallback — and a
-  // wrong index plays the wrong song, which is worse than any lookup. The lookup itself lives
-  // in `ListShape.js`, beside the plan that produces the lists it is given.
   function indexOfItem(list, item) {
     return ListShape.indexOf(list, item)
-  }
-
-  function filtered(items) {
-    if (!root.filterActive() || !items) return items
-    var out = []
-    for (var i = 0; i < items.length; i++) {
-      if (root.matchesFilter(items[i])) out.push(items[i])
-    }
-    return out
   }
 
   // A playlist that was opened rather than started: what it holds, and where to
@@ -1095,28 +1066,6 @@ Panel {
       if (slug === "friends") root.browseFriends()
       else root.browseSource(slug)
     }
-  }
-
-  // A representation switch only means something where there is something with two
-  // representations. «Моя музыка» is a hundred tracks and not a single playlist, so the
-  // gallery has nothing to show there and both the switch and its keys must be silent.
-  readonly property bool playlistsShown: {
-    if (root.openPlaylist !== null) return false
-    if (root.view === "browse") {
-      if (root.browseSlug === "radiostations") return false
-      // «Моя музыка» is the one section that is a hundred tracks and never a playlist, so
-      // the switch has nothing to say there and says it without waiting for an answer.
-      if (root.browseSlug === "all") return false
-      // People are drawn as cards or as rows as well, so the switch means the same
-      // thing on the friends page and on a person's page as it does for playlists.
-      if (root.browseSlug === "friends" || root.browseSlug === "person") return true
-      // A section that is still loading has no playlists to count yet: asked on the rows
-      // alone, the two cells vanished for as long as the request took and came back after
-      // it, which read as a control that flickers every time a tab is pressed.
-      return root.browseLoading || root.filtered(root.browsePlaylists).length > 0
-    }
-    if (root.view === "search") return root.searchMode === "playlists"
-    return false
   }
 
   // The section the panel is on, counting a scheduled one: the chip lights up the
@@ -2235,19 +2184,14 @@ Panel {
   // has to leave around its columns.
   readonly property real cardRim: Style.space(4)
   readonly property int galleryColumns: root.isExtended() ? 4 : 3
-  // A gallery is a wall, and one person is not a wall: the friends list usually holds a
-  // single friend, and a card in a row this wide is a poster standing next to nothing.
-  // A section of one is drawn as the row it would be with the gallery off, even when
-  // the other section on the page is a wall — the page has two sections, and each has
-  // its own answer.
-  // The two walls of the friends page, each answering for its own cards. A grid of cards as
-  // opposed to a one-column list — `galleryMode` — is the plan's answer too: only in a gallery
-  // do h and l mean anything, and only there does j move a row rather than a line. It is the
-  // list ON SCREEN that decides, never the playlist-view preference alone: a playlist's tracks
-  // and the queue are lists even when the gallery is on for playlists, and stepping four at a
-  // time there is what made «j» land on the wrong track.
-  readonly property bool friendsGallery: root.listPlan().friendsGallery
-  readonly property bool recentGallery: root.listPlan().recentGallery
+  // Whether the list on screen is a wall of cards, which of the friends page's two walls stand
+  // across a card each, and whether the representation switch means anything there: all three
+  // are the plan's answers, because all three are questions about the shape of the filtered
+  // list. A gallery is a wall, and one person is not a wall — the friends list usually holds a
+  // single friend, and a card in a row this wide is a poster standing next to nothing, so each
+  // of the page's two sections answers for itself. The grid preference alone decides none of
+  // this: a playlist's tracks and the queue are lists even when the gallery is on for
+  // playlists, and stepping four at a time there is what made «j» land on the wrong track.
 
   readonly property int marqueeSpeed: {
     var value = Number(root.setting("marqueeSpeed", root.prefs.marqueeSpeed))
@@ -2587,7 +2531,7 @@ Panel {
       // bleed past the card, and only this number showed it.
       widths: [root.activeBody().width, root.activeList().width],
       list: [root.activeList().viewHeight, root.activeList().contentHeight],
-      shown: [root.suggestionsShown.length, root.resultsShown.length]
+      shown: [root.listPlan().lists.suggestions.length, root.listPlan().lists.results.length]
     }))
     // The keyboard belongs to the list when the panel opens. A field of a view that is
     // not showing would otherwise keep it, and a hidden field eats every key it is
@@ -4168,7 +4112,7 @@ Panel {
         }
 
         BarDivider {
-          visible: sectionBar.backShown && (sectionChips.visible || root.playlistsShown)
+          visible: sectionBar.backShown && (sectionChips.visible || root.listPlan().showsPlaylists)
           Layout.preferredHeight: root.barCellHeight
         }
 
@@ -4291,12 +4235,12 @@ Panel {
         // Only where something has two representations: «Моя музыка» is a hundred tracks
         // and no playlists, so neither these two cells nor their keys may claim otherwise.
         BarDivider {
-          visible: root.playlistsShown
+          visible: root.listPlan().showsPlaylists
           Layout.preferredHeight: root.barCellHeight
         }
 
         BarCell {
-          visible: root.playlistsShown
+          visible: root.listPlan().showsPlaylists
           Layout.preferredWidth: root.barCellHeight
           Layout.preferredHeight: root.barCellHeight
           horizontalPadding: 0
@@ -4307,7 +4251,7 @@ Panel {
         }
 
         BarCell {
-          visible: root.playlistsShown
+          visible: root.listPlan().showsPlaylists
           Layout.preferredWidth: root.barCellHeight
           Layout.preferredHeight: root.barCellHeight
           horizontalPadding: 0
@@ -4359,7 +4303,7 @@ Panel {
 
         Repeater {
           id: queueRepeater
-          model: root.filtered(root.queue)
+          model: root.listPlan().lists.queue
           delegate: TrackRow {
             track: modelData
             // The number of a row is its place in the queue, not its place in what is
@@ -4394,18 +4338,18 @@ Panel {
         // section holds, so the gallery's first row is the list's first row.
         PlaylistGrid {
           id: browseGrid
-          items: root.filtered(root.browsePlaylists)
+          items: root.listPlan().lists.playlists
           visible: root.gridView && items.length > 0
           onPicked: function(index) {
-            root.openPlaylistView(root.filtered(root.browsePlaylists)[index])
+            root.openPlaylistView(root.listPlan().lists.playlists[index])
           }
         }
 
         PlaylistRows {
           id: browsePlaylistRows
-          items: root.gridView ? [] : root.filtered(root.browsePlaylists)
+          items: root.gridView ? [] : root.listPlan().lists.playlists
           onPicked: function(index) {
-            root.openPlaylistView(root.filtered(root.browsePlaylists)[index])
+            root.openPlaylistView(root.listPlan().lists.playlists[index])
           }
         }
 
@@ -4464,17 +4408,17 @@ Panel {
           // the cards that are drawn, so a card that is not drawn must not be in the list.
           PeopleGrid {
             id: friendsGrid
-            items: root.friendsGallery ? root.filtered(root.friends) : []
+            items: root.listPlan().friendsGallery ? root.listPlan().lists.friends : []
             visible: items.length > 0
             onPicked: function(index) {
-              var friend = root.filtered(root.friends)[index]
+              var friend = root.listPlan().lists.friends[index]
               if (friend) root.openPerson(String(friend.id))
             }
           }
 
           Repeater {
             id: friendRepeater
-            model: root.friendsGallery ? [] : root.filtered(root.friends)
+            model: root.listPlan().friendsGallery ? [] : root.listPlan().lists.friends
             delegate: PersonRow {
               item: modelData
               selected: index === root.cursor
@@ -4490,21 +4434,21 @@ Panel {
 
           PeopleGrid {
             id: recentGrid
-            baseOffset: root.filtered(root.friends).length
-            items: root.recentGallery ? root.filtered(root.people) : []
+            baseOffset: root.listPlan().lists.friends.length
+            items: root.listPlan().recentGallery ? root.listPlan().lists.people : []
             visible: items.length > 0
             onPicked: function(index) {
-              var person = root.filtered(root.people)[index]
+              var person = root.listPlan().lists.people[index]
               if (person) root.openPerson(String(person.id))
             }
           }
 
           Repeater {
             id: recentPeopleRepeater
-            model: root.recentGallery ? [] : root.filtered(root.people)
+            model: root.listPlan().recentGallery ? [] : root.listPlan().lists.people
             delegate: PersonRow {
               item: modelData
-              selected: (root.filtered(root.friends).length + index) === root.cursor
+              selected: (root.listPlan().lists.friends.length + index) === root.cursor
               onActivated: if (modelData) root.openPerson(String(modelData.id))
             }
           }
@@ -4525,7 +4469,7 @@ Panel {
           id: stationRepeater
           // The cursor walks the filtered list, so the rows must be the same list: a raw
           // model under a filtered cursor plays the station above the one that was clicked.
-          model: root.browseSlug === "radiostations" ? root.filtered(root.stations) : []
+          model: root.browseSlug === "radiostations" ? root.listPlan().lists.stations : []
           delegate: Button {
             width: listColumn.width
             leftAlign: true
@@ -4544,7 +4488,7 @@ Panel {
 
         Repeater {
           id: browseTrackRepeater
-          model: root.browseSlug === "radiostations" ? [] : root.filtered(root.browseTracks)
+          model: root.browseSlug === "radiostations" ? [] : root.listPlan().lists.tracks
           delegate: TrackRow {
             track: modelData
             selected: (root.browseCursorOffset() + index) === root.cursor
@@ -4577,7 +4521,7 @@ Panel {
         // The tracks are a list, not more controls: the line says so.
         Repeater {
           id: playlistTrackRepeater
-          model: root.filtered(root.openPlaylistTracks)
+          model: root.listPlan().lists.playlistTracks
           delegate: TrackRow {
             track: modelData
             position: index + 1
@@ -4625,7 +4569,7 @@ Panel {
 
         Repeater {
           id: historyRepeater
-          model: root._queryLength < 2 ? root.history : []
+          model: root.listPlan().lists.history
           delegate: SuggestionRow {
             text: modelData ? String(modelData) : ""
             selected: index === root.cursor
@@ -4641,24 +4585,24 @@ Panel {
 
         PlaylistGrid {
           id: searchGrid
-          items: root.searchMode === "playlists" ? root.filtered(root.foundPlaylists) : []
+          items: root.searchMode === "playlists" ? root.listPlan().lists.foundPlaylists : []
           visible: root.gridView && items.length > 0
           onPicked: function(index) {
-            root.openPlaylistView(root.filtered(root.foundPlaylists)[index])
+            root.openPlaylistView(root.listPlan().lists.foundPlaylists[index])
           }
         }
 
         PlaylistRows {
           id: searchPlaylistRows
-          items: (root.searchMode === "playlists" && !root.gridView) ? root.filtered(root.foundPlaylists) : []
+          items: (root.searchMode === "playlists" && !root.gridView) ? root.listPlan().lists.foundPlaylists : []
           onPicked: function(index) {
-            root.openPlaylistView(root.filtered(root.foundPlaylists)[index])
+            root.openPlaylistView(root.listPlan().lists.foundPlaylists[index])
           }
         }
 
         Repeater {
           id: suggestionRepeater
-          model: root.suggestionsShown
+          model: root.listPlan().lists.suggestions
           delegate: SuggestionRow {
             text: modelData ? String(modelData) : ""
             selected: index === root.cursor
@@ -4668,7 +4612,7 @@ Panel {
 
         Repeater {
           id: resultRepeater
-          model: root.filtered(root.resultsShown)
+          model: root.listPlan().lists.results
           delegate: TrackRow {
             track: modelData
             selected: index === root.cursor
@@ -6350,7 +6294,7 @@ Panel {
         // One key for the representation, a toggle: «m» switches between the gallery
         // and the list wherever both exist.
         if (character === "m") {
-          if (root.playlistsShown) root.setPlaylistView(root.gridView ? "list" : "grid")
+          if (root.listPlan().showsPlaylists) root.setPlaylistView(root.gridView ? "list" : "grid")
           return
         }
         if (character === "L") { root.cycleSource(1); return }

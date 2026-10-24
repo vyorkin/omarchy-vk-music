@@ -137,7 +137,10 @@ function plan(state) {
     stations: filtered(array(s.stations), filter),
     foundPlaylists: filtered(array(s.foundPlaylists), filter),
     results: [],
-    history: array(s.history),
+    // The recent queries are the list on screen only while the field holds one character or
+    // none: past that the search has something to show. Gated here, so the rows and the
+    // cursor read the same array rather than each applying the rule.
+    history: queryLength < 2 ? array(s.history) : [],
     suggestions: []
   }
 
