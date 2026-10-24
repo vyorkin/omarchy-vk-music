@@ -245,6 +245,13 @@ Panel {
   // of the bar follow it: a square fill there paints over the card's corner, and in the
   // settings view — where the first cell is the filled one — that shows.
   readonly property real cardCorner: Math.max(0, Style.cornerRadius - Style.space(2))
+  // The height of a bar of cells: one line of text plus the control padding on each side.
+  // Stated once and read by both bars — the one at the top of the card and the one over
+  // the list — because a cell that measured its own glyph leaves the fill of the one in
+  // use a pixel off its neighbours, and in a band of flush cells that shows. `barProbe`
+  // is the invisible Text at the bottom of this file that measures it.
+  readonly property real barCellHeight: Math.round(barProbe.implicitHeight)
+    + 2 * Style.spacing.controlPaddingY
 
   // Which popup shape is in use: the compact one or the extended two-column one.
   // Both are built from the same blocks, and only the visible one takes keys.
@@ -3933,46 +3940,87 @@ Panel {
     // of the list and the first card — which is what made a gallery align with neither
     // edge of the scroll once the cursor moved. Out here they are always reachable, and
     // the grid starts at the same place whatever the section shows.
-    Flickable {
-      id: sectionChips
+    //
+    // It is a bar of cells like the one at the top of the card: flush, square, from the
+    // card's edge to its edge, with no inset of its own — and the two cells that choose
+    // how a list of playlists is drawn at its right end. They belong here rather than up
+    // there: they say how THIS list is drawn, and they sit where the list starts.
+    RowLayout {
+      id: sectionBar
       Layout.fillWidth: true
-      Layout.leftMargin: root.cardInset
-      Layout.rightMargin: root.cardInset
-      Layout.preferredHeight: sectionChipRow.height
-      visible: root.view === "browse" && root.openPlaylist === null
-      contentWidth: sectionChipRow.width
-      clip: true
-      boundsBehavior: Flickable.StopAtBounds
+      spacing: 0
+      // The catalog's sections in the browse view, and — in a search that found playlists —
+      // nothing but the two cells at the right, which is where the switch lives now.
+      visible: (root.view === "browse" && root.openPlaylist === null)
+        || (root.view === "search" && root.playlistsShown)
 
-      // The sections as cells of a bar, the way the views at the top of the card are
-      // drawn — square, flush, the one in use filled — and without icons, because a
-      // section's name is the whole of it.
-      Row {
-        id: sectionChipRow
-        spacing: 0
+      Flickable {
+        id: sectionChips
+        Layout.fillWidth: true
+        Layout.preferredHeight: sectionChipRow.height
+        contentWidth: sectionChipRow.width
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
 
-        // First, and deliberately: choosing a person is a way in, not a
-        // section, and it must not hide behind a scrolling row.
-        BarCell {
-          width: implicitWidth
-          text: root.t("Люди")
-          selected: root.effectiveBrowse() === "friends" || root.effectiveBrowse() === "person"
-          tooltipText: root.t("Друзья и любой человек по ссылке — их плейлисты")
-          onClicked: root.browseFriends()
-        }
+        // The sections as cells of a bar, the way the views at the top of the card are
+        // drawn — square, flush, the one in use filled — and without icons, because a
+        // section's name is the whole of it.
+        Row {
+          id: sectionChipRow
+          spacing: 0
 
-        Repeater {
-          model: root.sources
-          delegate: BarCell {
+          // First, and deliberately: choosing a person is a way in, not a
+          // section, and it must not hide behind a scrolling row.
+          BarCell {
             width: implicitWidth
-            text: modelData ? (root.sectionName(root.sourceSlug(modelData)) || String(modelData.title || "")) : ""
-            selected: modelData ? root.sourceSlug(modelData) === root.effectiveBrowse() : false
-            onClicked: if (modelData) {
-              root.browseSource(root.sourceSlug(modelData))
-              root.focusList()
+            text: root.t("Люди")
+            selected: root.effectiveBrowse() === "friends" || root.effectiveBrowse() === "person"
+            tooltipText: root.t("Друзья и любой человек по ссылке — их плейлисты")
+            onClicked: root.browseFriends()
+          }
+
+          Repeater {
+            model: root.sources
+            delegate: BarCell {
+              width: implicitWidth
+              text: modelData ? (root.sectionName(root.sourceSlug(modelData)) || String(modelData.title || "")) : ""
+              selected: modelData ? root.sourceSlug(modelData) === root.effectiveBrowse() : false
+              onClicked: if (modelData) {
+                root.browseSource(root.sourceSlug(modelData))
+                root.focusList()
+              }
             }
           }
         }
+      }
+
+      // Only where something has two representations: «Моя музыка» is a hundred tracks
+      // and no playlists, so neither these two cells nor their keys may claim otherwise.
+      BarDivider {
+        visible: root.playlistsShown
+        Layout.preferredHeight: root.barCellHeight
+      }
+
+      BarCell {
+        visible: root.playlistsShown
+        Layout.preferredWidth: root.barCellHeight
+        Layout.preferredHeight: root.barCellHeight
+        horizontalPadding: 0
+        iconText: "󰕳"
+        selected: root.gridView
+        tooltipText: root.t("Галерея обложек")
+        onClicked: root.setPlaylistView("grid")
+      }
+
+      BarCell {
+        visible: root.playlistsShown
+        Layout.preferredWidth: root.barCellHeight
+        Layout.preferredHeight: root.barCellHeight
+        horizontalPadding: 0
+        iconText: "󰉹"
+        selected: !root.gridView
+        tooltipText: root.t("Список")
+        onClicked: root.setPlaylistView("list")
       }
     }
 
@@ -4262,22 +4310,23 @@ Panel {
         spacing: Style.space(4)
         visible: root.view === "search" && root.openPlaylist === null
 
-        // One box, two kinds of answer.
+        // One box, two kinds of answer — the same cells as the bar over the list: flush,
+        // square, the one in use filled, and starting at the card's edge.
         Row {
           width: parent.width
-          spacing: Style.space(4)
+          spacing: 0
           visible: root.signedIn
 
-          Button {
+          BarCell {
+            width: implicitWidth
             text: root.t("Треки")
-            foreground: root.textColor
             selected: root.searchMode === "tracks"
             onClicked: root.setSearchMode("tracks")
           }
 
-          Button {
+          BarCell {
+            width: implicitWidth
             text: root.t("Плейлисты")
-            foreground: root.textColor
             selected: root.searchMode === "playlists"
             tooltipText: root.t("Искать плейлисты других людей")
             onClicked: root.setSearchMode("playlists")
@@ -5290,22 +5339,11 @@ Panel {
     spacing: 0
     visible: root.signedIn
 
-    // The bar's height, stated once: one line of text plus the control padding on each
-    // side. A cell that measured its own glyph would leave the fill of the one in use a
-    // pixel off its neighbours, and in a band of flush cells that shows.
-    readonly property real cellHeight: Math.round(cellProbe.implicitHeight)
-      + 2 * Style.spacing.controlPaddingY
+    // The height comes from the root, where the bar over the list reads it too.
+    readonly property real cellHeight: root.barCellHeight
     // The two tools at the ends are as wide as the bar is tall: squares at either end of
     // a row of cells, which is what keeps the views between them the same width.
     readonly property real toolWidth: cellHeight
-
-    Text {
-      id: cellProbe
-      visible: false
-      text: "X"
-      font.family: Style.font.family
-      font.pixelSize: Style.font.body
-    }
 
     // Settings is not one of the views, so it stands outside them, at the bar's left
     // end: a tab that is not a place in the card has no claim on a third of it.
@@ -5374,31 +5412,6 @@ Panel {
     }
 
     BarDivider { Layout.preferredHeight: topRow.cellHeight }
-
-    // How a list of PLAYLISTS is drawn: two more cells in the bar's right-hand group of
-    // tools, and only where something has two representations. «Моя музыка» is a hundred
-    // tracks and no playlists, so neither these two nor their keys may claim otherwise.
-    BarCell {
-      visible: root.playlistsShown
-      Layout.preferredWidth: topRow.toolWidth
-      Layout.preferredHeight: topRow.cellHeight
-      horizontalPadding: 0
-      iconText: "󰕳"
-      selected: root.gridView
-      tooltipText: root.t("Галерея обложек")
-      onClicked: root.setPlaylistView("grid")
-    }
-
-    BarCell {
-      visible: root.playlistsShown
-      Layout.preferredWidth: topRow.toolWidth
-      Layout.preferredHeight: topRow.cellHeight
-      horizontalPadding: 0
-      iconText: "󰉹"
-      selected: !root.gridView
-      tooltipText: root.t("Список")
-      onClicked: root.setPlaylistView("list")
-    }
 
     // The card's own width, one click away. It writes the same preference the settings
     // page writes, so the two cannot disagree, and the card takes the new shape as soon
@@ -5591,6 +5604,16 @@ Panel {
   // the column's implicit height looked right in theory, but that height only
   // exists after a layout pass, so the popup opened collapsed and grew a frame
   // later. A fixed card with one Flickable is boring and always correct.
+
+  // Measures one line of the bar's font. Invisible and unlaid-out: nothing reads its
+  // position, only its height, and only `barCellHeight` reads that.
+  Text {
+    id: barProbe
+    visible: false
+    text: "X"
+    font.family: Style.font.family
+    font.pixelSize: Style.font.body
+  }
 
   KeyboardPanel {
     id: panel

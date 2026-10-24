@@ -519,6 +519,15 @@ the panel's 12 % separators: the cell in use has to run into it. Under a soft li
 fill stopped a gap short and floated, and the eye read the gap as a margin the bar does
 not have — which is exactly what «я всё ещё вижу отступ снизу» was looking at.
 
+The bar over the list — the catalog's sections — is the same bar as the one at the top of
+the card: flush, square, from the card's edge to its edge and with no inset of its own,
+the section in use filled, and no icons (a section's name is the whole of it). The two
+cells that choose how a list of playlists is drawn — gallery or rows — sit at its right
+end, past a divider, where they cannot scroll away with the sections: they are about THIS
+list, so they belong where the list starts, not in the bar at the top of the card. In a
+search that found playlists the same bar appears with nothing but those two cells in it,
+and the search's own «Треки / Плейлисты» switch is drawn as two of the same cells.
+
 A list row is the same shape as the bar's cells: square, and as wide as the card. The
 scroller is the width of the card, a row is the width of the scroller, so a selected or
 hovered row is filled from border to border; what carries `cardInset` is the row's own
