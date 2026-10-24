@@ -495,7 +495,9 @@ views the fill of the one in use is the divider. The bar's height is stated once
 (`cellHeight`, one line of text plus the control padding) instead of measured per cell,
 and the two tools are as wide as that height is tall: a cell that measured its own glyph
 left the fill of the active one a pixel off its neighbours, which in a band of flush
-cells is exactly what the eye picks up.
+cells is exactly what the eye picks up. The bar at the top of the card is a fifth taller
+than the bars under it — `cellHeight` is `barCellHeight * 1.2` there — because it is the
+first thing the eye lands on and the one a hand reaches for without looking.
 
 The card has no padding of its own (`padding: 0` on the panel) and everything is placed
 inside `cardInset` instead: the bar takes none, so it is the card's lid and the cell in
@@ -781,10 +783,16 @@ A delayed load also means the section's SLUG is still the old one for those 600 
 * A heading inside the scroll stops being a heading. Every view's header row lived
   in the list's own column, so it slid away with the rows — and for the settings
   page, which is the longest thing in the panel, it meant losing the only thing that
-  says where you are. `TrackList` is a `ColumnLayout` now: the heading, the way
-  back and the view's action are one row above a Flickable, and the cursor still
-  reaches into it through `contentY` and `contentHeight` aliases. Measured with the
-  list scrolled to 400: the row's y is still 0.
+  says where you are. `TrackList` is a `ColumnLayout`, and the heading, the way back
+  and the view's action left the scroll. They left the top of the card as well, in the
+  end: they are the status bar under the list now, behind a full-width rule. A heading
+  above the first row — «Друзья · 3 человека», «Главная · 54 трека · 3ч 44мин»,
+  «Моя музыка · загрузка…» — is the list talking about itself, and it reads as the first
+  thing in the list rather than as a line about it. Under the list it costs the list
+  nothing and it is the place a status belongs: the same line the panel already had for
+  a skipped track, now shared with the heading, with the filter field while «/» is being
+  typed, and with the two cells that act on the list («Назад», «Играть»/«Очистить») and
+  the question mark.
 * A caption in a plain `Row` is not aligned with buttons: a Row places every child
   at its top, and a `PanelSectionHeader` is a `Text` whose own height is smaller
   than a button's, so the caption floats above the row's centre line. The three
@@ -1055,6 +1063,10 @@ line is gone. A question mark in the card's bottom-right corner — a square wit
 its own, because a bare «?» in the corner reads as a letter that fell off the list — opens
 a sheet: a title, a rule, and one row per key, the key in the left column and what it does
 in the right.
+
+The sheet opens from the button and from the «?» key, and Esc closes it before it closes
+anything else: a help that needs a mouse is the help that is needed first, and one that
+cannot be dismissed from the keyboard is a trap.
 
 The sheet is built from the same translated string the line used: the hint is one string
 with «·» between its keys, and the sheet is those phrases, one per row. A phrase whose

@@ -3942,91 +3942,6 @@ Panel {
       return null
     }
 
-    // The heading of whatever the list is showing, out of the scroll: a heading
-    // that slides away with the rows stops being one. One row for every view, with
-    // the way back on the left and the view's own action on the right.
-    RowLayout {
-      id: headingRow
-      Layout.fillWidth: true
-      Layout.leftMargin: root.cardInset
-      Layout.rightMargin: root.cardInset
-      spacing: Style.space(6)
-      visible: root.listHeading() !== "" || root.filtering
-
-      Button {
-        Layout.alignment: Qt.AlignVCenter
-        visible: !root.filtering && (root.openPlaylist !== null || root.person !== null)
-        text: root.t("Назад")
-        foreground: root.textColor
-        tooltipText: root.openPlaylist !== null ? root.t("К плейлистам") : root.t("К списку людей")
-        onClicked: {
-          if (root.openPlaylist !== null) {
-            root.closePlaylistView()
-            return
-          }
-          root.closePerson()
-          root.browseFriends()
-        }
-      }
-
-      PanelSectionHeader {
-        Layout.fillWidth: true
-        Layout.alignment: Qt.AlignVCenter
-        verticalAlignment: Text.AlignVCenter
-        visible: !root.filtering
-        text: root.listHeading()
-        foreground: root.dim
-      }
-
-      // Vim's «/»: the field appears in the sticky row, the list under it shrinks to
-      // what matches, and Enter hands the keyboard back to the list.
-      TextField {
-        id: filterField
-        Layout.fillWidth: true
-        Layout.alignment: Qt.AlignVCenter
-        visible: root.filtering
-        placeholderText: root.t("Фильтр по списку: название или исполнитель")
-        text: root.filter
-        // Vim-like: «/» puts you in the field, Enter leaves it, Esc clears it.
-        onVisibleChanged: if (visible) forceActiveFocus()
-        onActiveFocusChanged: root.filterFocused = activeFocus
-        onTextChanged: root.filter = text
-        onAccepted: {
-          root.filtering = false
-          root.focusList()
-        }
-        Keys.onEscapePressed: function(event) {
-          root.clearFilter()
-          event.accepted = true
-        }
-      }
-
-      Button {
-        Layout.alignment: Qt.AlignVCenter
-        visible: !root.filtering && root.listAction() !== ""
-        text: root.listAction()
-        foreground: root.textColor
-        tooltipText: root.listAction() === root.t("Играть") ? root.t("Играть весь плейлист") : root.t("Очистить очередь")
-        enabled: root.listAction() === root.t("Играть")
-          ? root.openPlaylistTracks.length > 0
-          : root.queue.length > 0
-        opacity: enabled ? 1.0 : 0.4
-        onClicked: {
-          if (root.listAction() === root.t("Играть")) root.playPlaylistTrack(0)
-          else root.clearQueue()
-        }
-      }
-    }
-
-    // A separator runs the width of the card, like the bar's own rule: a line that stops
-    // short of the edges reads as a line inside a block rather than as the edge between
-    // two of them.
-    PanelSeparator {
-      Layout.fillWidth: true
-      foreground: root.textColor
-      visible: root.listHeading() !== "" || root.filtering
-    }
-
     // The sections are a way around the catalog, not part of what the list holds. Kept
     // in the scroll they scrolled away, and their hundred pixels stood between the top
     // of the list and the first card — which is what made a gallery align with neither
@@ -4861,40 +4776,104 @@ Panel {
 
     }
     }
-  }
 
-  // The bottom of the card: the status on the left, the question mark that opens the key
-  // sheet on the right. The line of tiny print that used to sit here is gone — see
-  // `keyHelpRows` — and what is left is one row the height of the sheet's own cells.
-  component FooterRow: RowLayout {
-    id: footer
-    Layout.fillWidth: true
-    Layout.leftMargin: root.cardInset
-    Layout.rightMargin: root.cardInset
-    Layout.topMargin: Style.space(4)
-    Layout.bottomMargin: root.cardInset
-    spacing: Style.space(8)
+    // The status bar: what the list is showing, how much of it there is, and the two
+    // things that can be done with it — under the list and behind a full-width rule.
+    // It used to be a heading above the first row, which cost the list a line and made
+    // the list's own state look like the first thing in the list.
+    PanelSeparator { Layout.fillWidth: true; foreground: root.textColor }
 
-    Text {
-      // The status is one line and it elides: a skipped track carries ffmpeg's whole
-      // complaint. `preferredWidth: 0` keeps it from asking the row for room, which is
-      // what a wrapping label in a RowLayout otherwise does.
+    RowLayout {
+      id: statusBar
       Layout.fillWidth: true
-      Layout.preferredWidth: 0
-      verticalAlignment: Text.AlignVCenter
-      Layout.alignment: Qt.AlignVCenter
-      textFormat: Text.PlainText
-      elide: Text.ElideRight
-      text: root.statusText
-      color: root.statusUrgent ? Color.urgent : root.dim
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      Layout.leftMargin: root.cardInset
+      Layout.rightMargin: root.cardInset
+      Layout.topMargin: Style.space(4)
+      Layout.bottomMargin: root.cardInset
+      Layout.preferredHeight: root.barCellHeight
+      spacing: Style.space(4)
+
+      // The way back, when there is one: an open playlist or a person's page — and only in
+      // the view they were opened from, or the queue would offer a way back to somebody
+      // else's playlists.
+      BarCell {
+        visible: root.view === "browse" && !root.filtering
+          && (root.openPlaylist !== null || root.person !== null)
+        Layout.preferredHeight: root.barCellHeight
+        text: root.t("Назад")
+        tooltipText: root.openPlaylist !== null ? root.t("К плейлистам") : root.t("К списку людей")
+        onClicked: {
+          if (root.openPlaylist !== null) {
+            root.closePlaylistView()
+            return
+          }
+          root.closePerson()
+          root.browseFriends()
+        }
+      }
+
+      // Vim's «/»: the field takes the status line while a filter is being typed, the list
+      // above shrinks to what matches, and Enter hands the keyboard back to the list.
+      TextField {
+        id: filterField
+        Layout.fillWidth: true
+        Layout.alignment: Qt.AlignVCenter
+        visible: root.filtering
+        placeholderText: root.t("Фильтр по списку: название или исполнитель")
+        text: root.filter
+        // Vim-like: «/» puts you in the field, Enter leaves it, Esc clears it.
+        onVisibleChanged: if (visible) forceActiveFocus()
+        onActiveFocusChanged: root.filterFocused = activeFocus
+        onTextChanged: root.filter = text
+        onAccepted: {
+          root.filtering = false
+          root.focusList()
+        }
+        Keys.onEscapePressed: function(event) {
+          root.clearFilter()
+          event.accepted = true
+        }
+      }
+
+      // What the list is: «Друзья · 3 человека», «Главная · 54 трека · 3ч 44мин»,
+      // «Моя музыка · загрузка…» — and a complaint from the daemon when there is one,
+      // which wins the line because it is the thing the reader cannot guess.
+      Text {
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
+        Layout.alignment: Qt.AlignVCenter
+        visible: !root.filtering
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        text: root.statusText !== "" ? root.statusText : root.listHeading()
+        color: root.statusUrgent ? Color.urgent : root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      BarCell {
+        visible: !root.filtering && root.listAction() !== ""
+        Layout.preferredHeight: root.barCellHeight
+        text: root.listAction()
+        tooltipText: root.listAction() === root.t("Играть")
+          ? root.t("Играть весь плейлист")
+          : root.t("Очистить очередь")
+        enabled: root.listAction() === root.t("Играть")
+          ? root.openPlaylistTracks.length > 0
+          : root.queue.length > 0
+        opacity: enabled ? 1.0 : 0.4
+        onClicked: {
+          if (root.listAction() === root.t("Играть")) root.playPlaylistTrack(0)
+          else root.clearQueue()
+        }
+      }
+
+      HintButton {
+        tooltipText: root.t("Горячие клавиши")
+        onClicked: root.hintsOpen = !root.hintsOpen
+      }
     }
 
-    HintButton {
-      tooltipText: root.t("Горячие клавиши")
-      onClicked: root.hintsOpen = !root.hintsOpen
-    }
   }
 
   // The question mark in the card's bottom-right corner. A square with a border of its own:
@@ -5595,8 +5574,10 @@ Panel {
     spacing: 0
     visible: root.signedIn
 
-    // The height comes from the root, where the bar over the list reads it too.
-    readonly property real cellHeight: root.barCellHeight
+    // The height comes from the root, where the bars under it read it too — and the one at
+    // the top of the card is a fifth taller, because it is the first thing the eye lands on
+    // and the one a hand reaches for without looking.
+    readonly property real cellHeight: Math.round(root.barCellHeight * 1.2)
     // The two tools at the ends are as wide as the bar is tall: squares at either end of
     // a row of cells, which is what keeps the views between them the same width.
     readonly property real toolWidth: cellHeight
@@ -5986,6 +5967,12 @@ Panel {
         root.close()
       }
       onTextKey: function(character) {
+        // The question mark is a key like the rest: the sheet it opens is the panel's own
+        // help, and a help that needs a mouse is the help that is needed first.
+        if (character === "?") {
+          root.hintsOpen = !root.hintsOpen
+          return
+        }
         if (root.activeField().activeFocus) return
         if (character === "]") { root.cycleView(1); return }
         if (character === "[") { root.cycleView(-1); return }
@@ -6050,7 +6037,6 @@ Panel {
           Layout.rightMargin: root.cardInset
           Layout.preferredHeight: Math.max(2, Style.space(2))
         }
-        FooterRow { }
       }
 
       // Extended: the player on the left, the list on the right. Two columns need
@@ -6099,7 +6085,6 @@ Panel {
           Layout.rightMargin: root.cardInset
           Layout.preferredHeight: Math.max(2, Style.space(2))
         }
-        FooterRow { }
       }
 
       // Last inside the key catcher, so they float over whichever body is showing.
