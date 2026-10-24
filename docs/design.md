@@ -568,6 +568,21 @@ selection. `BarCell` is a Rectangle with `radius: 0`, no border, a `MouseArea` a
 `PanelToolTip`, so a view, a tool and a section chip are one component; the section
 chips row below the list's heading is the same cells without icons.
 
+The bar over the list is framed by the same rule that closes the player, and the cells sit
+flush between the two: one line above them, one under them, no gap either side. A rule that
+floats a few pixels above a band of cells reads as the bottom border of the block above it
+rather than as the top of this one. The frame lives in `TrackList` around the section bar,
+so the rule the player ends with is the rule the bar starts with — the same separator, drawn
+once — and the bar of status at the card's bottom is drawn to the height of the bar at its
+top: the two close the card, and two bars that frame a card should be the same bar.
+
+A glyph that says what it is by lighting a box is not always right: under a 14 px outline
+heart a 24 px rectangle is four times the shape it points at, and it reads as a button
+while the heart reads as the thing being offered. `BarGlyph` takes `fillOnHover` for that,
+and the hearts use it — the pointer fills the inside of the heart and paints no background,
+the way a heart in a list of tracks is expected to answer. Pressing still paints the accent,
+so the two states stay apart.
+
 The glyph and the label are centred as one pair: the content is a `Row` with
 `anchors.centerIn`, and the label gives up width — `Math.min(implicitWidth, cell width
 minus the padding and the glyph's slot)`, `elide: ElideRight` — only when the pair is
@@ -1059,10 +1074,10 @@ a laid-out card would make the two depend on each other.
 The hints are the only place the popup says which keys it answers to, and for a long time
 they were a line of caption type under the list: two lines of five-point print, read once
 and never again, and the keys it could not fit were the ones a beginner needs most. The
-line is gone. A question mark in the card's bottom-right corner — a square with a border of
-its own, because a bare «?» in the corner reads as a letter that fell off the list — opens
-a sheet: a title, a rule, and one row per key, the key in the left column and what it does
-in the right.
+line is gone. A question mark in the card's bottom-right corner — a cell of the status bar,
+the same flat square as the view toggle at the top of the card, because a framed box among
+flat cells reads as a form control that strayed into a strip — opens a sheet: a title, a
+rule, and one row per key, the key in the left column and what it does in the right.
 
 The sheet opens from the button and from the «?» key, and Esc closes it before it closes
 anything else: a help that needs a mouse is the help that is needed first, and one that
