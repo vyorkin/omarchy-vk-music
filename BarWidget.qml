@@ -298,7 +298,7 @@ Panel {
   }
 
   function activeField() {
-    return root.isExtended() ? extendedFieldRow.field : compactFieldRow.field
+    return root.activeList().searchField
   }
 
   function activeBody() {
@@ -3934,6 +3934,11 @@ Panel {
     property alias playlistTrackRepeater: playlistTrackRepeater
     property alias searchGrid: searchGrid
     property alias searchPlaylistRows: searchPlaylistRows
+    // The two fields of the status bar, which is this component's own bottom edge: the
+    // panel reaches them through `activeList()`, because two bodies exist and only the
+    // visible one may hold the keyboard.
+    property alias searchField: searchField
+    property alias filterField: filterField
     // The parts of a Flickable the cursor and the diagnostics use, so the list can
     // be a column with a header that does not scroll.
     property alias contentY: scroller.contentY
@@ -5013,7 +5018,7 @@ Panel {
         TextField {
           id: filterField
           Layout.fillWidth: true
-          Layout.fillHeight: true
+          Layout.preferredHeight: root.topBarHeight
           Layout.alignment: Qt.AlignVCenter
           visible: root.filtering
           background: null
@@ -5037,6 +5042,41 @@ Panel {
           }
         }
 
+        // The search's own field, in the same place and with the same shape as the filter:
+        // the line under the list is where a text field belongs in this panel, and the
+        // query it holds is a fact about the list on screen, not a block above it. It used
+        // to be a framed box in the body, which cost the list a row and left the card with
+        // two boxes that meant the same thing and looked different.
+        TextField {
+          id: searchField
+          Layout.fillWidth: true
+          Layout.preferredHeight: root.topBarHeight
+          Layout.alignment: Qt.AlignVCenter
+          visible: root.view === "search" && !root.filtering
+          background: null
+          horizontalPadding: root.cardInset
+          verticalPadding: 0
+          foreground: root.textColor
+          placeholderTextColor: root.dim
+          placeholderText: root.t("Артист, трек, альбом")
+          text: root.query
+          // Two-way in one direction only: the field follows the query, and a keystroke
+          // writes it back. The stored query is what the commands use, which is why the
+          // missing half of this pair left searching silently doing nothing.
+          onTextChanged: {
+            if (text !== root.query) root.query = text
+            suggestTimer.restart()
+            searchTimer.restart()
+          }
+          // Enter is not handled here: the panel's key catcher owns it, and two handlers
+          // meant the field re-ran the search first, which reset the list selection before
+          // Enter could play it. Esc drops the focus and nothing else.
+          Keys.onEscapePressed: function(event) {
+            root.focusList()
+            event.accepted = true
+          }
+        }
+
         // What the list is: «Друзья · 3 человека», «Главная · 54 трека · 3ч 44мин»,
         // «Моя музыка · загрузка…» — and a complaint from the daemon when there is one,
         // which wins the line because it is the thing the reader cannot guess.
@@ -5046,7 +5086,7 @@ Panel {
           Layout.leftMargin: root.cardInset
           Layout.rightMargin: Style.space(8)
           Layout.alignment: Qt.AlignVCenter
-          visible: !root.filtering
+          visible: !root.filtering && root.view !== "search"
           textFormat: Text.PlainText
           elide: Text.ElideRight
           text: root.statusText !== "" ? root.statusText : root.listHeading()
@@ -5074,6 +5114,26 @@ Panel {
           onClicked: {
             if (root.listAction() === root.t("Играть")) root.playPlaylistTrack(0)
             else root.clearQueue()
+          }
+        }
+
+        // Clearing the query was a button inside the old field's row; it is a cell of the
+        // bar now, next to the sheet's, because that is where the field's own tools live.
+        BarDivider {
+          visible: root.view === "search" && !root.filtering && root.query.length > 0
+          Layout.preferredHeight: root.topBarHeight
+        }
+
+        BarCell {
+          visible: root.view === "search" && !root.filtering && root.query.length > 0
+          Layout.preferredWidth: root.topBarHeight
+          Layout.preferredHeight: root.topBarHeight
+          horizontalPadding: 0
+          iconText: "󰅖"
+          tooltipText: root.t("Очистить")
+          onClicked: {
+            root.clearSearch()
+            root.activeField().forceActiveFocus()
           }
         }
 
@@ -6083,57 +6143,6 @@ Panel {
     color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.3)
   }
 
-  component SearchFieldRow: RowLayout {
-    id: fieldRow
-
-    // The key catcher and the tab buttons need the field itself: two of these
-    // exist (one per popup shape) and only the visible one collects keys.
-    property alias field: searchField
-
-    Layout.fillWidth: true
-    spacing: Style.space(6)
-    visible: root.signedIn && root.view === "search"
-
-    TextField {
-      id: searchField
-      Layout.fillWidth: true
-      placeholderText: root.t("Артист, трек, альбом")
-      foreground: root.textColor
-      accent: Color.accent
-      // Two-way in one direction only: the field follows the query, and a
-      // keystroke writes it back. The stored query is what the commands
-      // use, which is why the missing half of this pair left searching
-      // silently doing nothing.
-      text: root.query
-      // Enter is not handled here: the panel's key catcher owns it, and two
-      // handlers meant the field re-ran the search first, which reset the
-      // list selection before Enter could play it.
-      // Esc in the field drops the focus and nothing else: the keyboard goes back to
-      // the list, where j/k (or hjkl in the gallery) take over. Clearing the query
-      // and closing the panel are the next Escs, from the list.
-      Keys.onEscapePressed: function(event) {
-        root.focusList()
-        event.accepted = true
-      }
-      onTextChanged: {
-        if (text !== root.query) root.query = text
-        suggestTimer.restart()
-        searchTimer.restart()
-      }
-    }
-
-    Button {
-      iconText: "󰅖"
-      foreground: root.textColor
-      visible: root.query.length > 0
-      tooltipText: root.t("Очистить")
-      onClicked: {
-        root.clearSearch()
-        searchField.forceActiveFocus()
-      }
-    }
-  }
-
   component LoadingLine: Item {
     Layout.fillWidth: true
     Layout.preferredHeight: Math.max(2, Style.space(2))
@@ -6336,12 +6345,6 @@ Panel {
         }
         // The rule that ends the player is the top of the band above the list now, so
         // that the first cell under it sits flush against it.
-        SearchFieldRow {
-          id: compactFieldRow
-          Layout.fillWidth: true
-          Layout.leftMargin: root.cardInset
-          Layout.rightMargin: root.cardInset
-        }
         TrackList { id: compactList }
         LoadingLine {
           Layout.fillWidth: true
@@ -6380,12 +6383,6 @@ Panel {
         }
         // The band over the list carries the rule that ends the player: see the
         // compact body.
-        SearchFieldRow {
-          id: extendedFieldRow
-          Layout.fillWidth: true
-          Layout.leftMargin: root.cardInset
-          Layout.rightMargin: root.cardInset
-        }
         TrackList { id: extendedList; Layout.topMargin: Style.space(14) }
         LoadingLine {
           Layout.fillWidth: true
