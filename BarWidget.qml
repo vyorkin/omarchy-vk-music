@@ -2492,14 +2492,20 @@ Panel {
       font.pixelSize: Style.font.caption
     }
 
-    Row {
-      spacing: Style.space(6)
+    // One row of equal cells across the width, the way the switch over the search results
+    // is drawn: the options of a preference are a choice, not a set of buttons.
+    RowLayout {
+      width: parent.width
+      spacing: 0
 
       Repeater {
         model: choiceRow.options
-        delegate: Button {
+        delegate: BarCell {
+          Layout.fillWidth: true
+          Layout.preferredWidth: 0
+          Layout.minimumWidth: 0
+          Layout.preferredHeight: root.barCellHeight
           text: modelData ? String(modelData.label) : ""
-          foreground: root.textColor
           selected: choiceRow.value === (modelData ? modelData.value : "")
           onClicked: if (modelData) root.setPreference(choiceRow.key, modelData.value)
         }
@@ -3244,7 +3250,7 @@ Panel {
     // The rim keeps a selected card's fill from being cut by the list's edge. The card's
     // own inset is on top of it now that the list runs edge to edge: the gallery is not a
     // row, and a wall of covers flush with the card reads as a crop, not as a gallery.
-    readonly property real rim: root.cardRim + root.cardInset
+    readonly property real rim: root.cardRim
     leftPadding: rim
     rightPadding: rim
 
@@ -3262,6 +3268,53 @@ Panel {
 
   // A person in a list: their picture, their name, and a click that opens their
   // playlists. The selected fill is the keyboard cursor, as everywhere else.
+  // One line of the search: a suggestion while typing, or a query that was searched
+  // before. The same row language as a track — square, as wide as the card, the cursor's
+  // fill reaching both edges — with its text where a track's title starts.
+  component SuggestionRow: Item {
+    id: suggestionRow
+    property string text: ""
+    property bool selected: false
+    signal clicked()
+
+    width: parent ? parent.width : 0
+    height: Style.space(30)
+
+    BorderSurface {
+      anchors.fill: parent
+      anchors.leftMargin: -root.cardInset
+      anchors.rightMargin: -root.cardInset
+      radius: 0
+      color: suggestionRow.selected
+        ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.18)
+        : Style.normalFillFor(Color.foreground, Color.accent)
+      borderSpec: Border.none()
+      visible: suggestionRow.selected || suggestionArea.containsMouse
+    }
+
+    Text {
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.leftMargin: Style.space(8)
+      anchors.rightMargin: Style.space(8)
+      anchors.verticalCenter: parent.verticalCenter
+      textFormat: Text.PlainText
+      elide: Text.ElideRight
+      text: suggestionRow.text
+      color: root.textColor
+      font.family: Style.font.family
+      font.pixelSize: Style.font.bodySmall
+    }
+
+    MouseArea {
+      id: suggestionArea
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: suggestionRow.clicked()
+    }
+  }
+
   component PersonRow: Item {
     id: person
     property var item: null
@@ -3273,6 +3326,8 @@ Panel {
 
     BorderSurface {
       anchors.fill: parent
+      anchors.leftMargin: -root.cardInset
+      anchors.rightMargin: -root.cardInset
       radius: 0
       color: person.selected
         ? Style.selectedFillFor(Color.foreground, Color.accent)
@@ -3287,7 +3342,7 @@ Panel {
       height: width
       radius: width / 2
       anchors.left: parent.left
-      anchors.leftMargin: Style.space(4) + root.cardInset
+      anchors.leftMargin: Style.space(4)
       anchors.verticalCenter: parent.verticalCenter
       // Flush with the frame: an inset shows the surface colour as a ring around the
       // portrait, which reads as a white gap in a light theme.
@@ -3302,7 +3357,7 @@ Panel {
       anchors.left: avatar.right
       anchors.leftMargin: Style.space(8)
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(6) + root.cardInset
+      anchors.rightMargin: Style.space(6)
       anchors.verticalCenter: parent.verticalCenter
       textFormat: Text.PlainText
       elide: Text.ElideRight
@@ -3345,6 +3400,8 @@ Panel {
     // cursor takes the accent tint instead: two facts, two marks, no confusion.
     BorderSurface {
       anchors.fill: parent
+      anchors.leftMargin: -root.cardInset
+      anchors.rightMargin: -root.cardInset
       radius: 0
       color: Style.selectedFillFor(Color.foreground, Color.accent)
       borderSpec: Border.none()
@@ -3353,6 +3410,8 @@ Panel {
 
     BorderSurface {
       anchors.fill: parent
+      anchors.leftMargin: -root.cardInset
+      anchors.rightMargin: -root.cardInset
       radius: 0
       color: trackRow.selected
         ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.18)
@@ -3368,7 +3427,7 @@ Panel {
       // the two paddings match without either side depending on what the row contains.
       width: Style.space(20)
       anchors.left: parent.left
-      anchors.leftMargin: Style.space(8) + root.cardInset
+      anchors.leftMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
       // Flush left, not centred: a centred glyph sits ten pixels deeper than a flush one,
       // and the row's two side paddings then look nothing alike. The column is a fixed
@@ -3386,7 +3445,7 @@ Panel {
       id: durationText
       width: Style.space(42)
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(28) + root.cardInset
+      anchors.rightMargin: Style.space(28)
       anchors.verticalCenter: parent.verticalCenter
       horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
@@ -3462,7 +3521,7 @@ Panel {
       // four before the cover, so 32 on both sides. Symmetry is worth the width here —
       // the alternative was a cover that jumps when the play glyph appears.
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(8) + root.cardInset
+      anchors.rightMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
       width: Style.space(14)
       height: trackRow.height
@@ -3519,6 +3578,8 @@ Panel {
         // The cursor's fill, the same language as a filled row anywhere else.
         BorderSurface {
           anchors.fill: parent
+          anchors.leftMargin: -root.cardInset
+          anchors.rightMargin: -root.cardInset
           radius: 0
           color: row.selected
             ? Style.selectedFillFor(Color.foreground, Color.accent)
@@ -3532,7 +3593,7 @@ Panel {
           width: Style.space(28)
           height: width
           anchors.left: parent.left
-          anchors.leftMargin: Style.space(6) + root.cardInset
+          anchors.leftMargin: Style.space(6)
           anchors.verticalCenter: parent.verticalCenter
           inset: Style.space(1)
           decodeSize: Style.space(28)
@@ -3546,7 +3607,7 @@ Panel {
           anchors.left: rowCover.right
           anchors.leftMargin: Style.space(8)
           anchors.right: parent.right
-          anchors.rightMargin: Style.space(6) + root.cardInset
+          anchors.rightMargin: Style.space(6)
           anchors.verticalCenter: parent.verticalCenter
           spacing: Style.space(1)
 
@@ -3626,7 +3687,7 @@ Panel {
     // The rim keeps a selected card's fill from being cut by the list's edge. The card's
     // own inset is on top of it now that the list runs edge to edge: the gallery is not a
     // row, and a wall of covers flush with the card reads as a crop, not as a gallery.
-    readonly property real rim: root.cardRim + root.cardInset
+    readonly property real rim: root.cardRim
     leftPadding: rim
     rightPadding: rim
 
@@ -3949,13 +4010,15 @@ Panel {
       id: sectionBar
       Layout.fillWidth: true
       spacing: 0
-      // The catalog's sections in the browse view, and — in a search that found playlists —
-      // nothing but the two cells at the right, which is where the switch lives now.
-      visible: (root.view === "browse" && root.openPlaylist === null)
-        || (root.view === "search" && root.playlistsShown)
+      // The catalog's sections in the browse view, the two kinds of answer a search can
+      // give in the search view, and at the right either way the two cells that choose how
+      // a list of playlists is drawn. Both kinds of content are cells of this one bar, so
+      // the bar is flush with the card and neither of them carries a margin of its own.
+      visible: (root.view === "browse" && root.openPlaylist === null) || root.view === "search"
 
       Flickable {
         id: sectionChips
+        visible: root.view === "browse"
         Layout.fillWidth: true
         Layout.preferredHeight: sectionChipRow.height
         contentWidth: sectionChipRow.width
@@ -3992,6 +4055,32 @@ Panel {
             }
           }
         }
+      }
+
+      // What a search can answer with: two equal halves of what the tools leave, because
+      // a switch of two equal halves reads as a choice between two things, where two cells
+      // hugging their labels read as two buttons.
+      BarCell {
+        visible: root.view === "search"
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
+        Layout.minimumWidth: 0
+        Layout.preferredHeight: root.barCellHeight
+        text: root.t("Треки")
+        selected: root.searchMode === "tracks"
+        onClicked: root.setSearchMode("tracks")
+      }
+
+      BarCell {
+        visible: root.view === "search"
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
+        Layout.minimumWidth: 0
+        Layout.preferredHeight: root.barCellHeight
+        text: root.t("Плейлисты")
+        selected: root.searchMode === "playlists"
+        tooltipText: root.t("Искать плейлисты других людей")
+        onClicked: root.setSearchMode("playlists")
       }
 
       // Only where something has two representations: «Моя музыка» is a hundred tracks
@@ -4039,11 +4128,13 @@ Panel {
       // selected row's fill touches the selected tab's fill and the two read as one.
       Item { width: 1; height: Style.space(10) }
 
-      // The scroller is the width of the card, so a row is too: its fill reaches both
-      // edges because the row does. The content inside a row carries `cardInset` itself,
-      // which is what keeps the number, the cover and the title on the lines they were on
-      // when the card still had padding.
-      width: scroller.width
+      // The scroller is the width of the card and the column inside it is inset by
+      // `cardInset`: text, headings, grids and switches keep the card's own margin, and a
+      // row's FILL is the one thing allowed to bleed wider than its parent — out to the
+      // card's edge, which is where a selected row has to end. The bleed is paint: the
+      // row itself, with its MouseArea, stays inside its parent like every other control.
+      x: root.cardInset
+      width: scroller.width - 2 * root.cardInset
       spacing: Style.space(4)
 
       // Queue: the sources that fill it, then the next few tracks.
@@ -4310,29 +4401,6 @@ Panel {
         spacing: Style.space(4)
         visible: root.view === "search" && root.openPlaylist === null
 
-        // One box, two kinds of answer — the same cells as the bar over the list: flush,
-        // square, the one in use filled, and starting at the card's edge.
-        Row {
-          width: parent.width
-          spacing: 0
-          visible: root.signedIn
-
-          BarCell {
-            width: implicitWidth
-            text: root.t("Треки")
-            selected: root.searchMode === "tracks"
-            onClicked: root.setSearchMode("tracks")
-          }
-
-          BarCell {
-            width: implicitWidth
-            text: root.t("Плейлисты")
-            selected: root.searchMode === "playlists"
-            tooltipText: root.t("Искать плейлисты других людей")
-            onClicked: root.setSearchMode("playlists")
-          }
-        }
-
         Text {
           visible: root._queryLength < 2 && root.history.length === 0
           width: parent.width
@@ -4354,12 +4422,9 @@ Panel {
         Repeater {
           id: historyRepeater
           model: root._queryLength < 2 ? root.history : []
-          delegate: Button {
-            width: listColumn.width
-            leftAlign: true
-            selected: index === root.cursor
+          delegate: SuggestionRow {
             text: modelData ? String(modelData) : ""
-            foreground: root.textColor
+            selected: index === root.cursor
             onClicked: if (modelData) root.searchSuggestion(String(modelData))
           }
         }
@@ -4390,12 +4455,9 @@ Panel {
         Repeater {
           id: suggestionRepeater
           model: root.suggestionsShown
-          delegate: Button {
-            width: listColumn.width
-            leftAlign: true
-            selected: index === root.cursor
+          delegate: SuggestionRow {
             text: modelData ? String(modelData) : ""
-            foreground: root.textColor
+            selected: index === root.cursor
             onClicked: if (modelData) root.searchSuggestion(String(modelData))
           }
         }
@@ -4569,8 +4631,9 @@ Panel {
             font.pixelSize: Style.font.caption
           }
 
-          Row {
-            spacing: Style.space(6)
+          RowLayout {
+            width: parent.width
+            spacing: 0
 
             Repeater {
               model: [
@@ -4578,9 +4641,12 @@ Panel {
                 { value: 180, label: root.t("Обычная") },
                 { value: 260, label: root.t("Широкая") }
               ]
-              delegate: Button {
+              delegate: BarCell {
+                Layout.fillWidth: true
+                Layout.preferredWidth: 0
+                Layout.minimumWidth: 0
+                Layout.preferredHeight: root.barCellHeight
                 text: modelData ? String(modelData.label) : ""
-                foreground: root.textColor
                 selected: (Number(root.prefs.labelWidth) || 180) === (modelData ? modelData.value : -1)
                 onClicked: if (modelData) root.setPreference("labelWidth", modelData.value)
               }

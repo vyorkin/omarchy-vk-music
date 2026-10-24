@@ -524,18 +524,28 @@ the card: flush, square, from the card's edge to its edge and with no inset of i
 the section in use filled, and no icons (a section's name is the whole of it). The two
 cells that choose how a list of playlists is drawn — gallery or rows — sit at its right
 end, past a divider, where they cannot scroll away with the sections: they are about THIS
-list, so they belong where the list starts, not in the bar at the top of the card. In a
-search that found playlists the same bar appears with nothing but those two cells in it,
-and the search's own «Треки / Плейлисты» switch is drawn as two of the same cells.
+list, so they belong where the list starts, not in the bar at the top of the card. In the
+search view the same bar holds the two kinds of answer a search can give: «Треки» and
+«Плейлисты» split what the tools leave in half, because a switch of two equal halves reads
+as a choice between two things. That switch used to be the first thing inside the scrolled
+list, which put it inside the list's margins — a tab bar with a margin on it, which is the
+thing the bar above the list exists not to be.
 
 A list row is the same shape as the bar's cells: square, and as wide as the card. The
-scroller is the width of the card, a row is the width of the scroller, so a selected or
-hovered row is filled from border to border; what carries `cardInset` is the row's own
-content — the number, the cover, the title and the heart — through each item's anchor
-margin. The gallery is the exception: a grid of cards keeps `cardRim + cardInset` as its
-padding, because a wall of covers flush with the card edge reads as a crop rather than as
-a gallery, and because that padding is what the column arithmetic in `GalleryFit` is
-measured against.
+scroller is the width of the card and the column inside it carries `cardInset`, so the
+text, the headings, the grids and the switches between the rows keep the card's margin —
+and a row's *fill* is the one thing allowed to bleed wider than its parent, out to the
+card's edge, which is where a selected row has to end. The bleed is paint: the row itself,
+with its MouseArea, sits inside its parent like every other control, and that is the
+distinction that matters — a fill that overhangs is invisible to the pointer, a control
+that overhangs is dead where it overhangs. The gallery is the exception: a grid of cards
+keeps `cardRim` as its padding on top of the column's inset, because a wall of covers
+flush with the card edge reads as a crop rather than as a gallery, and because that
+padding is what the column arithmetic in `GalleryFit` is measured against.
+
+The one-line rows of a search — a suggestion while typing, a query searched before — are
+the same row language, and they are the ones that used to be `Button`s: a rounded pill
+with a border, inset from the card and narrower than the text under it.
 
 The cells are not `Button`s. A `Button` keeps the width of its own label, and three
 equal cells cannot: a longer translation (German «Warteschlange») would push the bar
