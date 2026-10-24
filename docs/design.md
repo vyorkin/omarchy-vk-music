@@ -591,7 +591,8 @@ old language in the panel: rounded pills with a border, inset from the card, ins
 scrolled column, in a panel where nothing else is either. They are cells of the bar now, two
 of them stretched across it with their labels in the middle, flush with the card and with
 nothing above or below, because what fills the queue is a choice between two things in
-exactly the way a section is.
+exactly the way a section is. They open those two sections rather than starting them — see
+«A place that is already playing, and the list a click is about» for why.
 
 A sections request that failed used to be remembered as if it had succeeded, so a single
 error kept the bar empty of everything but «Люди» for ten minutes. A failed answer is a
@@ -833,10 +834,11 @@ A delayed load also means the section's SLUG is still the old one for those 600 
   keys, because the catcher is blocked while a field owns the keyboard. Switching
   tabs and sections now hands the keyboard back to the list.
 * The cursor walks what is on screen. In the gallery the section's playlists are the
-  cards, so h and l step a card and j and k step a row of `galleryColumns`, and the
-  cursor covers the playlists rather than the tracks drawn underneath them; in a list
-  only j and k mean anything. Tab hands the keyboard to the list and puts the cursor
-  on its first item, which is the way out of a search field that has been typed into.
+  cards, so h and l step a card and j and k step a row keeping the column
+  (`GalleryWalk`), and the cursor covers the playlists rather than the tracks drawn
+  underneath them; in a list only j and k mean anything. Tab hands the keyboard to the
+  list and puts the cursor on its first item, which is the way out of a search field
+  that has been typed into.
   Esc in a field now drops the focus and nothing else — clearing the query and
   closing the panel are the next Escs, from the list.
 * `containsMouse` is always false without `hoverEnabled`. The track rows had no
@@ -855,6 +857,11 @@ A delayed load also means the section's SLUG is still the old one for those 600 
   saying which filter is on. Because the visible row's position is then not its
   position in the queue, everything that acts on a row acts on the item
   (`indexOfItem`), which is what keeps a filtered list from playing the wrong track.
+  A gallery is drawn from the filtered list as well: a card that is not drawn must not be
+  in the cursor's list either, or the selected fill sits on the neighbour of the row the
+  keys act on. The friends page and the search results were the two walls that were still
+  drawn whole, and the recent people's offset was counted against the filtered friends
+  while their cards were not — the highlight landed one card off with every filter.
 * A click must have somewhere to show its result. The playlist screen was drawn
   only in the browse view, so a playlist clicked in the search results was fetched,
   remembered and never seen — the click looked dead. The screen now belongs to the
@@ -1006,20 +1013,27 @@ in both popup shapes, and it no longer competes with the header for room.
 Two rules, one sentence each, both of them learned by watching the panel do work
 nobody asked for.
 
-**Pressing the place you are already playing does nothing.** The section cells of
-the queue — «Моя музыка» and «Обновления» — are the controls a person presses while
-listening to exactly that section, so the click rebuilt the queue from the section's
-first track: the track that was sounding went back to 0:00, the fifteen waiting
-behind it were replaced by the ninety-nine that come after the first, and the list
-under the bar — a list of the queue — changed under the hand that had just decided
-not to change anything. The daemon already reports where the queue came from
-(`source`: kind, id, title), so the widget asks before it acts (`playingFrom`) and
-the same rule covers a station card (`radio`, whose id lives in its own field
-because a station has no queue), a playlist played from a search, and a section
-reached from the browse page. Playback has to still be going for the answer to be
-«nothing to do»: a queue that ended, or one that was stopped, is a queue to start
-again. A pause is not — the pause button is a centimetre away, and a cell that
-silently resumes is a cell doing two jobs.
+**Pressing the place you are already playing does nothing.** A station card, a
+playlist played from a search, and a section reached from the browse page are the
+controls a person presses while listening to exactly that thing, so the click
+rebuilt the queue from its first track: the track that was sounding went back to
+0:00, the fifteen waiting behind it were replaced by the ninety-nine that come
+after the first, and the list under the hand that had just decided not to change
+anything changed. The daemon already reports where the queue came from
+(`source`: kind, id, title), so the widget asks before it acts (`playingFrom`;
+a station's id lives in its own field because a station has no queue). Playback
+has to still be going for the answer to be «nothing to do»: a queue that ended, or
+one that was stopped, is a queue to start again. A pause is not — the pause button
+is a centimetre away, and a cell that silently resumes is a cell doing two jobs.
+
+The queue's own two section cells — «Моя музыка» and «Обновления» — left that rule
+when they stopped starting anything. They are the two sections a person most often
+wants to *look at* from the queue, and pressing one began playing its first track,
+so «Обновления» opened as a stream rather than as a list of what is new. A click on
+either now opens that section in the browse view (`openSection`: the view, the
+section and the cursor in one move) and touches nothing in the player — the queue
+keeps sounding, and playing the whole section is the «Играть» in its header, one
+click away in the page the cell just opened.
 
 «Играть» in an opened playlist's header stays outside the rule on purpose: it says
 play the playlist from the top, and a command with a direction means it. What the
@@ -1076,10 +1090,15 @@ rather than the theme's `cornerRadius`, which on a tall card turns a fill into a
 
 The cursor walks what is on screen, and in a section that is both kinds of thing: one
 column of playlists and then tracks in the list view, a grid of cards with the same
-tracks under it in the gallery. So one offset describes both, and a step down from the
-last card lands on the first track rather than four rows into it — the grid's row step
-would otherwise jump the boundary. Coming back up, one step from the first track is the
-last card.
+tracks under it in the gallery. So one offset describes both, and a step down keeps the
+column: the card under the selected one, whichever wall of cards it belongs to, and the
+first track when it leaves the cards altogether. Coming back up, the first column of the
+last card row. The walls of a page do not have to stand the same number of cards across
+— the friends page is a wall of friends and then a wall of people — so each wall brings
+its own column count and a step into a narrower one lands on its last column instead of
+past the end of a row (`GalleryWalk.js`, `tests/qml/tst_gallery_walk.qml`). A step down
+that used to count `galleryColumns` from the list's start landed on the first card of
+the wall below rather than under the selected one: one key left as well as down.
 
 The cursor's mark is the same in both views: a selected fill. A row takes it behind
 everything, and so does a card — cover and captions together, with a few pixels of rim
@@ -1204,8 +1223,8 @@ the row it would be with the gallery off. The page has two sections, friends and
 people opened before, and each answers for itself (`friendsGallery`, `recentGallery`), so
 one friend under three recent people is a row and three cards. `galleryMode` is
 `friendsGallery || recentGallery`: a page of nothing but rows steps the cursor by one,
-and a page with any wall in it keeps the column arithmetic and the edge that stops «j»
-skipping over the rows below.
+and a page with any wall in it walks the cards by rows (`galleryBands`), each wall with
+its own column count.
 
 The captions under a cover are measured from the fonts (`TextMetrics`), not from a
 delegate: a card's height decides how many rows the room holds, and reading it back from

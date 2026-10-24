@@ -20,6 +20,7 @@ import "i18n.js" as I18n
 import "CoverTint.js" as CoverTint
 import "GalleryFit.js" as GalleryFit
 import "Likes.js" as Likes
+import "GalleryWalk.js" as GalleryWalk
 
 Panel {
   id: root
@@ -1228,26 +1229,59 @@ Panel {
     return 0
   }
 
-  function moveCursor(step) {
+  // The bands the cursor walks in a gallery, in cursor order: a band is a wall of cards or
+  // the one column of rows under it, and it knows where it starts in the cursor's list,
+  // how long it is and how many cards stand across it. It is the list `cursorItems` builds,
+  // cut where one wall ends and the next begins — the friends and then the recent people,
+  // a section's playlists and then its tracks.
+  function galleryBands() {
+    var bands = []
+    var offset = 0
+    function add(count, columns) {
+      if (!(count > 0)) return
+      bands.push({
+        offset: offset,
+        count: count,
+        columns: Math.max(1, Math.min(columns, count))
+      })
+      offset += count
+    }
+    if (root.view === "browse") {
+      if (root.browseSlug === "friends") {
+        // One section can be a wall while the other is a row of one: each answers for
+        // itself, so each brings its own column count.
+        add(root.filtered(root.friends).length, root.friendsGallery ? root.galleryColumns : 1)
+        add(root.filtered(root.people).length, root.recentGallery ? root.galleryColumns : 1)
+      } else if (root.browseSlug === "person") {
+        add(root.filtered(root.personPlaylists).length, root.galleryColumns)
+      } else if (root.browseSlug !== "radiostations") {
+        add(root.filtered(root.browsePlaylists).length, root.galleryColumns)
+        add(root.filtered(root.browseTracks).length, 1)
+      }
+    } else if (root.view === "search" && root.searchMode === "playlists") {
+      add(root.filtered(root.foundPlaylists).length, root.galleryColumns)
+    }
+    return bands
+  }
+
+  // `step` walks the list a line at a time, `rows` walks a gallery a row at a time.
+  // Only one of them is given: a gallery's row is not a line, and a line is not a card.
+  function moveCursor(step, rows) {
     var count = root.cursorCount()
     if (count === 0) return
-    // With nothing picked yet, the first j or k starts where the list is already
-    // scrolled, not at the first or the last row of a list that may be a hundred long.
-    var next = root.cursor < 0
-      ? root.firstVisibleIndex() + (step > 0 ? 0 : -1)
-      : root.cursor + step
-    // In the gallery a step is a whole row of cards, which must not skip over the
-    // tracks underneath them: one step down from the last card is the first track, and
-    // one step up from there is the last card. It cannot cross on the way back up from
-    // the rows, because the row above the first track is the card it came from.
-    if (root.view === "browse" && root.galleryMode && root.cursor >= 0) {
-      var edge = root.browseSlug === "friends"
-        ? root.filtered(root.friends).length
-        : root.filtered(root.browsePlaylists).length
-      if (edge > 0 && edge < count) {
-        if (root.cursor < edge && next >= edge) next = edge
-        else if (root.cursor >= edge && next < edge) next = edge - 1
-      }
+    // Every other list is one column, where a row and a line are the same thing.
+    var byRow = (rows || 0) !== 0 && root.galleryMode
+    if ((rows || 0) !== 0 && !byRow) step = rows
+    var next
+    if (byRow) {
+      // With nothing picked yet, the first j or k starts where the list is already
+      // scrolled: the same honest starting point a flat step uses.
+      next = GalleryWalk.step(root.galleryBands(),
+        root.cursor < 0 ? root.firstVisibleIndex() : root.cursor, 0, rows)
+    } else {
+      next = root.cursor < 0
+        ? root.firstVisibleIndex() + (step > 0 ? 0 : -1)
+        : root.cursor + step
     }
     root.cursor = Math.max(0, Math.min(count - 1, next))
     root.revealCursor()
@@ -1413,7 +1447,7 @@ Panel {
           && root.browseSlug !== "radiostations" && root.browsePlaylists.length > 0) {
         root.openPlaylistView(item)
       }
-      else if (root.browseSlug === "person") root.openPlaylistView(root.personPlaylists[index])
+      else if (root.browseSlug === "person") root.openPlaylistView(root.filtered(root.personPlaylists)[index])
       else if (root.browseSlug === "friends") {
         var friendCount = root.filtered(root.friends).length
         var person = index < friendCount
@@ -1424,7 +1458,7 @@ Panel {
       else if (root.browseSlug === "radiostations") root.playStation(root.stations[index])
       else root.playBrowseTrack(index)
     } else if (root.view === "search") {
-      if (root.searchMode === "playlists") root.playPlaylist(root.foundPlaylists[index])
+      if (root.searchMode === "playlists") root.playPlaylist(root.filtered(root.foundPlaylists)[index])
       else if (root.resultsShown.length > 0) root.playSearchResult(index)
       else if (root._queryLength < 2 && root.history.length > 0) {
         root.searchSuggestion(String(root.history[index]))
@@ -1459,14 +1493,17 @@ Panel {
     return String(source.kind || "") === String(kind) && String(source.id || "") === String(id)
   }
 
-  function playSection(id, title) {
-    // The section cells sit in the queue's own bar, so the hand that presses «Моя музыка»
-    // is often the hand of a person listening to exactly that list: the click built the
-    // queue again from its first track, threw away the fifteen waiting behind the one that
-    // was sounding and began the hundred-track list over. Pressing the place you are
-    // already playing is not a request to start it, and nothing is what it should do.
-    if (root.playingFrom("section", id)) return
-    call([root.cli, "play", "section", id, "0", "--title", title], function() { root.watchForTrack() })
+  // A section cell in the queue's bar is a way into that section's list, not a request to
+  // start it. Both cells used to build the queue from the section's first track, so the
+  // hand that pressed «Обновления» to see what is new in it began playing it instead of
+  // showing it, and the list it opened was the queue rather than the section. The cell is
+  // about the list; playing the whole section is still one click on its «Играть» header.
+  function openSection(slug) {
+    if (String(slug) === "") return
+    root.cursor = -1
+    root.view = "browse"
+    root.browseSource(slug)
+    root.focusList()
   }
 
   // A click on a track queues the list it belongs to, and the queue has to BE that list:
@@ -1744,7 +1781,10 @@ Panel {
     if (!item) return
     var owner = Number(item.owner_id || 0)
     var list = Number(item.playlist_id || 0)
-    if (!(owner !== 0 && list > 0)) return
+    // VK's own playlists carry a negative id — «Для вас» is owner 681411438, playlist -21 — and
+    // a `list > 0` here dropped exactly those clicks: the card under the pointer, nothing
+    // happening. Only zero is no playlist at all.
+    if (!(owner !== 0 && list !== 0)) return
     root.clearBrowseLoading()
     root._browseSeq = root._browseSeq + 1
     var seqList = root._browseSeq
@@ -2253,8 +2293,8 @@ Panel {
   // A section of one is drawn as the row it would be with the gallery off, even when
   // the other section on the page is a wall — the page has two sections, and each has
   // its own answer.
-  readonly property bool friendsGallery: root.gridView && root.friends.length > 1
-  readonly property bool recentGallery: root.gridView && root.people.length > 1
+  readonly property bool friendsGallery: root.gridView && root.filtered(root.friends).length > 1
+  readonly property bool recentGallery: root.gridView && root.filtered(root.people).length > 1
   // A grid of cards, as opposed to a one-column list: only then do h and l mean
   // anything, and only then does j move a row rather than a line. It is the list ON
   // SCREEN that decides, never the playlist-view preference alone — a playlist's
@@ -4254,8 +4294,8 @@ Panel {
           Layout.minimumWidth: 0
           Layout.preferredHeight: root.barCellHeight
           text: root.t("Моя музыка")
-          tooltipText: root.t("Играть всю мою музыку")
-          onClicked: root.playSection("all", root.t("Моя музыка"))
+          tooltipText: root.t("Список раздела, без воспроизведения")
+          onClicked: root.openSection("all")
         }
 
         Repeater {
@@ -4268,10 +4308,10 @@ Panel {
             Layout.minimumWidth: 0
             Layout.preferredHeight: root.barCellHeight
             text: modelData ? modelData.title : ""
-            // The slug, not the catalog id: the place named when this section is played
-            // has to be the same name a click on its page in the browse view gives it,
-            // or pressing one place after arriving from the other starts it again.
-            onClicked: if (modelData) root.playSection(root.sourceSlug(modelData), modelData.title)
+            tooltipText: root.t("Список раздела, без воспроизведения")
+            // The slug, not the catalog id: the section this cell opens has to be the same
+            // one its chip in the browse bar opens, or the two ways in give two pages.
+            onClicked: if (modelData) root.openSection(root.sourceSlug(modelData))
           }
         }
 
@@ -4485,18 +4525,21 @@ Panel {
             visible: root.friends.length > 0
           }
 
+          // The cards are the filtered list: with a filter on, the keyboard cursor counts
+          // the cards that are drawn, so a card that is not drawn must not be in the list.
           PeopleGrid {
             id: friendsGrid
-            items: root.friendsGallery ? root.friends : []
+            items: root.friendsGallery ? root.filtered(root.friends) : []
             visible: items.length > 0
             onPicked: function(index) {
-              if (root.friends[index]) root.openPerson(String(root.friends[index].id))
+              var friend = root.filtered(root.friends)[index]
+              if (friend) root.openPerson(String(friend.id))
             }
           }
 
           Repeater {
             id: friendRepeater
-            model: root.friendsGallery ? [] : root.friends
+            model: root.friendsGallery ? [] : root.filtered(root.friends)
             delegate: PersonRow {
               item: modelData
               selected: index === root.cursor
@@ -4513,16 +4556,17 @@ Panel {
           PeopleGrid {
             id: recentGrid
             baseOffset: root.filtered(root.friends).length
-            items: root.recentGallery ? root.people : []
+            items: root.recentGallery ? root.filtered(root.people) : []
             visible: items.length > 0
             onPicked: function(index) {
-              if (root.people[index]) root.openPerson(String(root.people[index].id))
+              var person = root.filtered(root.people)[index]
+              if (person) root.openPerson(String(person.id))
             }
           }
 
           Repeater {
             id: recentPeopleRepeater
-            model: root.recentGallery ? [] : root.people
+            model: root.recentGallery ? [] : root.filtered(root.people)
             delegate: PersonRow {
               item: modelData
               selected: (root.filtered(root.friends).length + index) === root.cursor
@@ -4660,7 +4704,7 @@ Panel {
 
         PlaylistGrid {
           id: searchGrid
-          items: root.searchMode === "playlists" ? root.foundPlaylists : []
+          items: root.searchMode === "playlists" ? root.filtered(root.foundPlaylists) : []
           visible: root.gridView && items.length > 0
           onPicked: function(index) {
             root.openPlaylistView(root.filtered(root.foundPlaylists)[index])
@@ -4669,7 +4713,7 @@ Panel {
 
         PlaylistRows {
           id: searchPlaylistRows
-          items: (root.searchMode === "playlists" && !root.gridView) ? root.foundPlaylists : []
+          items: (root.searchMode === "playlists" && !root.gridView) ? root.filtered(root.foundPlaylists) : []
           onPicked: function(index) {
             root.openPlaylistView(root.filtered(root.foundPlaylists)[index])
           }
@@ -6289,7 +6333,9 @@ Panel {
           if (root.galleryMode) root.moveCursor(dx)
           return
         }
-        if (dy !== 0) root.moveCursor(root.galleryMode ? dy * root.galleryColumns : dy)
+        // Down and up keep the column: the card under the selected one, even when the
+        // row it lands on belongs to the next section of the page.
+        if (dy !== 0) root.moveCursor(0, dy)
       }
       // Tab hands the keyboard to the list and puts the cursor on its first item —
       // the way out of a search field that has finished being typed into.
