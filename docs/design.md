@@ -586,6 +586,15 @@ so the rule the player ends with is the rule the bar starts with — the same se
 once — and the bar of status at the card's bottom is drawn to the height of the bar at its
 top: the two close the card, and two bars that frame a card should be the same bar.
 
+The volume is where the hand already is. The speaker button used to do one thing only —
+mute — and a volume button that cannot set a volume is a switch with a speaker drawn on it;
+it opens a popover over itself now, the same slider the panel keeps behind the dots, with
+the mute glyph and the percentage beside it. The popover ends where the button ends rather
+than being centred on it: the button sits at the card's right edge, and a panel centred on it
+hangs over that edge and reads as something that fell out of the card. It closes on the first
+click elsewhere, because nothing on the card moved while it was open and nothing needs
+putting back.
+
 The transport buttons are the one place a circle is the right shape. The kit's `Button`
 paints a rounded square with a hover border, and beside a play button drawn as a circle it
 is the shape that does not belong; `GlyphButton` paints the same hover fill and the same

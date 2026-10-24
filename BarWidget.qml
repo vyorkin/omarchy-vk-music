@@ -12,6 +12,9 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+// Aliased, so that the kit's Button and TextField keep the names in this file: the popup
+// is here for Popup and nothing else.
+import QtQuick.Controls as Controls
 import "LucideIcons.js" as Lucide
 import "i18n.js" as I18n
 import "CoverTint.js" as CoverTint
@@ -5264,11 +5267,19 @@ Panel {
         onClicked: root.skipNext()
       }
 
+      // The speaker opens the volume over the button: the slider arrives where the hand
+      // already is, and the card underneath does not move.
       GlyphButton {
+        id: volumeButton
         iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
-        tint: root.textColor
-        tooltipText: root.displayVolume <= 0 ? root.t("Включить звук") : root.t("Выключить звук")
-        onClicked: root.toggleMute()
+        tint: root.displayVolume <= 0 ? Color.accent : root.textColor
+        tooltipText: root.t("Громкость")
+        onClicked: volumePopover.opened ? volumePopover.close() : volumePopover.open()
+      }
+
+      VolumePopover {
+        id: volumePopover
+        anchorItem: volumeButton
       }
 
       // The heart sits at the right end, after everything that controls the sound:
@@ -5538,13 +5549,20 @@ Panel {
         }
       }
 
+      // The speaker opens the volume over the button: the slider arrives where the hand
+      // already is, and the card underneath does not move.
       GlyphButton {
         id: speakerButton
         iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
-        tint: root.textColor
+        tint: root.displayVolume <= 0 ? Color.accent : root.textColor
         glyphSize: Math.round(Style.font.iconLarge * 1.25)
-        tooltipText: root.displayVolume <= 0 ? root.t("Включить звук") : root.t("Выключить звук")
-        onClicked: root.toggleMute()
+        tooltipText: root.t("Громкость")
+        onClicked: volumePopover.opened ? volumePopover.close() : volumePopover.open()
+      }
+
+      VolumePopover {
+        id: volumePopover
+        anchorItem: speakerButton
       }
 
       // The three dots: the controls that did not fit the row, one line below it.
@@ -5857,6 +5875,74 @@ Panel {
     PanelToolTip {
       visible: glyphButton.tooltipText !== "" && pointer.containsMouse
       text: glyphButton.tooltipText
+    }
+  }
+
+  // The volume, where the hand that wants it already is. The speaker button used to do one
+  // thing only — mute — and a volume button that cannot set a volume is a switch with a
+  // speaker drawn on it. This is the slider the panel keeps behind the dots, opened over the
+  // button instead: a popover, so nothing on the card moves when it appears.
+  component VolumePopover: Controls.Popup {
+    id: volumePopover
+    property Item anchorItem: null
+
+    parent: volumePopover.anchorItem
+    // Above the button and ending where the button ends: the button sits at the card's right
+    // edge, and a panel centred on it would hang over that edge and read as something that
+    // fell out of the card. Reaching back into the card keeps it all visible.
+    x: parent ? parent.width - width : 0
+    y: parent ? -height - Style.space(6) : 0
+    padding: Style.spacing.controlGap
+    // The keyboard stays with the list: this is a mouse-sized control that closes the
+    // moment attention goes anywhere else.
+    focus: false
+    modal: false
+    dim: false
+    closePolicy: Controls.Popup.CloseOnEscape | Controls.Popup.CloseOnPressOutside
+
+    background: BorderSurface {
+      color: Color.popups.background
+      borderSpec: Border.controlSpec("normal", root.textColor, Color.accent)
+      radius: 0
+    }
+
+    contentItem: RowLayout {
+      spacing: Style.space(8)
+      implicitWidth: Style.space(210)
+      implicitHeight: root.barCellHeight
+
+      // Muting has to stay reachable: a slider at the bottom cannot say why the room is
+      // silent, and the glyph on it says which state the sound is in.
+      GlyphButton {
+        iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
+        tint: root.displayVolume <= 0 ? Color.accent : root.textColor
+        glyphSize: Style.font.icon
+        tooltipText: root.displayVolume <= 0 ? root.t("Включить звук") : root.t("Выключить звук")
+        onClicked: root.toggleMute()
+      }
+
+      PanelSlider {
+        Layout.fillWidth: true
+        Layout.alignment: Qt.AlignVCenter
+        minimum: 0
+        maximum: 100
+        value: root.displayVolume
+        integer: true
+        bar: root.bar
+        onMoved: function(value) { root.setVolume(value, true) }
+        onReleased: function(value) { root.setVolume(value, false) }
+      }
+
+      Text {
+        Layout.preferredWidth: Style.space(38)
+        Layout.alignment: Qt.AlignVCenter
+        horizontalAlignment: Text.AlignRight
+        textFormat: Text.PlainText
+        text: Math.round(root.displayVolume) + "%"
+        color: root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
     }
   }
 
