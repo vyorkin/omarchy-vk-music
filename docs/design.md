@@ -411,6 +411,23 @@ What is NOT translated: the daemon's own messages — «Список пуст»,
 error text. They reach the widget as Russian sentences. Translating them means the
 backend returning codes instead of prose, which is a change of its own.
 
+## The settings, and the bar's own cells
+
+The settings page was one column with a rule between each group. The rules were the only
+thing saying where a group ended, and they read as noise: the page is three pages now —
+«Аккаунт» (the sessions and the language), «Бар» (which cells the bar offers, what the row
+shows, which popup opens) and «Воспроизведение» (prefetch, what comes back after a restart,
+notifications, the cache). Their cells stand in the same band that chooses a section, the
+fill marks the one in use, and `h`/`l` walk them the way `h`/`l` walk a gallery's columns.
+The group headers stayed: a page can hold two groups, and a caption is cheaper than a rule.
+
+Which of the card's three places the bar offers is a preference (`panelTabs`): three chips
+in the «Бар» page, two at the least, and a chip that is already in use greys out rather
+than swallowing the click. The daemon refuses a list shorter than two as well, because the
+CLI can write one. The gear is not one of the three: it is not a place in the card, and a
+bar that could hide the way to the settings could not be put back — the tab keys walk only
+the cells that are on the bar, so a hidden cell would be a view with no way in.
+
 ## What the bar row shows
 
 Fourteen preferences, most of them about the row in the bar, taken from the shape
