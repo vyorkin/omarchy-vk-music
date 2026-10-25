@@ -429,6 +429,15 @@ function plural(language, count, one, few, many) {
   return [one, few, many][pluralIndex(language, count)]
 }
 
+// «3:46» — a position or a length as a player writes it. Not a language's business: a colon
+// and two digits read the same everywhere, which is why nothing here is translated.
+function clock(seconds) {
+  var total = Math.max(0, Math.floor(Number(seconds) || 0))
+  var minutes = Math.floor(total / 60)
+  var rest = total % 60
+  return minutes + ":" + (rest < 10 ? "0" : "") + rest
+}
+
 // «6 ч 12 мин» for a list of tracks: VK already sent us every duration.
 function span(language, seconds) {
   if (!(seconds > 0)) return ""

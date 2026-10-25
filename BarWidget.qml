@@ -17,7 +17,6 @@ import qs.Ui
 import QtQuick.Controls as Controls
 import "LucideIcons.js" as Lucide
 import "i18n.js" as I18n
-import "CoverTint.js" as CoverTint
 import "GalleryFit.js" as GalleryFit
 import "GalleryWalk.js" as GalleryWalk
 import "ListShape.js" as ListShape
@@ -31,7 +30,7 @@ Panel {
   // ------------------------------------------------------------- state ---
   // The interface language: a backend preference, English by default, read through a
   // function so a switch in the settings takes effect without a reload.
-  readonly property string language: String(root.setting("language", root.prefs.language))
+  readonly property string language: String(root.setting("language", root.barPref("language") || "en"))
 
   function t(text) {
     return I18n.translate(root.language, text)
@@ -109,7 +108,7 @@ Panel {
     var album = String(root.trackValue("album", ""))
     if (album !== "") return album
     if (!(root.duration > 0)) return ""
-    return root.clock(root.displayPosition) + " / " + root.clock(root.duration)
+    return I18n.clock(root.displayPosition) + " / " + I18n.clock(root.duration)
   }
 
   // Shuffle, repeat and the volume slider live behind the player's menu button, so
@@ -221,8 +220,19 @@ Panel {
     return false
   }
 
+  // A setting's description, with the numbers a slider can always take: before the answer
+  // arrives the page is invisible, but its bindings still evaluate, and an undefined
+  // minimum is a warning on every start for a control nobody can see.
   function spec(key) {
-    return root.preferenceSchema[String(key)] || ({})
+    var found = root.preferenceSchema[String(key)] || ({})
+    return {
+      kind: found.kind === undefined ? "" : found.kind,
+      default: found["default"],
+      min: found.min === undefined ? 0 : found.min,
+      max: found.max === undefined ? 100 : found.max,
+      step: found.step === undefined ? 1 : found.step,
+      options: found.options === undefined ? [] : found.options
+    }
   }
 
   // A choice's options are the schema's values and the panel's words. `choice:<setting>:<value>`
@@ -284,7 +294,7 @@ Panel {
   // `var` kept its first value, and the card stayed 400 wide after the setting
   // was switched until the shell was restarted.
   function isExtended() {
-    return String(root.setting("popupView", root.prefs.popupView)) === "extended"
+    return String(root.setting("popupView", root.barPref("popupView") || "")) === "extended"
   }
 
   function activeList() {
@@ -399,24 +409,10 @@ Panel {
   onWidthChanged: reportBarLayout()
 
   function reportBarLayout() {
-    if (root._reportedBarLayout || root.width <= 0) return
+    if (root._reportedBarLayout) return
+    if (barRow.width <= 0) return
     root._reportedBarLayout = true
-    console.log("[vk-music] bar layout", JSON.stringify({
-      width: root.width,
-      implicitWidth: root.implicitWidth,
-      implicitHeight: root.implicitHeight,
-      barSize: root.bar ? root.bar.barSize : -1,
-      artwork: artwork.width,
-      label: labelText.implicitWidth,
-      transport: transportZone.width,
-      labelSize: Style.font.bodySmall,
-      // A bar widget of zero width is invisible and cannot be clicked; the idle
-      // note is the fallback that keeps a stopped, option-less row reachable.
-      empty: root.barRowEmpty,
-      idle: [idleGlyph.visible, idleGlyph.width, idleGlyph.height],
-      shown: [root.barShowArtwork, root.barShowTitle, root.barShowArtist,
-              root.barShowTime, root.barShowControls]
-    }))
+    barRow.report()
   }
 
   // The poll is the only thing that makes «playing» mean anything outside a button press:
@@ -1422,25 +1418,6 @@ Panel {
     }, function() { root.watchForTrack() })
   }
 
-  // A playlist with no cover still has to be told apart from its neighbours. The hue
-  // is a hash of the title, so the same playlist keeps the same colour on every open,
-  // and the tint is mixed into the popup's own surface rather than painted at full
-  // strength: quiet in a dark theme, pale in a light one, and never a saturated block
-  // that fights the real covers beside it. The hash itself lives in `CoverTint.js`,
-  // where the tests can reach it without a shell.
-  function coverHue(text) {
-    return CoverTint.hue(text)
-  }
-
-  function coverTint(text) {
-    var tint = Qt.hsla(root.coverHue(text) / 360, 0.55, 0.5, 1)
-    return Qt.tint(root.panelBackground, Qt.rgba(tint.r, tint.g, tint.b, 0.24))
-  }
-
-  function coverMonogram(text) {
-    return CoverTint.monogram(text)
-  }
-
   // What the list is showing, and what it is doing: the header is the one place
   // that says both, so the list itself never has to claim anything false.
   // What the sticky row above the list says, and what its right button does: one
@@ -2103,13 +2080,6 @@ Panel {
     root.accountSuccessToken = ""
   }
 
-  function clock(seconds) {
-    var total = Math.max(0, Math.floor(Number(seconds) || 0))
-    var minutes = Math.floor(total / 60)
-    var rest = total % 60
-    return minutes + ":" + (rest < 10 ? "0" : "") + rest
-  }
-
   // Reading a field of the current track always goes through here. The track is
   // null until the first status arrives, and a ternary on `hasTrack` is not
   // enough: QML still evaluates the other branch while the two properties settle.
@@ -2132,23 +2102,31 @@ Panel {
   // `setting()` is the shell.json override for this instance and nothing else: the value
   // that arrives from the daemon is already the default the schema names, already the type
   // the schema says and already inside the range the schema draws.
-  readonly property bool barShowArtwork: root.setting("showArtwork", root.prefs.showArtwork)
-  readonly property bool barShowTitle: root.setting("showTitle", root.prefs.showTitle)
-  readonly property bool barShowArtist: root.setting("showArtist", root.prefs.showArtist)
-  readonly property bool barShowControls: root.setting("showControls", root.prefs.showControls)
-  readonly property bool barShowProgress: root.setting("showProgress", root.prefs.showProgress)
-  readonly property bool barShowTime: root.setting("showTime", root.prefs.showTime)
-  readonly property bool barShowLike: root.setting("showLike", root.prefs.showLike)
-  readonly property string barCoverShape: String(root.setting("coverShape", root.prefs.coverShape))
-  readonly property string barLongTitle: String(root.setting("longTitleMode", root.prefs.longTitleMode))
-  readonly property int barInformationWidth: Number(root.setting("labelWidth", root.prefs.labelWidth))
+  // A preference, or nothing while the first status is on its way. A typed property cannot
+  // hold "unknown", and the alternative was a warning per key on every start for a bar that
+  // is about to be filled a second later; the row draws its idle glyph until then.
+  function barPref(key) {
+    var value = root.prefs[key]
+    return value === undefined ? null : value
+  }
+
+  readonly property bool barShowArtwork: root.setting("showArtwork", root.barPref("showArtwork")) === true
+  readonly property bool barShowTitle: root.setting("showTitle", root.barPref("showTitle")) === true
+  readonly property bool barShowArtist: root.setting("showArtist", root.barPref("showArtist")) === true
+  readonly property bool barShowControls: root.setting("showControls", root.barPref("showControls")) === true
+  readonly property bool barShowProgress: root.setting("showProgress", root.barPref("showProgress")) === true
+  readonly property bool barShowTime: root.setting("showTime", root.barPref("showTime")) === true
+  readonly property bool barShowLike: root.setting("showLike", root.barPref("showLike")) === true
+  readonly property string barCoverShape: String(root.setting("coverShape", root.barPref("coverShape") || ""))
+  readonly property string barLongTitle: String(root.setting("longTitleMode", root.barPref("longTitleMode") || ""))
+  readonly property int barInformationWidth: Number(root.setting("labelWidth", root.barPref("labelWidth") || 0))
   // The scrolling label: how long each end of the text rests, and how fast it
   // moves in pixels a second. Both are taste, so both live in the settings.
-  readonly property int marqueePause: Number(root.setting("marqueePauseMs", root.prefs.marqueePauseMs))
+  readonly property int marqueePause: Number(root.setting("marqueePauseMs", root.barPref("marqueePauseMs") || 0))
   // Playlists look the same wherever they appear: covers in a gallery, or rows.
   // Three across the wide popup, two across the narrow one, so a cover is never
   // too small to recognise.
-  readonly property string playlistView: String(root.setting("playlistView", root.prefs.playlistView))
+  readonly property string playlistView: String(root.setting("playlistView", root.barPref("playlistView") || ""))
   readonly property bool gridView: root.playlistView === "grid"
   // The height the card grows by so that a gallery ends where a row ends. The list asks
   // for it (`TrackList.alignGallery`) instead of the card computing it: the room the list
@@ -2174,290 +2152,71 @@ Panel {
   // this: a playlist's tracks and the queue are lists even when the gallery is on for
   // playlists, and stepping four at a time there is what made «j» land on the wrong track.
 
-  readonly property int marqueeSpeed: Number(root.setting("marqueeSpeed", root.prefs.marqueeSpeed))
-  // The progress line has something to say only for a track with a length: a
-  // station is endless and shows nothing.
-  readonly property bool barHasProgress: root.hasTrack && !root.onAir() && root.duration > 0
-  // A row with nothing in it has no width, and a widget of zero width cannot be
-  // clicked. Cover, title and artist can all be switched off, and then a stopped
-  // player vanished from the bar entirely — leaving no way back to the panel.
-  // One note stands in for the whole row in that case.
-  readonly property bool barRowEmpty: {
-    if (root.barShowArtwork) return false
-    if (root.barShowTitle || root.barShowArtist) return false
-    if (root.barShowTime && root.hasTrack && !root.onAir()) return false
-    if (root.barShowControls && root.hasTrack) return false
-    if (root.barShowLike && root.hasTrack && !root.onAir()) return false
-    if (root.barShowProgress && root.barHasProgress) return false
-    return true
-  }
-  readonly property real barProgress: root.barHasProgress
-    ? Math.max(0, Math.min(1, root.displayPosition / root.duration)) : 0
-
-  // The label shown in the bar. Signing in, an empty queue and a stopped
-  // service are states of the widget, not errors: only a halt paints red.
-  readonly property string barLabel: {
-    if (root.halted !== "") return root.t("остановлен")
-    if (!root.signedIn) return "vk music"
-    // A live station has no track behind it: its name is the whole label.
-    if (root.onAir()) return String(root.radioValue("name", root.t("радио")))
-    if (!root.hasTrack) return root.loading ? root.t("загрузка…") : "vk music"
-    var title = root.barShowTitle ? root.trackValue("title") : ""
-    var artist = root.barShowArtist ? root.trackValue("artist", "") : ""
-    if (title !== "" && artist !== "") return title + "  ·  " + artist
-    if (title !== "") return title
-    if (artist !== "") return artist
-    return "vk music"
-  }
+  readonly property int marqueeSpeed: Number(root.setting("marqueeSpeed", root.barPref("marqueeSpeed") || 0))
+  // The colour of the row's label: urgent for a halt, dim for a complaint, the bar's own
+  // foreground otherwise.
   readonly property color barLabelColor: root.halted !== "" ? Color.urgent
     : (api.errorText !== "" ? root.dim : root.fg)
 
-  // This layer must stay UNDER the row: a MouseArea declared after its siblings
-  // covers them, and the transport zone would never see a click.
-  MouseArea {
-    id: barMouse
-    anchors.fill: parent
-    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-    hoverEnabled: true
-    cursorShape: Qt.PointingHandCursor
-    onEntered: if (root.bar) root.bar.showTooltip(root, api.errorText !== ""
-      ? ("vk music: " + api.errorText)
-      : (root.halted !== "" ? root.haltText : (root.hasTrack
-        ? (root.trackValue("title") + (root.trackValue("artist", "") ? " — " + root.trackValue("artist", "") : ""))
-        : "vk music")))
-    onExited: if (root.bar) root.bar.hideTooltip(root)
-    onClicked: function(mouse) {
-      if (mouse.button === Qt.MiddleButton) root.skipNext()
-      else if (mouse.button === Qt.RightButton && root.hasTrack) root.togglePause()
-      else root.toggle()
-    }
-    // The wheel is the volume, as it is on most bars: one notch, five percent.
-    // The steps go out live and the value is written down once the wheel stops.
-    onWheel: function(wheel) {
-      var delta = wheel.angleDelta.y > 0 ? 5 : -5
-      root.setVolume(Math.round(root.displayVolume) + delta, true)
-      wheelWrite.restart()
-      wheel.accepted = true
-    }
-  }
+  // The one line the row's tooltip carries. Built here because the panel is what knows an
+  // error from a halt from a track; the row only shows it.
+  readonly property string barMessage: api.errorText !== ""
+    ? ("vk music: " + api.errorText)
+    : (root.halted !== "" ? root.haltText : (root.hasTrack
+      ? (String(root.trackValue("title", ""))
+        + (root.trackValue("artist", "") ? " — " + root.trackValue("artist", "") : ""))
+      : "vk music"))
 
-  Row {
+  // The row in the bar is a component: it draws what the bar shows and answers the pointer,
+  // and it knows nothing about queues, sections or commands. Everything below is the state
+  // it needs and the six things it can ask for — a misspelt property here does not compile,
+  // which an object of options would not have given us.
+  BarRow {
     id: barRow
-    anchors.centerIn: parent
-    spacing: Style.space(6)
+    language: root.language
+    track: root.track
+    radio: root.radio
+    onAir: root.onAir()
+    signedIn: root.signedIn
+    loading: root.loading
+    halted: root.halted !== ""
+    playing: root.playing
+    buffering: root.buffering
+    bufferIndeterminate: root.bufferIndeterminate
+    bufferProgress: root.bufferProgress
+    position: root.displayPosition
+    duration: root.duration
+    liked: root.liked
+    volume: root.displayVolume
 
-    // Kept even when the row is otherwise empty: this is the way back to the
-    // panel, so it must exist at the smallest configuration as well.
-    BarGlyph {
-      id: idleGlyph
-      visible: root.barRowEmpty
-      height: root.implicitHeight
-      // Lucide has no bare «music» body; the icon font glyph is the fallback
-      // that keeps this visible even if the set changes again.
-      name: "list-music"
-      icon: "󰝚"
-      filled: false
-      tooltip: "VK Music"
-      onClicked: root.open()
-    }
+    showArtwork: root.barShowArtwork
+    showTitle: root.barShowTitle
+    showArtist: root.barShowArtist
+    showControls: root.barShowControls
+    showProgress: root.barShowProgress
+    showTime: root.barShowTime
+    showLike: root.barShowLike
+    coverShape: root.barCoverShape
+    longTitleMode: root.barLongTitle
+    labelWidth: root.barInformationWidth
+    marqueePause: root.marqueePause
+    marqueeSpeed: root.marqueeSpeed
 
-    BorderSurface {
-      id: artwork
-      // 20 px matches the cover size the other bar players in this shell use.
-      width: Style.space(20)
-      height: width
-      // At twenty pixels a four-pixel corner is a fifth of the picture, so the frame's
-      // rounding and the picture's square corners read as two shapes fighting. The
-      // rounding is proportional here, and the picture sits one pixel in.
-      radius: root.barCoverShape === "circle" ? width / 2
-        : (root.barCoverShape === "square" ? 0 : Style.space(2))
-      visible: root.barShowArtwork
-      anchors.verticalCenter: parent.verticalCenter
-      color: Style.normalFillFor(root.fg, Color.accent)
-      borderSpec: root.buffering
-        ? Border.none()
-        : Border.controlSpec("normal", root.fg, Color.accent)
-      opacity: root.hasTrack ? 1.0 : 0.6
+    barItem: root.bar
+    foreground: root.fg
+    dimmed: root.dim
+    labelColor: root.barLabelColor
+    message: root.barMessage
+    complaint: api.errorText !== "" || root.halted !== ""
 
-      CoverTile {
-        anchors.fill: parent
-        anchors.margins: Style.space(1)
-        // The rounding is proportional here, and the picture sits one pixel in: at
-        // twenty pixels a four-pixel corner is a fifth of the picture.
-        radius: Math.max(0, artwork.radius - Style.space(1))
-        inset: 0
-        glyphFamily: bar ? bar.fontFamily : Style.font.family
-        markColor: root.fg
-        decodeSize: Style.space(20)
-        source: root.onAir()
-          ? String(root.radioValue("logo", ""))
-          : (root.hasTrack && root.trackValue("thumb", "") ? root.trackValue("thumb", "") : "")
-        title: root.onAir()
-          ? String(root.radioValue("name", ""))
-          : (root.hasTrack ? root.trackValue("artist", "") : "")
-      }
-
-      // The ring rides on the artwork that is already there: no layout shift and
-      // no second element in a row that is 30 px tall. While it is filling, the
-      // artwork's own border steps aside so only one outline is visible.
-      ProgressFrame {
-        anchors.fill: parent
-        visible: root.buffering
-        progress: Math.max(0, root.bufferProgress)
-        indeterminate: root.bufferIndeterminate
-        color: Color.accent
-        cornerRadius: artwork.radius
-        thickness: Math.max(1.5, Style.space(2))
-      }
-    }
-
-    Item {
-      id: labelClip
-      visible: root.barShowTitle || root.barShowArtist
-      width: Math.min(root.barInformationWidth, labelText.implicitWidth)
-      height: labelText.height
-      anchors.verticalCenter: parent.verticalCenter
-      clip: true
-
-      Text {
-        id: labelText
-        textFormat: Text.PlainText
-        text: root.barLabel
-        color: root.barLabelColor
-        font.family: bar ? bar.fontFamily : Style.font.family
-        font.pixelSize: Style.font.bodySmall
-        anchors.verticalCenter: parent.verticalCenter
-
-        readonly property bool needsScroll: implicitWidth > labelClip.width
-        // How far the text has to travel for its end to come into view: exactly
-        // the overflow, not a pixel more. Walking to the text's own width used to
-        // carry it off the edge, which left the label empty until the next pass —
-        // a title that looked broken rather than long.
-        readonly property real travel: Math.max(0, implicitWidth - labelClip.width)
-
-        // The text is placed from an animated offset instead of animating `x`
-        // itself: an animation on `x` discards the binding that puts the text back
-        // at the start, so a clip that stopped scrolling kept its last position —
-        // off the edge — and a perfectly short title looked like an empty label
-        // until another long one came along.
-        property real scrollOffset: 0
-        x: -scrollOffset
-
-        // A new title starts at its beginning, and one that fits stays there.
-        onTextChanged: scrollOffset = 0
-        onNeedsScrollChanged: if (!needsScroll) scrollOffset = 0
-
-        // Both ends of the walk get a pause: the beginning while it is there, and
-        // the end once it has arrived. With the text stopping inside the label
-        // instead of past it, the field is never empty and neither end is missed.
-        SequentialAnimation on scrollOffset {
-          running: root.barLongTitle === "scroll" && labelText.needsScroll
-          loops: Animation.Infinite
-
-          PauseAnimation { duration: root.marqueePause }
-
-          NumberAnimation {
-            from: 0
-            to: labelText.travel
-            duration: Math.max(400, labelText.travel / Math.max(1, root.marqueeSpeed) * 1000)
-            easing.type: Easing.Linear
-          }
-
-          PauseAnimation { duration: root.marqueePause }
-
-          // Back to the beginning: a jump, made to read as a loop rather than a
-          // glitch by the pause in front of it.
-          PropertyAction { target: labelText; property: "scrollOffset"; value: 0 }
-        }
-      }
-    }
-
-    // The time is a caption in the same dim colour the popup uses for them.
-    Text {
-      id: barTime
-      visible: root.barShowTime && root.hasTrack && !root.onAir()
-      textFormat: Text.PlainText
-      text: root.clock(root.displayPosition) + " / " + root.clock(root.duration)
-      color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.55)
-      font.family: bar ? bar.fontFamily : Style.font.family
-      font.pixelSize: Style.font.caption
-      anchors.verticalCenter: parent.verticalCenter
-    }
-
-    // Liking from the bar, without opening the popup: the same glyph target as the
-    // transport, with the accent colour standing for «it is in my music».
-
-
-    // A small urgent dot is the whole error report in the bar; the text stays
-    // readable and the popup carries the reason.
-    Item {
-      width: Style.space(7)
-      height: width
-      anchors.verticalCenter: parent.verticalCenter
-      visible: api.errorText !== "" || root.halted !== ""
-
-      Rectangle {
-        anchors.fill: parent
-        radius: width / 2
-        color: Color.urgent
-      }
-
-      MouseArea {
-        anchors.fill: parent
-        cursorShape: Qt.PointingHandCursor
-        onClicked: root.open()
-      }
-    }
-
-    Row {
-      id: transportZone
-      visible: root.hasTrack && root.barShowControls
-      height: root.implicitHeight
-      anchors.verticalCenter: parent.verticalCenter
-      // The reference leaves two pixels between its transport buttons.
-      spacing: Style.space(2)
-
-      // The same three glyphs the reference widget shows, in the same shape: previous,
-      // play or pause, next — 24 px each, nothing drawn between them.
-      BarGlyph {
-        name: "skip-back"
-        filled: true
-        icon: "󰒮"
-        tooltip: root.t("Предыдущий трек")
-        onClicked: root.skipPrevious()
-      }
-
-      BarGlyph {
-        // The glyph never turns into a downloader: play stays play, dimmed while the
-        // track is being fetched.
-        name: root.playing ? "pause" : "play"
-        filled: true
-        icon: root.playing ? "󰏤" : "󰐊"
-        tooltip: root.playing ? root.t("Пауза") : root.t("Играть")
-        onClicked: root.togglePause()
-      }
-
-      BarGlyph {
-        name: "skip-forward"
-        filled: true
-        icon: "󰒭"
-        tooltip: root.t("Следующий трек")
-        onClicked: root.skipNext()
-      }
-    }
-
-    // The heart sits after the transport, at the right end: it is not a control of the
-    // sound, it is a statement about the track.
-    BarGlyph {
-      visible: root.barShowLike && root.hasTrack && !root.onAir()
-      anchors.verticalCenter: parent.verticalCenter
-        name: "heart"
-      fillOnHover: true
-      filled: root.liked
-      icon: root.liked ? "󰋑" : "󰋕"
-      iconColor: root.liked ? Color.accent : root.fg
-      tooltip: root.liked ? root.t("Убрать из моей музыки") : root.t("В мою музыку")
-      onClicked: root.toggleLike()
+    onOpen: root.toggle()
+    onNext: root.skipNext()
+    onPrevious: root.skipPrevious()
+    onPauseToggle: root.togglePause()
+    onLikeToggle: root.toggleLike()
+    onWheel: function(value) {
+      root.setVolume(value, true)
+      wheelWrite.restart()
     }
   }
 
@@ -2468,9 +2227,9 @@ Panel {
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.bottom: parent.bottom
-    visible: root.barShowProgress && root.barHasProgress
+    visible: root.barShowProgress && barRow.hasProgress
     indeterminate: false
-    progress: root.barProgress
+    progress: barRow.progress
     thickness: Math.max(2, Style.space(2))
     color: Color.accent
   }
@@ -2956,201 +2715,12 @@ Panel {
   // fill under the pointer and an accent fill with an accent icon while pressed. That
   // is the whole vocabulary — in a 30 px bar a frame around every glyph competes with
   // every other widget for the same pixels.
-  component BarGlyph: Item {
-    id: glyph
-    // Lucide's name, the way the reference widget asks for its icons: `skip-back`,
-    // `play`, `pause`, `skip-forward`, `heart`. `icon` stays as a fallback glyph from
-    // the icon font for a name the set does not carry.
-    property string name: ""
-    property string icon: ""
-    property bool filled: false
-    // Some glyphs answer the pointer by filling in rather than by lighting a rectangle
-    // around themselves: a 24 px box under a 14 px outline heart is four times the shape
-    // it points at, and the box reads as a button while the heart reads as the thing
-    // being offered. With this set, hovering fills the glyph and paints no background.
-    property bool fillOnHover: false
-    property real strokeWidth: 2
-    // How large the drawn glyph is inside its target. The bar's own controls keep the
-    // 14 px icon they have always had; the player, which is not a 30 px row, asks for
-    // a bigger one and gets it without a second copy of this component.
-    property real iconSize: Style.space(14)
-    property string tooltip: ""
-    property color iconColor: root.fg
-    signal clicked()
-    signal wheeled(var wheel)
-
-    readonly property bool hot: glyphArea.pressed
-    readonly property bool under: glyphArea.containsMouse
-    readonly property color tint: glyph.hot
-      ? Color.accent
-      : (glyph.under ? Qt.lighter(glyph.iconColor, 1.15) : glyph.iconColor)
-    readonly property string tintRgb: "rgb(" + Math.round(glyph.tint.r * 255) + ","
-      + Math.round(glyph.tint.g * 255) + "," + Math.round(glyph.tint.b * 255) + ")"
-    readonly property string body: glyph.name !== "" ? (Lucide.bodies[glyph.name] || "") : ""
-    // What the drawing asks for: the state the glyph was given, or the one the pointer
-    // puts it in.
-    readonly property bool drawnFilled: glyph.filled
-      || (glyph.fillOnHover && (glyph.under || glyph.hot))
-    readonly property string svg: glyph.body === "" ? "" : "data:image/svg+xml;utf8,"
-      + encodeURIComponent(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="'
-        + (glyph.drawnFilled ? glyph.tintRgb : "none")
-        + '" stroke="' + glyph.tintRgb + '" stroke-width="' + glyph.strokeWidth
-        + '" stroke-linecap="round" stroke-linejoin="round">' + glyph.body + "</svg>")
-
-    width: Style.space(24)
-    height: parent ? parent.height : Style.space(24)
-    opacity: enabled ? 1 : 0.35
-
-    Rectangle {
-      anchors.fill: parent
-      // None for a glyph that fills in on hover: the highlight is the shape, and a box
-      // around it would be the second thing the pointer draws.
-      visible: !glyph.fillOnHover
-      radius: Style.cornerRadius
-      color: glyph.hot
-        ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.2)
-        : (glyph.under
-           ? Qt.rgba(glyph.iconColor.r, glyph.iconColor.g, glyph.iconColor.b, 0.08)
-           : "transparent")
-    }
-
-    Image {
-      anchors.centerIn: parent
-      width: glyph.iconSize
-      height: width
-      visible: glyph.body !== ""
-      smooth: true
-      asynchronous: false
-      fillMode: Image.PreserveAspectFit
-      sourceSize.width: Math.ceil(width * 2)
-      sourceSize.height: Math.ceil(width * 2)
-      opacity: root.loading ? 0.45 : 1.0
-      source: glyph.svg
-    }
-
-    Text {
-      anchors.centerIn: parent
-      textFormat: Text.PlainText
-      visible: glyph.body === "" && glyph.icon !== ""
-      text: glyph.icon
-      color: glyph.tint
-      opacity: root.loading ? 0.45 : 1.0
-      font.family: bar ? bar.fontFamily : Style.font.family
-      font.pixelSize: Style.space(14)
-    }
-
-    MouseArea {
-      id: glyphArea
-      anchors.fill: parent
-      hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      onClicked: glyph.clicked()
-      onWheel: function(wheel) { glyph.wheeled(wheel) }
-      onEntered: if (bar && glyph.tooltip !== "") bar.showTooltip(glyph, glyph.tooltip)
-      onExited: if (bar) bar.hideTooltip(glyph)
-    }
-  }
-
   // A cover that may not be there. Loading and failure look the same on purpose: the
   // tile is drawn first and the picture fades in over it only once it is ready, so a
   // card never shows the surface colour where a cover belongs. A signed VK link that
   // has expired used to leave exactly that — a flat white square, with the glyph hidden
   // because the URL was not empty. What stays when there is no picture is a tint of the
   // item's own title and its first letters.
-  component CoverTile: BorderSurface {
-    id: tile
-    property string source: ""
-    // Both the monogram and the tint come from this, so it has to be the item's name:
-    // the same playlist keeps one colour between opens, and no id has to be hashed.
-    property string title: ""
-    // The corner mark says what kind of item this is — a note for a playlist or a track,
-    // a person for a profile. Empty leaves the tile wordless.
-    property string mark: "󰝚"
-    property string glyphFamily: Style.font.family
-    property color markColor: root.dim
-    property color monogramColor: root.textColor
-    // The picture sits a pixel or two inside the surface: a Rectangle cannot clip its
-    // children to a radius, so the frame has to show around it instead.
-    property real inset: 0
-    // How many pixels the picture is asked for. The callers pass the width the tile
-    // will have, because the tile starts at zero and a size that grows would ask the
-    // network for the same cover twice — once at 0 (the original) and once at the final
-    // width. Twice the width keeps it sharp on a scaled display.
-    property real decodeSize: 0
-
-    readonly property bool shown: picture.status === Image.Ready
-    readonly property real side: Math.min(width, height)
-    readonly property string monogram: root.coverMonogram(title)
-    // Below about forty pixels there is no room for two marks: the glyph alone says
-    // what the row is, the way it always has in the small covers. A tile with nothing
-    // to abbreviate keeps the large centred glyph at any size.
-    readonly property bool roomy: tile.side >= Style.space(40)
-    readonly property bool labeled: tile.roomy && tile.monogram !== ""
-    // Below eighty pixels the corner mark is a speck beside the letters rather than a
-    // second word, so a small tile keeps the monogram alone. A circle has no corners
-    // either: the bottom-right of the square is the part its radius cuts away.
-    readonly property bool round: tile.radius * 2 >= tile.side - 1
-    readonly property bool cornerMark: tile.labeled && !tile.round && tile.side >= Style.space(80)
-
-    radius: Style.spacing.labelGap
-    // The tint belongs to the fallback, not to the frame: a picture keeps the neutral
-    // rim it has always had, and only the tile that stands in for it is coloured.
-    color: tile.shown ? root.panelBackground : root.coverTint(title)
-
-    Image {
-      id: picture
-      anchors.fill: parent
-      anchors.margins: tile.inset
-      source: tile.source
-      fillMode: Image.PreserveAspectCrop
-      asynchronous: true
-      smooth: true
-      // A 600 px cover decoded for a 160 px card is memory for nothing: the tile says
-      // what it needs, and nothing is asked for while that is unknown.
-      sourceSize.width: tile.decodeSize > 0 ? Math.ceil(tile.decodeSize * 2) : 0
-      sourceSize.height: tile.decodeSize > 0 ? Math.ceil(tile.decodeSize * 2) : 0
-      opacity: tile.shown ? 1 : 0
-      Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutQuad } }
-    }
-
-    Text {
-      anchors.centerIn: parent
-      visible: !tile.shown && tile.labeled
-      text: tile.monogram
-      textFormat: Text.PlainText
-      color: tile.monogramColor
-      opacity: 0.8
-      font.family: tile.glyphFamily
-      font.bold: true
-      font.pixelSize: Math.round(tile.side * 0.34)
-      font.letterSpacing: Math.round(tile.side * 0.02)
-    }
-
-    Text {
-      anchors.centerIn: parent
-      visible: !tile.shown && !tile.labeled && tile.mark !== ""
-      text: tile.mark
-      textFormat: Text.PlainText
-      color: tile.markColor
-      font.family: tile.glyphFamily
-      font.pixelSize: Math.max(Style.font.caption, Math.round(tile.side * (tile.roomy ? 0.34 : 0.5)))
-    }
-
-    Text {
-      anchors.right: parent.right
-      anchors.bottom: parent.bottom
-      anchors.margins: Math.round(tile.side * 0.07)
-      visible: !tile.shown && tile.cornerMark
-      text: tile.mark
-      textFormat: Text.PlainText
-      color: tile.markColor
-      opacity: 0.45
-      font.family: tile.glyphFamily
-      font.pixelSize: Math.round(tile.side * 0.15)
-    }
-  }
-
   component PlaylistCard: Item {
     id: card
     property var item: null
@@ -3557,7 +3127,7 @@ Panel {
       anchors.verticalCenter: parent.verticalCenter
       horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
-      text: trackRow.track ? root.clock(Number(trackRow.track.duration || 0)) : ""
+      text: trackRow.track ? I18n.clock(Number(trackRow.track.duration || 0)) : ""
       color: root.dim
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
@@ -3641,6 +3211,8 @@ Panel {
       BarGlyph {
         id: heartGlyph
         anchors.fill: parent
+        barItem: root.bar
+        loading: root.loading
         name: "heart"
         fillOnHover: true
         filled: root.isLiked(trackRow.track)
@@ -5614,8 +5186,8 @@ Panel {
             ? root.t("Радио · в эфире")
             : (root.hasTrack
                ? (root.trackValue("artist", "") + (root.duration > 0
-                  ? (root.trackValue("artist", "") ? " · " : "") + root.clock(root.displayPosition)
-                    + " / " + root.clock(root.duration)
+                  ? (root.trackValue("artist", "") ? " · " : "") + I18n.clock(root.displayPosition)
+                    + " / " + I18n.clock(root.duration)
                   : ""))
                : "")
           color: root.dim
@@ -5690,6 +5262,8 @@ Panel {
 
         BarGlyph {
           anchors.fill: parent
+          barItem: root.bar
+          loading: root.loading
           name: "heart"
           fillOnHover: true
           filled: root.liked
@@ -5821,6 +5395,8 @@ Panel {
 
         BarGlyph {
           anchors.fill: parent
+          barItem: root.bar
+          loading: root.loading
           iconSize: Math.round(Style.font.iconLarge * 1.2)
           name: "heart"
           fillOnHover: true
@@ -5925,7 +5501,7 @@ Panel {
             id: elapsedText
             Layout.alignment: Qt.AlignLeft
             textFormat: Text.PlainText
-            text: root.clock(root.displayPosition)
+            text: I18n.clock(root.displayPosition)
             color: root.textColor
             font.family: Style.font.family
             font.pixelSize: Math.round(Style.font.body * 1.25)
@@ -5937,7 +5513,7 @@ Panel {
             id: totalText
             Layout.alignment: Qt.AlignRight
             textFormat: Text.PlainText
-            text: root.clock(root.duration)
+            text: I18n.clock(root.duration)
             color: root.textColor
             font.family: Style.font.family
             font.pixelSize: Math.round(Style.font.body * 1.25)

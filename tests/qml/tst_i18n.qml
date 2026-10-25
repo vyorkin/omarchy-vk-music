@@ -137,4 +137,14 @@ TestCase {
     compare(I18n.summary("ru", tracks, "трек", "трека", "треков"), "3 трека · 1ч 2мин")
     compare(I18n.summary("ru", [], "трек", "трека", "треков"), "")
   }
+
+  // A player's own way of writing a length: minutes, a colon, two digits.
+  function test_a_position_reads_as_a_player_writes_it() {
+    compare(I18n.clock(0), "0:00")
+    compare(I18n.clock(9), "0:09")
+    compare(I18n.clock(226), "3:46")
+    compare(I18n.clock(3725), "62:05")
+    compare(I18n.clock(-5), "0:00")
+    compare(I18n.clock(undefined), "0:00")
+  }
 }
