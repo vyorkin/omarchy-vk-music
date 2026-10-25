@@ -1446,43 +1446,48 @@ Panel {
     list.contentY = Math.max(0, Math.min(maxScroll, target))
   }
 
-  // Enter: play what the cursor points at. Returns false when there is nothing
-  // to activate, which is when Enter keeps its old meaning.
+  // What a row means, as a table: the plan names the list and the intent, and each entry
+  // below is one call. There is no branch here on which page is open — that answer is the
+  // plan's, and a list it does not know cannot be drawn.
+  readonly property var rowActions: ({
+    playQueue: function(action) { root.playQueueAt(action.index) },
+    playPlaylist: function(action) { root.playPlaylistTrack(action.index) },
+    playSection: function(action) { root.playBrowseTrack(action.index) },
+    playSearch: function(action) { root.playSearchResult(action.index) },
+    openPlaylist: function(action) { root.openPlaylistView(action.item) },
+    openPerson: function(action) { root.openPerson(String(action.item.id)) },
+    playStation: function(action) { root.playStation(action.item) },
+    query: function(action) { root.searchSuggestion(action.text) }
+  })
+
+  // One row, one action, whichever road got here: a click names the list it drew and the
+  // index it drew it at, Enter names the segment the cursor is in. Both end here, so a
+  // click and Enter cannot mean two different tracks.
+  function rowAction(list, drawnIndex) {
+    return root.runRowAction(ListShape.actionAt(root.listPlan(), list, drawnIndex))
+  }
+
+  function runRowAction(action) {
+    if (!action) return false
+    var run = root.rowActions[action.kind]
+    if (!run) return false
+    run(action)
+    return true
+  }
+
+  // Enter: play what the cursor points at. Returns false when there is nothing to
+  // activate, which is when Enter keeps its old meaning.
+  //
+  // The segment knows the list it was cut from and its own index inside it, and that index
+  // counts the drawn rows — the same thing a delegate holds. `actionAt` turns it into the
+  // position the command reads, which is not the same number once a filter is on.
   function activateCursor() {
     var planned = root.listPlan()
-    var count = planned.items.length
-    if (count === 0) return false
-    var index = root.cursor < 0 ? 0 : Math.min(root.cursor, count - 1)
-    var item = planned.items[index]
+    if (planned.items.length === 0) return false
+    var index = root.cursor < 0 ? 0 : Math.min(root.cursor, planned.items.length - 1)
     var slot = ListShape.slotAt(planned, index)
     if (slot === null) return false
-    // Each list is started from its own array, and the index handed to a `play…` call is an
-    // index into that array — never the cursor's index, which counts a filtered list. The
-    // two agree until a filter narrows something, and then the wrong one plays the neighbour.
-    if (slot.scope === "playlist") {
-      root.playPlaylistTrack(ListShape.indexOf(planned.lists.playlistTracks, item))
-    } else if (slot.scope === "queue") {
-      root.playQueueAt(ListShape.indexOf(planned.lists.queue, item))
-    } else if (slot.scope === "section") {
-      if (slot.kind === "tracks") root.playBrowseTrack(ListShape.indexOf(planned.lists.tracks, item))
-      else root.openPlaylistView(item)
-    } else if (slot.scope === "person") {
-      // A person's page holds playlists to open, not to start: opening one is the same click
-      // it is in the section above, and starting it belongs to the playlist's own screen.
-      root.openPlaylistView(item)
-    } else if (slot.scope === "search" && slot.kind === "playlists") {
-      root.playPlaylist(item)
-    } else if (slot.scope === "friends") {
-      if (item) root.openPerson(String(item.id))
-    } else if (slot.scope === "radio") {
-      root.playStation(item)
-    } else if (slot.scope === "search") {
-      if (slot.kind === "results") root.playSearchResult(ListShape.indexOf(planned.lists.results, item))
-      else root.searchSuggestion(String(item))
-    } else {
-      return false
-    }
-    return true
+    return root.runRowAction(ListShape.actionAt(planned, slot.list, slot.index))
   }
 
   // Any command that can start a track opens a short watch window: the widget
@@ -1806,15 +1811,6 @@ Panel {
   function playlistPlace(playlist) {
     if (!playlist) return ""
     return String(playlist.owner_id) + "_" + String(playlist.playlist_id)
-  }
-
-  function playPlaylist(playlist) {
-    if (!playlist) return
-    if (root.playingFrom("playlist", root.playlistPlace(playlist))) return
-    call([
-      root.cli, "play", "playlist", String(playlist.owner_id), String(playlist.playlist_id),
-      String(playlist.access_key || ""), String(playlist.title || "")
-    ], function() { root.watchForTrack() })
   }
 
   readonly property string openPlaylistTitle: root.openPlaylist
@@ -4757,7 +4753,7 @@ Panel {
             // queue whether the other 99 are shown or not.
             position: root.indexOfItem(root.queue, modelData) + 1
             selected: index === root.cursor
-            onActivated: root.playQueueAt(root.indexOfItem(root.queue, modelData))
+            onActivated: root.rowAction("queue", index)
             onContextRequested: root.openRowMenu(modelData, root.indexOfItem(root.queue, modelData))
           }
         }
@@ -4786,17 +4782,13 @@ Panel {
           id: browseGrid
           items: root.listPlan().lists.playlists
           visible: root.gridView && items.length > 0
-          onPicked: function(index) {
-            root.openPlaylistView(root.listPlan().lists.playlists[index])
-          }
+          onPicked: function(index) { root.rowAction("playlists", index) }
         }
 
         PlaylistRows {
           id: browsePlaylistRows
           items: root.gridView ? [] : root.listPlan().lists.playlists
-          onPicked: function(index) {
-            root.openPlaylistView(root.listPlan().lists.playlists[index])
-          }
+          onPicked: function(index) { root.rowAction("playlists", index) }
         }
 
         // A RowLayout rather than a Row: a caption in a plain Row sits at the top
@@ -4834,10 +4826,7 @@ Panel {
             id: friendsGrid
             items: root.listPlan().friendsGallery ? root.listPlan().lists.friends : []
             visible: items.length > 0
-            onPicked: function(index) {
-              var friend = root.listPlan().lists.friends[index]
-              if (friend) root.openPerson(String(friend.id))
-            }
+            onPicked: function(index) { root.rowAction("friends", index) }
           }
 
           Repeater {
@@ -4846,7 +4835,7 @@ Panel {
             delegate: PersonRow {
               item: modelData
               selected: index === root.cursor
-              onActivated: if (modelData) root.openPerson(String(modelData.id))
+              onActivated: root.rowAction("friends", index)
             }
           }
 
@@ -4861,10 +4850,7 @@ Panel {
             baseOffset: root.listPlan().lists.friends.length
             items: root.listPlan().recentGallery ? root.listPlan().lists.people : []
             visible: items.length > 0
-            onPicked: function(index) {
-              var person = root.listPlan().lists.people[index]
-              if (person) root.openPerson(String(person.id))
-            }
+            onPicked: function(index) { root.rowAction("people", index) }
           }
 
           Repeater {
@@ -4873,7 +4859,7 @@ Panel {
             delegate: PersonRow {
               item: modelData
               selected: (root.listPlan().lists.friends.length + index) === root.cursor
-              onActivated: if (modelData) root.openPerson(String(modelData.id))
+              onActivated: root.rowAction("people", index)
             }
           }
 
@@ -4906,7 +4892,7 @@ Panel {
               : ""
             foreground: root.onAir() && modelData && root.radioValue("id", 0) === modelData.id
               ? Color.accent : root.textColor
-            onClicked: if (modelData) root.playStation(modelData)
+            onClicked: root.rowAction("stations", index)
           }
         }
 
@@ -4916,7 +4902,7 @@ Panel {
           delegate: TrackRow {
             track: modelData
             selected: (root.browseCursorOffset() + index) === root.cursor
-            onActivated: if (modelData) root.playBrowseTrack(root.indexOfItem(root.browseTracks, modelData))
+            onActivated: root.rowAction("tracks", index)
             onContextRequested: root.openRowMenu(modelData)
           }
         }
@@ -4950,7 +4936,7 @@ Panel {
             track: modelData
             position: index + 1
             selected: index === root.cursor
-            onActivated: root.playPlaylistTrack(root.indexOfItem(root.openPlaylistTracks, modelData))
+            onActivated: root.rowAction("playlistTracks", index)
             onContextRequested: root.openRowMenu(modelData)
           }
         }
@@ -4986,7 +4972,7 @@ Panel {
           delegate: SuggestionRow {
             text: modelData ? String(modelData) : ""
             selected: index === root.cursor
-            onClicked: if (modelData) root.searchSuggestion(String(modelData))
+            onClicked: root.rowAction("history", index)
           }
         }
 
@@ -5000,17 +4986,13 @@ Panel {
           id: searchGrid
           items: root.searchMode === "playlists" ? root.listPlan().lists.foundPlaylists : []
           visible: root.gridView && items.length > 0
-          onPicked: function(index) {
-            root.openPlaylistView(root.listPlan().lists.foundPlaylists[index])
-          }
+          onPicked: function(index) { root.rowAction("foundPlaylists", index) }
         }
 
         PlaylistRows {
           id: searchPlaylistRows
           items: (root.searchMode === "playlists" && !root.gridView) ? root.listPlan().lists.foundPlaylists : []
-          onPicked: function(index) {
-            root.openPlaylistView(root.listPlan().lists.foundPlaylists[index])
-          }
+          onPicked: function(index) { root.rowAction("foundPlaylists", index) }
         }
 
         Repeater {
@@ -5019,7 +5001,7 @@ Panel {
           delegate: SuggestionRow {
             text: modelData ? String(modelData) : ""
             selected: index === root.cursor
-            onClicked: if (modelData) root.searchSuggestion(String(modelData))
+            onClicked: root.rowAction("suggestions", index)
           }
         }
 
@@ -5029,7 +5011,7 @@ Panel {
           delegate: TrackRow {
             track: modelData
             selected: index === root.cursor
-            onActivated: root.playSearchResult(root.indexOfItem(root.results, modelData))
+            onActivated: root.rowAction("results", index)
             onContextRequested: root.openRowMenu(modelData)
           }
         }

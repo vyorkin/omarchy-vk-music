@@ -9,6 +9,11 @@
 // invariants that hold for every page — the first of which is that `items` is the segments
 // joined and nothing else, which is the property that makes the two unable to disagree.
 //
+// The second half is what a row *means*. A plan names each segment's list; a click names the
+// list it drew and the index it drew it at. The two must resolve to one action, and a play
+// action's index must be a position in the raw array — a filter narrowing the queue is what
+// separates the drawn position from the readable one.
+//
 // Run:
 //   QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -import tests/qml -input tests/qml
 import QtQuick
@@ -275,5 +280,135 @@ TestCase {
     compare(ListShape.indexOf(rows, { key: "2", title: "a copy" }), 1)
     compare(ListShape.indexOf(rows, { key: "9" }), -1)
     compare(ListShape.indexOf(rows, null), -1)
+  }
+
+  // -- what a row means --------------------------------------------------------
+
+  function namesOf(planned) {
+    var out = []
+    for (var i = 0; i < planned.segments.length; i++) out.push(planned.segments[i].list)
+    return out.join(",")
+  }
+
+  // A click names the list it drew; Enter names its segment's list and its own index. If the
+  // two ever named different arrays the two roads would mean different rows, so this table
+  // pins the name every page's segment carries.
+  function test_a_segment_names_the_list_it_was_cut_from() {
+    var cases = [
+      { state: { view: "queue", queue: tracks(2) }, lists: "queue" },
+      { state: { view: "browse", browseSlug: "main", browsePlaylists: cards(2), browseTracks: tracks(2) },
+        lists: "playlists,tracks" },
+      { state: { view: "browse", browseSlug: "person", personPlaylists: cards(2) },
+        lists: "personPlaylists" },
+      { state: { view: "browse", browseSlug: "friends", friends: cards(1), people: cards(2) },
+        lists: "friends,people" },
+      { state: { view: "browse", browseSlug: "radiostations", stations: [{ id: 1, name: "Jazz" }] },
+        lists: "stations" },
+      { state: { view: "search", searchMode: "playlists", searchState: "results",
+        queryLength: 3, foundPlaylists: cards(2) }, lists: "foundPlaylists" },
+      { state: { view: "search", searchState: "results", queryLength: 3, results: tracks(2) },
+        lists: "results" },
+      { state: { view: "search", searchState: "typing", queryLength: 1, history: ["kino"] },
+        lists: "history" },
+      { state: { view: "search", searchState: "typing", queryLength: 2, suggestions: ["kino"] },
+        lists: "suggestions" },
+      { state: { view: "browse", browseSlug: "main", openPlaylist: { title: "P" },
+        openPlaylistTracks: tracks(2) }, lists: "playlistTracks" }
+    ]
+    for (var i = 0; i < cases.length; i++) {
+      compare(namesOf(ListShape.plan(cases[i].state)), cases[i].lists)
+    }
+  }
+
+  // Every list the plan files is a list a row can be started from, and every segment names
+  // one of them. A list missing from the table is a page whose rows do nothing.
+  function test_every_list_the_plan_files_has_an_intent() {
+    var planned = ListShape.plan(sectionState())
+    var missing = []
+    for (var name in planned.lists) {
+      if (!ListShape.INTENTS[name]) missing.push(name)
+    }
+    compare(missing.join(","), "")
+    for (var s = 0; s < planned.segments.length; s++) {
+      verify(planned.lists[planned.segments[s].list] !== undefined)
+    }
+  }
+
+  // The bug this table exists for: with a filter on, the row drawn at position 0 is not the
+  // first track of the queue, and `jump 0` plays the wrong song. The action's index is a
+  // position in the raw array, which is what every command reads.
+  function test_a_play_intent_carries_the_raw_index() {
+    var queue = [track("a", "Alpha"), track("b", "Bravo"), track("c", "Charlie")]
+    var planned = ListShape.plan({ view: "queue", queue: queue, filter: "charlie" })
+    compare(planned.lists.queue.length, 1)
+    var action = ListShape.actionAt(planned, "queue", 0)
+    compare(action.kind, "playQueue")
+    compare(action.index, 2)
+
+    var section = ListShape.plan(sectionState({ filter: "t7" }))
+    compare(ListShape.actionAt(section, "tracks", 0).index, 7)
+
+    var opened = ListShape.plan(sectionState({
+      openPlaylist: { title: "P" }, openPlaylistTracks: tracks(4, "p"), filter: "p3"
+    }))
+    compare(ListShape.actionAt(opened, "playlistTracks", 0).kind, "playPlaylist")
+    compare(ListShape.actionAt(opened, "playlistTracks", 0).index, 3)
+
+    var found = ListShape.plan({ view: "search", searchState: "results", queryLength: 3,
+      results: tracks(4, "r"), filter: "r2" })
+    compare(ListShape.actionAt(found, "results", 0).kind, "playSearch")
+    compare(ListShape.actionAt(found, "results", 0).index, 2)
+  }
+
+  // Everything that acts on a whole thing carries the thing, not a position: opening a
+  // playlist or a person, starting a station, and a query which carries its text.
+  function test_the_other_intents_carry_the_thing_itself() {
+    var section = ListShape.plan(sectionState())
+    var playlist = section.lists.playlists[1]
+    var opened = ListShape.actionAt(section, "playlists", 1)
+    compare(opened.kind, "openPlaylist")
+    compare(opened.item, playlist)
+    compare(opened.index, -1)
+
+    var people = ListShape.plan({ view: "browse", browseSlug: "friends", friends: cards(2) })
+    compare(ListShape.actionAt(people, "friends", 0).kind, "openPerson")
+    compare(String(ListShape.actionAt(people, "friends", 0).item.id), "0")
+
+    var radio = ListShape.plan({ view: "browse", browseSlug: "radiostations",
+      stations: [{ id: 4, name: "Jazz" }] })
+    compare(ListShape.actionAt(radio, "stations", 0).kind, "playStation")
+    compare(ListShape.actionAt(radio, "stations", 0).item.id, 4)
+
+    var typing = ListShape.plan({ view: "search", searchState: "typing", queryLength: 1,
+      history: ["kino"] })
+    compare(ListShape.actionAt(typing, "history", 0).kind, "query")
+    compare(ListShape.actionAt(typing, "history", 0).text, "kino")
+  }
+
+  // Nothing to do is an answer too: it is what lets Enter keep its old meaning on an empty
+  // list, and what keeps a stale index from reaching a command.
+  function test_nothing_to_do_is_null() {
+    var planned = ListShape.plan(sectionState())
+    compare(ListShape.actionAt(planned, "playlists", -1), null)
+    compare(ListShape.actionAt(planned, "playlists", 4), null)
+    compare(ListShape.actionAt(planned, "nowhere", 0), null)
+    compare(ListShape.actionAt(planned, "stations", 0), null)
+    compare(ListShape.actionAt(null, "playlists", 0), null)
+    var empty = ListShape.plan({ view: "queue", queue: [] })
+    compare(ListShape.actionAt(empty, "queue", 0), null)
+  }
+
+  // The cursor's road and the delegate's road are one function: for every row of a page the
+  // segment's own index resolves to the same action a click at that drawn index resolves to.
+  function test_enter_and_a_click_ask_the_same_question() {
+    var planned = ListShape.plan(sectionState({ gridView: true }))
+    for (var i = 0; i < planned.items.length; i++) {
+      var slot = ListShape.slotAt(planned, i)
+      var byEnter = ListShape.actionAt(planned, slot.list, slot.index)
+      var byClick = ListShape.actionAt(planned, slot.list, slot.index)
+      compare(byEnter.kind, byClick.kind)
+      compare(byEnter.index, byClick.index)
+      compare(byEnter.item, planned.items[i])
+    }
   }
 }
