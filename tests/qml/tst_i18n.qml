@@ -74,4 +74,67 @@ TestCase {
     compare(I18n.message("en", null), "")
     compare(I18n.message("en", ""), "")
   }
+
+  // -- the keys -------------------------------------------------------------------
+
+  // The sheet the «?» opens is the table, row for row: the keys as one column and the words
+  // beside them. It used to be a parser of a translated sentence, and a word the parser
+  // guessed wrong was a row of help that said the wrong thing about a key.
+  function test_the_sheet_is_the_table() {
+    var rows = I18n.hintRows("en")
+    compare(rows.length, I18n.KEYS.length)
+    compare(rows[0].keys, "Space")
+    compare(rows[0].what, "pause")
+    // The brackets stay apart, because they are a pair the reader presses twice.
+    compare(rows[5].keys, "[ ]")
+    compare(rows[7].what, "close")
+    compare(I18n.hintRows("ru")[7].what, "закрыть")
+  }
+
+  // Every word in the table is a key, so a language that is missing one shows the key and
+  // the test says which.
+  function test_every_key_word_is_translated() {
+    var missing = []
+    for (var i = 0; i < I18n.KEYS.length; i++) {
+      var word = I18n.KEYS[i].what
+      var row = I18n.T[word]
+      for (var l = 0; l < I18n.LANGUAGES.length; l++) {
+        var language = I18n.LANGUAGES[l].code
+        // The row itself, not the translated string: Ukrainian and Russian share the
+        // spelling of «пауза», and a comparison of strings would call that a fallback.
+        if (!row || row[language] === undefined || row[language] === "") {
+          missing.push(word + "/" + language)
+        }
+      }
+    }
+    compare(missing.join(","), "")
+  }
+
+  // -- the labels -----------------------------------------------------------------
+
+  function test_counted_nouns_take_the_languages_own_forms() {
+    compare(I18n.plural("en", 1, "трек", "трека", "треков"), "трек")
+    compare(I18n.plural("en", 2, "трек", "трека", "треков"), "треков")
+    compare(I18n.plural("ru", 1, "трек", "трека", "треков"), "трек")
+    compare(I18n.plural("ru", 3, "трек", "трека", "треков"), "трека")
+    compare(I18n.plural("ru", 11, "трек", "трека", "треков"), "треков")
+    compare(I18n.plural("ja", 5, "трек", "трека", "треков"), "треков")
+  }
+
+  function test_a_duration_reads_in_hours_and_minutes() {
+    compare(I18n.span("ru", 0), "")
+    // The unit keys carry their own spacing — «ч » has a trailing space, «мин» none —
+    // which is what the panel has always shown: «6ч 55мин».
+    compare(I18n.span("ru", 90), "2мин")
+    compare(I18n.span("ru", 3720), "1ч 2мин")
+    compare(I18n.span("en", 3720), "1 h 2 min")
+    // A track with no length of its own adds nothing: a station is not a two-hour track.
+    compare(I18n.tracksSpan("ru", [{ duration: 60 }, { duration: 0 }, { duration: 60 }]), "2мин")
+  }
+
+  function test_a_summary_counts_and_measures() {
+    var tracks = [{ duration: 1800 }, { duration: 1800 }, { duration: 125 }]
+    compare(I18n.summary("ru", tracks, "трек", "трека", "треков"), "3 трека · 1ч 2мин")
+    compare(I18n.summary("ru", [], "трек", "трека", "треков"), "")
+  }
 }

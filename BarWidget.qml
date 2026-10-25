@@ -151,80 +151,38 @@ Panel {
       if (session.loading("foundPlaylists")) return root.t("Ищу…")
       var found = root.foundPlaylists.length
       if (found === 0) return root.t("Плейлисты не найдены")
-      return root.t("Найдено ") + found + " " + root.plural(found, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов"))
+      return root.t("Найдено ") + found + " " + I18n.plural(root.language, found, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов"))
     }
     if (root.searchState === "searching") return root.t("Ищу…")
     if (!root.resultsShowing) return root.t("Подсказки")
     if (root.results.length === 0) {
       return root.listPlan().lists.suggestions.length > 0 ? root.t("Ничего не найдено. Похожее:") : root.t("Ничего не найдено")
     }
-    var span = root.tracksSpan(root.results)
+    var span = I18n.tracksSpan(root.language, root.results)
     return root.t("Найдено ") + root.results.length + (span === "" ? "" : " · " + span)
   }
   // The popup answers to five keys and nothing on screen says so. Esc is the one
   // that means two things, so the hint follows the query.
-  readonly property string keyHints: {
-    if (root.activeField().activeFocus) return root.t("Enter искать · Tab к списку · Esc выйти из поля")
-    return root.t("Space пауза · jk выбор · Enter играть · / фильтр · m вид · [ ] вкладки · ⇧H ⇧L раздел · Esc закрыть")
-  }
+  // The sheet the «?» opens is drawn from `i18n.js`'s key table: the keys as one column and
+  // the words beside them, translated. There is no sentence to parse back any more — and no
+  // line of small print to keep in step with the sheet, because the line was removed from
+  // the panel and this property was left behind as the source the sheet parsed.
   // Whether the key sheet is up. The line of tiny print that used to sit under the list is
   // gone: two captions of four-point type that nobody read, and the keys it could not fit
   // were the ones a beginner needs most. A question mark in the corner opens the sheet.
   property bool hintsOpen: false
 
-  // The sheet's rows, out of the hint line itself: it is translated as one string with «·»
-  // between the keys, and the sheet is a list of the same phrases, one per row. A phrase
-  // whose first words are keys — latin, short, and never the last word — is drawn as a key
-  // cap with its description beside it; anything else stands as one line, which is what a
-  // pair like «[ ] вкладки» needs.
-  readonly property var keyHelpRows: {
-    var parts = String(root.keyHints).split("·")
-    var rows = []
-    for (var i = 0; i < parts.length; i++) {
-      var tokens = String(parts[i]).trim().split(/\s+/)
-      var keys = []
-      while (tokens.length > 1 && keys.length < 2
-             && tokens[0].length <= 10 && !/[\u0400-\u04FF]/.test(tokens[0])) {
-        keys.push(tokens.shift())
-      }
-      rows.push({ keys: keys.join(" "), what: tokens.join(" ") })
-    }
-    return rows
-  }
+  // The sheet's rows are the key table's rows: the keys as one column, the words beside
+  // them. Nothing is parsed, so nothing can be parsed wrong.
+  // One table: while a field has the caret the catcher is blocked outright, so the sheet
+  // cannot be opened from inside one, and a variant for that state was a table nothing
+  // could ever show.
+  readonly property var keyHelpRows: I18n.hintRows(root.language)
 
   // The heading is worth its line only when there is something under it: while
   // the query is still short nothing is shown at all.
   readonly property bool searchHeaderVisible: root.searchHeader !== ""
     && (root.searchState !== "typing" || root.listPlan().lists.suggestions.length > 0)
-
-  // «6 ч 12 мин» for a list of tracks: the queue and a section page are both
-  // worth summarising, and VK already sent us every duration.
-  function humanSpan(seconds) {
-    if (!(seconds > 0)) return ""
-    var minutes = Math.round(seconds / 60)
-    var hours = Math.floor(minutes / 60)
-    minutes = minutes % 60
-    if (hours > 0) return hours + root.t("ч ") + minutes + root.t("мин")
-    return minutes + root.t("мин")
-  }
-
-  function tracksSpan(tracks) {
-    var seconds = 0
-    for (var i = 0; i < (tracks ? tracks.length : 0); i++) {
-      var value = Number(tracks[i] ? tracks[i].duration : 0)
-      if (value > 0 && value < 86400) seconds += value
-    }
-    return root.humanSpan(seconds)
-  }
-
-  // «100 треков · 6 ч 12 мин» — how long a list is, in both senses.
-  function listSummary(tracks, one, few, many) {
-    var count = tracks ? tracks.length : 0
-    if (count === 0) return ""
-    var parts = count + " " + root.plural(count, one, few, many)
-    var span = root.tracksSpan(tracks)
-    return span === "" ? parts : parts + " · " + span
-  }
 
   // What is playing, by key. The queue's own rows start after the current track,
   // but a section page or a search result can contain it, and then the row says
@@ -1464,16 +1422,6 @@ Panel {
     }, function() { root.watchForTrack() })
   }
 
-  // Russian counts a noun three ways; a section header that says "1 треков" is
-  // worse than saying nothing.
-  function plural(count, one, few, many) {
-    // Which form to use is the language's business: Russian and Ukrainian count to
-    // three forms, English and German to two, Japanese and Chinese to one. The callers
-    // pass the Russian three, so a language maps its own groups onto them.
-    var forms = [one, few, many]
-    return root.t(forms[I18n.pluralIndex(root.language, count)])
-  }
-
   // A playlist with no cover still has to be told apart from its neighbours. The hue
   // is a hash of the title, so the same playlist keeps the same colour on every open,
   // and the tint is mixed into the popup's own surface rather than painted at full
@@ -1503,13 +1451,13 @@ Panel {
       if (session.loading("playlist")) return root.openPlaylistTitle + root.t(" · загрузка…")
       var held = root.playlistTracks.length
       if (held === 0) return root.openPlaylistTitle + root.t(" · пусто")
-      var span = root.tracksSpan(root.playlistTracks)
+      var span = I18n.tracksSpan(root.language, root.playlistTracks)
       return root.openPlaylistTitle + " · " + held + " "
-        + root.plural(held, root.t("трек"), root.t("трека"), root.t("треков")) + (span === "" ? "" : " · " + span)
+        + I18n.plural(root.language, held, root.t("трек"), root.t("трека"), root.t("треков")) + (span === "" ? "" : " · " + span)
     }
     if (root.view === "queue") {
       if (root.queue.length === 0) return ""
-      var summary = root.listSummary(root.upcoming, root.t("трек"), root.t("трека"), root.t("треков"))
+      var summary = I18n.summary(root.language, root.upcoming, root.t("трек"), root.t("трека"), root.t("треков"))
       return summary === "" ? root.t("Дальше в очереди") : root.t("Дальше в очереди · ") + summary
     }
     var base = ""
@@ -1567,19 +1515,19 @@ Panel {
       var mine = root.personPlaylists.length
       if (!root.person) return root.t("Человек не найден")
       return String(root.person.name || root.t("Человек"))
-        + (mine === 0 ? root.t(" · пусто") : " · " + mine + " " + root.plural(mine, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов")))
+        + (mine === 0 ? root.t(" · пусто") : " · " + mine + " " + I18n.plural(root.language, mine, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов")))
     }
     if (root.browseSlug === "friends") {
       if (session.loading("friends")) return root.t("Друзья · загрузка…")
       var count = root.friends.length
-      return root.t("Друзья · ") + count + " " + root.plural(count, root.t("человек"), root.t("человека"), root.t("человек"))
+      return root.t("Друзья · ") + count + " " + I18n.plural(root.language, count, root.t("человек"), root.t("человека"), root.t("человек"))
     }
     if (root.browseSlug === "radiostations") {
       if (session.loading("browse")) return root.t("Радио · загрузка…")
       var stations = root.stations.length
       return root.t("Радио · ") + (stations === 0
         ? root.t("пусто")
-        : stations + " " + root.plural(stations, root.t("станция"), root.t("станции"), root.t("станций")))
+        : stations + " " + I18n.plural(root.language, stations, root.t("станция"), root.t("станции"), root.t("станций")))
     }
     var title = root.browseTitle !== "" ? root.browseTitle : (root.sectionTitle(root.browseSlug) || root.t("Раздел"))
     if (session.loading("browse")) return title + root.t(" · загрузка…")
@@ -1587,9 +1535,9 @@ Panel {
     var lists = root.playlists.length
     if (tracks === 0 && lists === 0) return title + root.t(" · пусто")
     if (tracks === 0) {
-      return title + " · " + lists + " " + root.plural(lists, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов"))
+      return title + " · " + lists + " " + I18n.plural(root.language, lists, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов"))
     }
-    return title + " · " + root.listSummary(root.tracks, root.t("трек"), root.t("трека"), root.t("треков"))
+    return title + " · " + I18n.summary(root.language, root.tracks, root.t("трек"), root.t("трека"), root.t("треков"))
   }
 
   // The sections come as opaque ids with a friendly slug inside the url. The
@@ -3273,7 +3221,7 @@ Panel {
         leftPadding: Style.space(6)
         rightPadding: Style.space(6)
         text: card.item && card.item.count
-          ? (Number(card.item.count) + " " + root.plural(Number(card.item.count), root.t("трек"), root.t("трека"), root.t("треков")))
+          ? (Number(card.item.count) + " " + I18n.plural(root.language, Number(card.item.count), root.t("трек"), root.t("трека"), root.t("треков")))
           : ""
         color: root.dim
         font.family: Style.font.family
@@ -3798,7 +3746,7 @@ Panel {
             elide: Text.ElideRight
             text: modelData && modelData.count
               ? (Number(modelData.count) + " "
-                 + root.plural(Number(modelData.count), root.t("трек"), root.t("трека"), root.t("треков")))
+                 + I18n.plural(root.language, Number(modelData.count), root.t("трек"), root.t("трека"), root.t("треков")))
               : ""
             color: root.dim
             font.family: Style.font.family

@@ -185,8 +185,6 @@ T["человека"] = { en: "people", de: "Personen", es: "personas", fr: "per
 T["станция"] = { en: "station", de: "Sender", es: "emisora", fr: "station", ja: "局", zh: "台", uk: "станція", ru: "станция" }
 T["станции"] = { en: "stations", de: "Sender", es: "emisoras", fr: "stations", ja: "局", zh: "台", uk: "станції", ru: "станции" }
 T["станций"] = { en: "stations", de: "Sender", es: "emisoras", fr: "stations", ja: "局", zh: "台", uk: "станцій", ru: "станций" }
-T["Space пауза · jk выбор · Enter играть · / фильтр · m вид · [ ] вкладки · ⇧H ⇧L раздел · Esc закрыть"] = { en: "Space pause · jk select · Enter play · / filter · m view · [ ] tabs · ⇧H ⇧L section · Esc close", de: "Space Pause · jk Auswahl · Enter spielen · / Filter · m Ansicht · [ ] Tabs · ⇧H ⇧L Bereich · Esc schließen", es: "Space pausa · jk elegir · Enter reproducir · / filtro · m vista · [ ] pestañas · ⇧H ⇧L sección · Esc cerrar", fr: "Space pause · jk sélection · Enter lire · / filtre · m vue · [ ] onglets · ⇧H ⇧L section · Esc fermer", ja: "Space 一時停止 · jk 選択 · Enter 再生 · / 絞り込み · m 表示 · [ ] タブ · ⇧H ⇧L セクション · Esc 閉じる", zh: "Space 暂停 · jk 选择 · Enter 播放 · / 筛选 · m 视图 · [ ] 标签 · ⇧H ⇧L 板块 · Esc 关闭", uk: "Space пауза · jk вибір · Enter грати · / фільтр · m вигляд · [ ] вкладки · ⇧H ⇧L розділ · Esc закрити", ru: "Space пауза · jk выбор · Enter играть · / фильтр · m вид · [ ] вкладки · ⇧H ⇧L раздел · Esc закрыть" }
-T["Enter искать · Tab к списку · Esc выйти из поля"] = { en: "Enter search · Tab to the list · Esc leave the field", de: "Enter suchen · Tab zur Liste · Esc Feld verlassen", es: "Enter buscar · Tab a la lista · Esc salir del campo", fr: "Enter chercher · Tab vers la liste · Esc quitter le champ", ja: "Enter 検索 · Tab リストへ · Esc フィールドを出る", zh: "Enter 搜索 · Tab 到列表 · Esc 离开输入框", uk: "Enter шукати · Tab до списку · Esc вийти з поля", ru: "Enter искать · Tab к списку · Esc выйти из поля" }
 T["команда не выполнена"] = { en: "the command failed", de: "der Befehl ist fehlgeschlagen", es: "el comando falló", fr: "la commande a échoué", ja: "コマンドが失敗しました", zh: "命令执行失败", uk: "команда не виконана", ru: "команда не выполнена" }
 T["ошибка"] = { en: "error", de: "Fehler", es: "error", fr: "erreur", ja: "エラー", zh: "错误", uk: "помилка", ru: "ошибка" }
 T["остановлен"] = { en: "stopped", de: "gestoppt", es: "detenido", fr: "arrêté", ja: "停止", zh: "已停止", uk: "зупинено", ru: "остановлен" }
@@ -195,6 +193,14 @@ T["нет входа"] = { en: "signed out", de: "abgemeldet", es: "sin sesión"
 T["радио"] = { en: "radio", de: "Radio", es: "radio", fr: "radio", ja: "ラジオ", zh: "电台", uk: "радіо", ru: "радио" }
 
 T["мс"] = { en: "ms", de: "ms", es: "ms", fr: "ms", ja: "ミリ秒", zh: "毫秒", uk: "мс", ru: "мс" }
+T["пауза"] = { en: "pause", de: "Pause", es: "pausa", fr: "pause", ja: "一時停止", zh: "暂停", uk: "пауза", ru: "пауза" }
+T["выбор"] = { en: "select", de: "Auswahl", es: "selección", fr: "sélection", ja: "選択", zh: "选择", uk: "вибір", ru: "выбор" }
+T["играть"] = { en: "play", de: "abspielen", es: "reproducir", fr: "lire", ja: "再生", zh: "播放", uk: "грати", ru: "играть" }
+T["фильтр"] = { en: "filter", de: "Filter", es: "filtro", fr: "filtre", ja: "絞り込み", zh: "筛选", uk: "фільтр", ru: "фильтр" }
+T["вид"] = { en: "view", de: "Ansicht", es: "vista", fr: "affichage", ja: "表示", zh: "视图", uk: "вигляд", ru: "вид" }
+T["вкладки"] = { en: "tabs", de: "Tabs", es: "pestañas", fr: "onglets", ja: "タブ", zh: "标签页", uk: "вкладки", ru: "вкладки" }
+T["раздел"] = { en: "section", de: "Bereich", es: "sección", fr: "section", ja: "セクション", zh: "版块", uk: "розділ", ru: "раздел" }
+T["закрыть"] = { en: "close", de: "schließen", es: "cerrar", fr: "fermer", ja: "閉じる", zh: "关闭", uk: "закрити", ru: "закрыть" }
 T["мин"] = { en: " min", de: " Min", es: " min", fr: " min", ja: "分", zh: "分", uk: " хв", ru: "мин" }
 T["ч "] = { en: " h ", de: " Std. ", es: " h ", fr: " h ", ja: "時間", zh: "小时", uk: " год ", ru: "ч " }
 T["МБ"] = { en: "MB", de: "MB", es: "MB", fr: "Mo", ja: "MB", zh: "MB", uk: "МБ", ru: "МБ" }
@@ -377,4 +383,82 @@ function languageName(code) {
     if (LANGUAGES[i].code === code) return LANGUAGES[i].name
   }
   return code
+}
+
+// -- the keys, as a table ---------------------------------------------------------
+//
+// What to press and what it does, in one place. The sheet the «?» opens is drawn from this
+// table: before it, the sheet parsed a translated sentence back, guessing which words were
+// keys by their alphabet — «latin, ten characters at most, and never the last word».
+var KEYS = [
+  { keys: ["Space"], what: "пауза" },
+  { keys: ["j", "k"], what: "выбор" },
+  { keys: ["Enter"], what: "играть" },
+  { keys: ["/"], what: "фильтр" },
+  { keys: ["m"], what: "вид" },
+  { keys: ["[", "]"], what: "вкладки" },
+  { keys: ["⇧H", "⇧L"], what: "раздел" },
+  { keys: ["Esc"], what: "закрыть" }
+]
+
+// A row for the sheet: the keys as one column, the words in the reader's language.
+function keyRows(language, table) {
+  var rows = []
+  for (var i = 0; i < table.length; i++) {
+    rows.push({
+      keys: table[i].keys.join(" "),
+      what: translate(language, table[i].what)
+    })
+  }
+  return rows
+}
+
+function hintRows(language) {
+  return keyRows(language, KEYS)
+}
+
+// -- the labels -------------------------------------------------------------------
+//
+// Pure functions of a language and some data, so a test can reach them: they used to live
+// inside the panel, where Qt Quick Test cannot go, and a wrong counted form was only ever
+// found by reading the screen.
+
+// Counted nouns need one, two or five forms depending on the language. The caller passes
+// the Russian three and `pluralIndex` maps its own groups onto them.
+function plural(language, count, one, few, many) {
+  return [one, few, many][pluralIndex(language, count)]
+}
+
+// «6 ч 12 мин» for a list of tracks: VK already sent us every duration.
+function span(language, seconds) {
+  if (!(seconds > 0)) return ""
+  var minutes = Math.round(seconds / 60)
+  var hours = Math.floor(minutes / 60)
+  minutes = minutes % 60
+  if (hours > 0) return hours + translate(language, "ч ") + minutes + translate(language, "мин")
+  return minutes + translate(language, "мин")
+}
+
+// The length of everything in a list, in seconds: a track with no duration (a station, a
+// broken record) contributes nothing rather than a guess.
+function trackSeconds(tracks) {
+  var seconds = 0
+  for (var i = 0; i < (tracks ? tracks.length : 0); i++) {
+    var value = Number(tracks[i] ? tracks[i].duration : 0)
+    if (value > 0 && value < 86400) seconds += value
+  }
+  return seconds
+}
+
+function tracksSpan(language, tracks) {
+  return span(language, trackSeconds(tracks))
+}
+
+// «100 треков · 6 ч 12 мин» — how long a list is, in both senses.
+function summary(language, tracks, one, few, many) {
+  var count = tracks ? tracks.length : 0
+  if (count === 0) return ""
+  var parts = count + " " + plural(language, count, one, few, many)
+  var length = tracksSpan(language, tracks)
+  return length === "" ? parts : parts + " · " + length
 }
