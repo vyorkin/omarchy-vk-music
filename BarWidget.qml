@@ -38,23 +38,6 @@ Panel {
     return I18n.translate(root.language, text)
   }
 
-  // The daemon answers in prose, in Russian, because that is what its own CLI and the
-  // journal show. The panel translates it by looking the sentence up as a key, and the
-  // two sentences the daemon builds around a value are recognised by their shape.
-  function tm(message) {
-    var text = String(message || "")
-    if (text === "") return ""
-    var known = root.t(text)
-    if (known !== text) return known
-    var person = text.match(/^человек не найден: (.*)$/)
-    if (person) return root.t("Человек не найден")
-    var skipped = text.match(/^Пропущен трек «(.*)»: (.*)$/)
-    if (skipped) return root.t("Пропущен трек") + " «" + skipped[1] + "»: " + root.tm(skipped[2])
-    return text
-  }
-
-  // The halt reason is prose from the daemon as well.
-  readonly property string haltText: root.tm(String(root.status.halted || ""))
 
   property var status: ({})
   property var queue: []
@@ -264,8 +247,13 @@ Panel {
   readonly property int position: status.position === undefined ? 0 : Number(status.position)
   readonly property int duration: status.duration === undefined ? 0 : Number(status.duration)
   readonly property int volume: status.volume === undefined ? 70 : Number(status.volume)
-  readonly property string notice: String(status.notice || "")
-  readonly property string halted: String(status.halted || "")
+  // What the player wants to say about a track, and why all traffic stopped: both arrive
+  // as `{code, params}`, and the sentence is this side's business.
+  readonly property string notice: I18n.message(root.language, status.notice || null)
+  readonly property var haltedEntry: status.halted || null
+  readonly property string halted: root.haltedEntry === null ? ""
+    : String((root.haltedEntry.params || {}).reason || "halted")
+  readonly property string haltText: I18n.message(root.language, root.haltedEntry)
   readonly property var prefs: status.preferences || ({})
   // The card's own inset, in one place. The card is given no padding of its own and
   // everything is placed inside this: a bar or a row that is meant to reach the card's
@@ -371,16 +359,16 @@ Panel {
   // finished load are states, not errors: only a halt and a failed command are
   // painted with the urgent colour.
   readonly property string statusText: {
-    if (root.errorText !== "") return root.errorText
+    if (api.errorText !== "") return api.errorText
     if (root.halted !== "") return root.haltText
     if (root.notice !== "") return root.notice
     if (!root.signedIn) return root.t("нет входа")
     // Buffering is not text: the ring around the cover says it, in place, and
     // without a word that would appear and vanish three times a second.
     if (!root.hasTrack) return root.t("готов")
-    return root.busy !== "" ? "…" : ""
+    return api.busy ? "…" : ""
   }
-  readonly property bool statusUrgent: root.errorText !== "" || root.halted !== ""
+  readonly property bool statusUrgent: api.errorText !== "" || root.halted !== ""
 
   readonly property color fg: bar && bar.barForeground !== undefined ? bar.barForeground : Color.foreground
   readonly property color dim: Qt.darker(root.fg, 1.5)
@@ -491,101 +479,13 @@ Panel {
 
   // ----------------------------------------------------------------- io ---
 
-  // One fresh Process per command: a reused object can miss its exit event and
-  // then keep reporting "running", which would wedge every later action.
-  //
-  // The answer is parsed in the collector's own `onStreamFinished`, because
-  // `text` is a property of the collector and not of the Process. Reading it
-  // from `onExited` yields undefined, which is how every command silently
-  // became root.t("команда не выполнена") while the service was in fact working.
-  Component {
-    id: commandComponent
-    Process {
-      id: commandProcess
-      property var onDone
-      // A command nobody asked for — the status poll — must not put «…» on the status
-      // line: it runs once a second while a track plays, and the line blinked with it.
-      property bool quiet: false
-      stderr: StdioCollector { id: commandError; waitForEnd: true }
-      stdout: StdioCollector {
-        id: commandOutput
-        waitForEnd: true
-        onStreamFinished: root.finishCommand(text, commandError.text, commandProcess.onDone,
-          commandProcess.quiet)
-      }
-      onExited: function(code) { destroy() }
-    }
-  }
-
-  // The password login needs a request body. It travels over stdin — `request`
-  // reads one JSON line and forwards it — so a password never appears in the
-  // process list the way an argument would.
-  Component {
-    id: requestComponent
-    Process {
-      id: requestProcess
-      property var onDone
-      property string payload: ""
-      stdinEnabled: true
-      stderr: StdioCollector { id: requestError; waitForEnd: true }
-      stdout: StdioCollector {
-        id: requestOutput
-        waitForEnd: true
-        onStreamFinished: root.finishCommand(text, requestError.text, requestProcess.onDone)
-      }
-      onStarted: {
-        write(payload)
-        // Closing stdin is what lets the reader finish; `cat` waits for EOF.
-        stdinEnabled = false
-      }
-      onExited: function(code) { destroy() }
-    }
-  }
-
-  // One parser for both channels: a reply is a reply no matter which process
-  // carried it, and an error must paint the same line either way.
-  function finishCommand(rawText, errorText, onDone, quiet) {
-    var raw = String(rawText || "").trim()
-    var answer = null
-    try {
-      answer = raw === "" ? null : JSON.parse(raw)
-    } catch (parseError) {
-      answer = null
-    }
-    if (quiet !== true) root.busy = ""
-    if (answer && answer.ok) {
-      root.errorText = ""
-    } else if (answer && answer.error) {
-      root.errorText = root.tm(String(answer.error.message || answer.error.code || ""))
-      if (root.errorText === "") root.errorText = root.t("ошибка")
-    } else if (raw !== "") {
-      root.errorText = raw
-    } else {
-      root.errorText = String(errorText || "").trim() || root.t("команда не выполнена")
-    }
-    if (onDone) onDone(answer)
-  }
-
-  function call(args, onDone, quiet) {
-    var process = commandComponent.createObject(root, {
-      command: args,
-      onDone: onDone,
-      quiet: quiet === true
-    })
-    if (!process) return
-    if (quiet !== true) root.busy = args.join(" ")
-    process.running = true
-  }
-
-  function callRequest(request, onDone) {
-    var process = requestComponent.createObject(root, {
-      command: [root.cli, "request"],
-      payload: JSON.stringify(request),
-      onDone: onDone
-    })
-    if (!process) return
-    root.busy = String(request.command || "request")
-    process.running = true
+  // The daemon's protocol lives in one module: it owns the envelope, the process, the
+  // answer, the busy count and the sentence a refusal becomes. Nothing here builds an
+  // argv or reads `error.message` any more.
+  BackendClient {
+    id: api
+    cli: root.cli
+    language: root.language
   }
 
   readonly property bool streaming: status.streaming === true
@@ -620,7 +520,7 @@ Panel {
       if (root.pendingSeek < 0) return
       var target = root.pendingSeek
       root.pendingSeek = -1
-      root.call([root.cli, "seek", String(Math.round(target))])
+      api.request("seek", { value: Math.round(target) })
     }
   }
 
@@ -657,7 +557,7 @@ Panel {
       if (root.pendingVolume < 0) return
       var target = root.pendingVolume
       root.pendingVolume = -1
-      root.call([root.cli, "volume", String(Math.round(target)), "--live"])
+      api.request("volume", { value: Math.round(target), live: true })
     }
   }
 
@@ -691,7 +591,7 @@ Panel {
     }
     root.pendingVolume = -1
     liveVolume.stop()
-    root.call([root.cli, "volume", String(Math.round(clamped))])
+    api.request("volume", { value: Math.round(clamped) })
   }
 
   function toggleMute() {
@@ -702,7 +602,9 @@ Panel {
   // entry for the same name still wins, which is how the bar options stay
   // overridable by hand.
   function setPreference(name, value) {
-    root.call([root.cli, "prefs", name + "=" + String(value)], function(answer) {
+    var settings = {}
+    settings[String(name)] = value
+    api.request("preferences", { set: settings }, function(answer) {
       if (answer && answer.ok) root.refresh()
     })
   }
@@ -726,7 +628,7 @@ Panel {
     if (!track || String(track.key || "") === "") return
     var key = String(track.key)
     var liked = root.isLiked(track)
-    root.call([root.cli, liked ? "unlike" : "like", key], function(answer) {
+    api.request("like", { key: key, liked: !liked }, function(answer) {
       if (!answer || !answer.ok || !answer.data) return
       root.markLiked(key, answer.data.liked === true)
       if (answer.data.status) root.status = answer.data.status
@@ -737,7 +639,7 @@ Panel {
     if (!root.hasTrack) return
     var key = root.trackValue("key", "")
     if (key === "") return
-    root.call([root.cli, root.liked ? "unlike" : "like", key], function(answer) {
+    api.request("like", { key: key, liked: !root.liked }, function(answer) {
       if (!answer || !answer.ok || !answer.data) return
       // The answer carries the refreshed status, so the heart flips in one round
       // trip instead of waiting for the next poll.
@@ -775,12 +677,12 @@ Panel {
     var clamped = seekTo(target)
     root.pendingSeek = -1
     liveSeek.stop()
-    root.call([root.cli, "seek", String(Math.round(clamped))])
+    api.request("seek", { value: Math.round(clamped) })
   }
 
   function refresh() {
     // Quiet: the poll is the widget breathing, not a command the reader gave it.
-    call([root.cli, "status"], function(answer) {
+    api.request("status", { quiet: true }, function(answer) {
       if (!answer || !answer.ok) return
       root.status = answer.data
       root.reportedPosition = Number(answer.data.position || 0)
@@ -820,7 +722,7 @@ Panel {
           percent: root.buffer.percent,
           title: root.hasTrack ? root.trackValue("title") : null,
           queue: answer.data.queueLength,
-          error: root.errorText
+          error: api.errorText
         }))
       }
     }, true)
@@ -828,7 +730,7 @@ Panel {
 
   function loadQueue() {
     root.queueLoading = root.queue.length === 0
-    call([root.cli, "queue"], function(answer) {
+    api.request("queue", {}, function(answer) {
       root.queueLoading = false
       if (answer && answer.ok) root.queue = answer.data
       // The other moment the list may move: the queue just arrived, or the track that is
@@ -853,13 +755,13 @@ Panel {
     if (root.sources.length > 0 && now - root.sourcesLoadedAt < 600000) return
     if (now - root.sourcesAskedAt < 4000) return
     root.sourcesAskedAt = now
-    call([root.cli, "sections"], function(answer) {
+    api.request("sections", {}, function(answer) {
       if (answer && answer.ok) {
         root.sources = answer.data || []
         root.sourcesLoadedAt = Date.now()
       }
     })
-    call([root.cli, "home"], function(answer) {
+    api.request("home", {}, function(answer) {
       if (answer && answer.ok) {
         root.playlists = answer.data.playlists || []
         root.queue = root.queue
@@ -876,7 +778,7 @@ Panel {
       root.suggestions = []
       return
     }
-    root.call([root.cli, "suggestions", text], function(answer) {
+    api.request("suggestions", { query: text }, function(answer) {
       // The user may have typed on while this was in flight.
       if (answer && answer.ok && root.query.trim() === text) root.suggestions = answer.data || []
     })
@@ -916,7 +818,7 @@ Panel {
     var seq = root._searchSeq
     root.searchState = "searching"
     root.searchLoading = true
-    root.call([root.cli, "search", text, "--remember"], function(answer) {
+    api.request("search", { query: text, remember: true }, function(answer) {
       if (seq !== root._searchSeq) return
       root.searchLoading = false
       if (answer && answer.ok) {
@@ -1104,21 +1006,21 @@ Panel {
     var index = root.pendingIndex
     root.closeRowMenu()
     if (index < 0) return
-    root.call([root.cli, "jump", String(index)], function() { root.watchForTrack() })
+    api.request("jump", { index: index }, function() { root.watchForTrack() })
   }
 
   function removePending() {
     var index = root.pendingIndex
     root.closeRowMenu()
     if (index < 0) return
-    root.call([root.cli, "queue", "remove", String(index)], function() { root.refresh() })
+    api.request("queue_remove", { index: index }, function() { root.refresh() })
   }
 
   function queuePendingTrack(next) {
     var track = root.pendingTrack
     root.closeRowMenu()
     if (!track || !track.key) return
-    root.call([root.cli, "queue", next ? "next" : "add", String(track.key)], function() {
+    api.request(next ? "queue_next" : "queue_add", { keys: [String(track.key)] }, function() {
       root.refresh()
     })
   }
@@ -1539,8 +1441,7 @@ Panel {
   function playList(tracks, index, kind, id, title) {
     if (!tracks || tracks.length === 0) return
     if (!(index >= 0)) return
-    root.callRequest({
-      command: "play_tracks",
+    api.request("play_tracks", {
       tracks: tracks,
       index: index,
       kind: String(kind || ""),
@@ -1640,7 +1541,7 @@ Panel {
     var doc = JSON.parse(JSON.stringify(root.status || ({})))
     doc.history = []
     root.status = doc
-    root.callRequest({ command: "history_clear" }, function(answer) {
+    api.request("history_clear", {}, function(answer) {
       if (answer && answer.ok && answer.data) root.status = answer.data
     })
   }
@@ -1746,7 +1647,7 @@ Panel {
     if (slug === "radiostations") {
       if (root.stations.length > 0) return
       root.browseLoading = true
-      root.call([root.cli, "radio"], function(answer) {
+      api.request("radio", {}, function(answer) {
         root.browseLoading = false
         if (seq !== root._browseSeq) return
         if (answer && answer.ok) root.stations = answer.data || []
@@ -1754,7 +1655,7 @@ Panel {
       return
     }
     root.browseLoading = true
-    root.call([root.cli, "section", slug], function(answer) {
+    api.request("section", { id: slug }, function(answer) {
       root.browseLoading = false
       if (seq !== root._browseSeq) return
       if (answer && answer.ok) root.adoptSection(answer.data)
@@ -1782,7 +1683,7 @@ Panel {
     root._browseSeq = root._browseSeq + 1
     var seqMore = root._browseSeq
     root.browseMoreLoading = true
-    root.call([root.cli, "section", slug, cursor], function(answer) {
+    api.request("section", { id: slug, startFrom: cursor }, function(answer) {
       if (root.browseSlug !== slug) return
       root.browseMoreLoading = false
       if (seqMore !== root._browseSeq) return
@@ -1805,7 +1706,7 @@ Panel {
     // A station is one stream: pressing the one that is on air would fetch it again,
     // from the beginning, for nothing.
     if (root.playingFrom("radio", station.id)) return
-    root.call([root.cli, "play", "radio", String(station.id)], function() { root.watchForTrack() })
+    api.request("play_radio", { id: Number(station.id) }, function() { root.watchForTrack() })
   }
 
   function playlistPlace(playlist) {
@@ -1840,16 +1741,17 @@ Panel {
     root.openPlaylistTracks = []
     root.openPlaylistLoading = true
     root.browseSlug = "playlist"
-    var args = [root.cli, "playlist", String(owner), String(list)]
-    if (item.access_key) args.push(String(item.access_key))
-    if (item.title) args.push(String(item.title))
-    root.call(args, function(answer) {
+    api.request("playlist_tracks", {
+      ownerId: owner,
+      playlistId: list,
+      accessKey: String(item.access_key || ""),
+      title: String(item.title || "")
+    }, function(answer) {
       root.openPlaylistLoading = false
       if (seqList !== root._browseSeq) return
       if (answer && answer.ok && answer.data) {
         root.openPlaylistTracks = answer.data.tracks || []
       } else {
-        root.notice = root.t("Не удалось открыть плейлист")
       }
     })
   }
@@ -1882,7 +1784,7 @@ Panel {
   function loadFriends() {
     if (root.friends.length > 0) return
     root.friendsLoading = true
-    root.call([root.cli, "friends"], function(answer) {
+    api.request("friends", {}, function(answer) {
       root.friendsLoading = false
       root.friends = (answer && answer.ok && answer.data) ? answer.data : []
     })
@@ -1925,7 +1827,7 @@ Panel {
     root.browseTracks = []
     root.browseNext = ""
     root.browseTitle = root.t("Человек")
-    root.call([root.cli, "person", text], function(answer) {
+    api.request("person", { query: text }, function(answer) {
       root.personLoading = false
       if (seqPerson !== root._browseSeq) return
       if (answer && answer.ok && answer.data) {
@@ -1936,7 +1838,6 @@ Panel {
         root.browsePlaylists = root.personPlaylists
         root.browseTitle = root.person ? String(root.person.name || root.t("Человек")) : root.t("Человек")
       } else {
-        root.notice = root.t("Человек не найден")
       }
     })
   }
@@ -1970,7 +1871,7 @@ Panel {
       return
     }
     root.playlistSearchLoading = true
-    root.call([root.cli, "playlists", text], function(answer) {
+    api.request("playlist_search", { query: text }, function(answer) {
       root.playlistSearchLoading = false
       if (answer && answer.ok && answer.data) {
         root.foundPlaylists = answer.data.playlists || []
@@ -1990,7 +1891,7 @@ Panel {
   }
 
   function playQueueAt(index) {
-    call([root.cli, "jump", String(index)], function() { root.watchForTrack() })
+    api.request("jump", { index: index }, function() { root.watchForTrack() })
   }
 
   readonly property bool shuffled: root.status.shuffle === true
@@ -1999,41 +1900,41 @@ Panel {
   readonly property string repeatGlyph: root.repeatMode === "one" ? "󰑘" : "󰑖"
 
   function toggleShuffle() {
-    root.call([root.cli, "shuffle", root.shuffled ? "off" : "on"], function() { root.refresh() })
+    api.request("shuffle", { enabled: !root.shuffled }, function() { root.refresh() })
   }
 
   function cycleRepeat() {
     var next = root.repeatMode === "off" ? "all" : (root.repeatMode === "all" ? "one" : "off")
-    root.call([root.cli, "repeat", next], function() { root.refresh() })
+    api.request("repeat", { mode: next }, function() { root.refresh() })
   }
 
   function removeCurrentTrack() {
     if (!root.hasTrack) return
     var index = Number(root.status.index)
     if (!(index >= 0)) return
-    root.call([root.cli, "queue", "remove", String(index)], function() { root.watchForTrack() })
+    api.request("queue_remove", { index: index }, function() { root.watchForTrack() })
   }
 
   function clearQueue() {
-    root.call([root.cli, "queue", "clear"], function() { root.refresh() })
+    api.request("queue_clear", {}, function() { root.refresh() })
   }
 
   function togglePause() {
-    call([root.cli, "pause"], function() { root.refresh() })
+    api.request("pause", {}, function() { root.refresh() })
   }
 
   function skipNext() {
-    call([root.cli, "next"], function() { root.watchForTrack() })
+    api.request("next", {}, function() { root.watchForTrack() })
   }
 
   function skipPrevious() {
-    call([root.cli, "previous"], function() { root.watchForTrack() })
+    api.request("previous", {}, function() { root.watchForTrack() })
   }
 
   // ---------------------------------------------------------- accounts ---
 
   function loadAccounts() {
-    root.call([root.cli, "accounts"], function(answer) {
+    api.request("accounts", {}, function(answer) {
       if (answer && answer.ok && answer.data) root.accounts = answer.data.accounts || []
     })
   }
@@ -2131,7 +2032,7 @@ Panel {
     root.pendingAccountRemove = ""
     root.accountNotice = ""
     root.accountError = ""
-    root.call([root.cli, "account", "switch", String(id)], function(answer) {
+    api.request("account_switch", { user_id: Number(id) }, function(answer) {
       if (!answer || !answer.ok) return
       if (answer.data && answer.data.accounts) root.accounts = answer.data.accounts
       root.reloadAfterAccountChange(answer.data ? answer.data.status : null)
@@ -2143,7 +2044,7 @@ Panel {
     root.pendingAccountRemove = ""
     root.accountNotice = ""
     root.accountError = ""
-    root.call([root.cli, "account", "remove", String(id)], function(answer) {
+    api.request("account_remove", { user_id: Number(id) }, function(answer) {
       if (!answer || !answer.ok) return
       if (answer.data && answer.data.accounts) root.accounts = answer.data.accounts
       root.reloadAfterAccountChange(answer.data ? answer.data.status : null)
@@ -2163,7 +2064,7 @@ Panel {
     // The daemon may be holding a password between the login and the code step;
     // closing the form is how the panel says it is no longer needed.
     if (root.accountStep !== "" || root.accountBusy) {
-      root.call([root.cli, "auth", "cancel"])
+      api.request("auth_mobile_cancel", {})
     }
     root.accountFormOpen = false
     root.accountBusy = false
@@ -2185,7 +2086,7 @@ Panel {
 
   function accountFailure(answer) {
     if (!answer || !answer.error) return root.t("Не удалось войти")
-    var text = root.tm(String(answer.error.message || answer.error.code || ""))
+    var text = I18n.failure(root.language, answer.error)
     return text !== "" ? text : root.t("Не удалось войти")
   }
 
@@ -2198,7 +2099,7 @@ Panel {
   function addAccountFromBrowser() {
     root.accountBusy = true
     root.accountError = ""
-    root.call([root.cli, "auth", "web"], function(answer) {
+    api.request("auth_web", {}, function(answer) {
       root.accountBusy = false
       if (!answer || !answer.ok) {
         root.accountError = root.accountFailure(answer)
@@ -2220,7 +2121,7 @@ Panel {
     }
     root.accountError = ""
     root.accountBusy = true
-    root.callRequest({ command: "auth_mobile_start", login: login, password: password }, function(answer) {
+    api.request("auth_mobile_start", { login: login, password: password }, function(answer) {
       // The password is not kept a moment longer than the request needs it.
       root.accountPassword = ""
       root.accountBusy = false
@@ -2233,7 +2134,7 @@ Panel {
     if (code === "") return
     root.accountError = ""
     root.accountBusy = true
-    root.callRequest({ command: "auth_mobile_step", code: code }, function(answer) {
+    api.request("auth_mobile_step", { code: code }, function(answer) {
       root.accountBusy = false
       root.handleAccountAuth(answer)
     })
@@ -2244,7 +2145,7 @@ Panel {
     if (token === "") return
     root.accountError = ""
     root.accountBusy = true
-    root.callRequest({ command: "auth_mobile_step", successToken: token }, function(answer) {
+    api.request("auth_mobile_step", { successToken: token }, function(answer) {
       root.accountBusy = false
       root.handleAccountAuth(answer)
     })
@@ -2381,7 +2282,7 @@ Panel {
     return "vk music"
   }
   readonly property color barLabelColor: root.halted !== "" ? Color.urgent
-    : (root.errorText !== "" ? root.dim : root.fg)
+    : (api.errorText !== "" ? root.dim : root.fg)
 
   // This layer must stay UNDER the row: a MouseArea declared after its siblings
   // covers them, and the transport zone would never see a click.
@@ -2391,8 +2292,8 @@ Panel {
     acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
     hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
-    onEntered: if (root.bar) root.bar.showTooltip(root, root.errorText !== ""
-      ? ("vk music: " + root.errorText)
+    onEntered: if (root.bar) root.bar.showTooltip(root, api.errorText !== ""
+      ? ("vk music: " + api.errorText)
       : (root.halted !== "" ? root.haltText : (root.hasTrack
         ? (root.trackValue("title") + (root.trackValue("artist", "") ? " — " + root.trackValue("artist", "") : ""))
         : "vk music")))
@@ -2565,7 +2466,7 @@ Panel {
       width: Style.space(7)
       height: width
       anchors.verticalCenter: parent.verticalCenter
-      visible: root.errorText !== "" || root.halted !== ""
+      visible: api.errorText !== "" || root.halted !== ""
 
       Rectangle {
         anchors.fill: parent
@@ -5421,7 +5322,7 @@ Panel {
               id: clearButton
               text: root.t("Очистить кеш")
               foreground: root.textColor
-              onClicked: root.call([root.cli, "cache", "clear"], function() { root.refresh() })
+              onClicked: api.request("cache", { action: "clear" }, function() { root.refresh() })
             }
           }
         }

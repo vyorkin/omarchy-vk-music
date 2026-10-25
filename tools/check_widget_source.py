@@ -29,6 +29,8 @@ SUSPECT = ("console.log(", "setPlaylistView(", 'root.view = "')
 
 # `root.rowAction("queue", index)` — the literal is the list a delegate drew.
 ROW_ACTION = re.compile(r'root\.rowAction\(\s*"([a-zA-Z]+)"')
+# `[root.cli, "seek", …]` — a command line the panel had to assemble itself.
+ARGV = re.compile(r'root\.cli,\s*"')
 # `queue: "playQueue",` inside `var INTENTS` — the lists a row can be started from.
 INTENT = re.compile(r'^\s{2}([a-zA-Z]+):\s*"[a-zA-Z]+",?$', re.MULTILINE)
 
@@ -94,11 +96,19 @@ def main():
             f"BarWidget.qml:{line}: root.rowAction(\"{name}\", …) names no list in ListShape.INTENTS"
         )
 
+    # The panel speaks the protocol, not the command line: `api.request("search", …)` and
+    # never `root.call([root.cli, "search", …])`. A rebuilt argv here would be a second
+    # owner of the protocol, which is the thing `BackendClient` exists to prevent.
+    for match in ARGV.finditer(text):
+        line = text[: match.start()].count("\n") + 1
+        failures.append(f"BarWidget.qml:{line}: an argv is built again — commands go through api.request")
+
     for failure in failures:
         print(f"FAIL {failure}")
     if failures:
         return 1
-    print(f"ok {SOURCE.name}: no probe timers, no temporary markers, every row names a known list")
+    print(f"ok {SOURCE.name}: no probe timers, no temporary markers, every row names a known list,"
+          " no argv")
     return 0
 
 
