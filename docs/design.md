@@ -1409,6 +1409,10 @@ keys act on the page before last.
 
 Three details that were not obvious:
 
+* **The wheel scrolls the list, one row a notch.** A bare `Flickable` takes the wheel
+  with a one-or-two-pixel default, which is indistinguishable from a list that does not
+  scroll at all; a `WheelHandler` that must be the Flickable's direct child replaces that
+  distance with a row's.
 * **Scrolling to the selection uses the delegate item, not arithmetic.**
   `Repeater.itemAt(index)` gives the row, and its `height` and its position in the
   content decide how far `contentY` has to move. Rows are not a fixed height, so

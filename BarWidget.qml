@@ -3876,15 +3876,19 @@ Panel {
           visible: row.selected || rowArea.containsMouse
         }
 
+        // On the track rows' grid, not next to it: the cover stands where a track's cover
+        // stands, which means after the width of the number column the numbers do not use
+        // here. A page that lists its playlists and then its tracks is one column of rows,
+        // and a row that starts four pixels further left reads as a different kind of thing.
         CoverTile {
           id: rowCover
-          width: Style.space(28)
+          width: Style.space(32)
           height: width
           anchors.left: parent.left
-          anchors.leftMargin: Style.space(6)
+          anchors.leftMargin: Style.space(32)
           anchors.verticalCenter: parent.verticalCenter
           inset: Style.space(1)
-          decodeSize: Style.space(28)
+          decodeSize: Style.space(32)
           source: modelData
             ? String(modelData.cover_small || modelData.cover || "")
             : ""
