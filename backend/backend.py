@@ -1775,7 +1775,8 @@ class Player:
                 "shuffle": self.shuffle,
                 "repeat": self.repeat,
                 "error": self.error,
-                "notice": self.notice,
+                # None, not "": no notice is a fact, and the panel says so with a null.
+                "notice": self.notice or None,
                 "source": self.source,
                 "index": self.index,
                 "queueLength": len(self.queue),
