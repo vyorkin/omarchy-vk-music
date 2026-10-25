@@ -141,7 +141,12 @@ Panel {
     // The search tab with nothing typed is a place to type: arriving there puts the caret in
     // the field, which is what «начни печатать» promises.
     if (root.view === "search") Qt.callLater(root.focusSearchField)
-    if (root.view === "settings") root.loadAccounts()
+    if (root.view === "settings") {
+      root.loadAccounts()
+      // The chips of the browse bar are what the sections page of the settings edits, so
+      // that page has to have the catalogue even when the popup was opened somewhere else.
+      root.loadSources()
+    }
     // A section page that was left empty by an account change while the panel was on
     // another tab is asked for on arrival: the page on screen is the one the watchdog
     // covers, and this is the moment it comes on screen.
@@ -1007,6 +1012,51 @@ Panel {
     return out.length >= 2 ? out : ["queue", "browse", "search"]
   }
 
+  // Which of VK's sections the browse bar's row of chips leaves out. The list it stores is
+  // the hidden ones, so a section VK adds later appears by itself. «Люди» is not in it: it
+  // is the way in to people, not a section, and it stands first for that reason.
+  function hiddenSections() {
+    var stored = root.prefs.hiddenSections
+    var out = []
+    if (stored && stored.length !== undefined) {
+      for (var i = 0; i < stored.length; i++) out.push(String(stored[i]))
+    }
+    return out
+  }
+
+  function sectionShown(slug) {
+    return root.hiddenSections().indexOf(String(slug)) < 0
+  }
+
+  function visibleSections() {
+    var shown = []
+    for (var i = 0; i < root.sources.length; i++) {
+      if (root.sectionShown(root.sourceSlug(root.sources[i]))) shown.push(root.sources[i])
+    }
+    return shown
+  }
+
+  // Two sections stay, for the same reason two cells of the top bar stay: one is a bar you
+  // cannot compare anything in. A chip already switched off can always come back.
+  function canToggleSection(slug) {
+    return !root.sectionShown(slug) || root.visibleSections().length > 2
+  }
+
+  function toggleSection(slug) {
+    if (!root.canToggleSection(slug)) return
+    var hidden = root.hiddenSections()
+    var index = hidden.indexOf(String(slug))
+    if (index >= 0) hidden.splice(index, 1)
+    else hidden.push(String(slug))
+    root.setPreference("hiddenSections", hidden)
+    // The page on screen was the section just switched off: the bar no longer offers it, so
+    // the panel moves to the first one it does rather than sitting on a page with no chip.
+    if (!root.sectionShown(slug) && root.effectiveBrowse() === String(slug)) {
+      var shown = root.visibleSections()
+      root.scheduleBrowse(shown.length > 0 ? root.sourceSlug(shown[0]) : "friends")
+    }
+  }
+
   function panelTabShown(key) {
     return root.panelTabs().indexOf(key) >= 0
   }
@@ -1164,7 +1214,8 @@ Panel {
       root.focusList()
     }
     var slugs = ["friends"]
-    for (var i = 0; i < root.sources.length; i++) slugs.push(root.sourceSlug(root.sources[i]))
+    var shown = root.visibleSections()
+    for (var i = 0; i < shown.length; i++) slugs.push(root.sourceSlug(shown[i]))
     // Count from what is scheduled, not from what is loaded: the load is delayed by
     // 600 ms, and with the loaded slug a second press would ask for the same section
     // again — which is why the first press looked like it did nothing.
@@ -4256,7 +4307,7 @@ Panel {
             }
 
             Repeater {
-              model: root.sources
+              model: root.visibleSections()
               delegate: BarCell {
                 width: implicitWidth
                 text: modelData ? (root.sectionName(root.sourceSlug(modelData)) || String(modelData.title || "")) : ""
@@ -4969,6 +5020,38 @@ Panel {
                 enabled: root.canTogglePanelTab(modelData.key)
                 opacity: enabled ? 1.0 : 0.4
                 onClicked: root.togglePanelTab(modelData.key)
+              }
+            }
+          }
+
+          // The same idea one bar down: which of VK's sections the browse bar offers. The
+          // chips are the catalogue's, so they arrive with it — and «Люди» is not among
+          // them, because it is the way in to people rather than a section.
+          PanelSectionHeader { text: root.t("Разделы в полосе"); foreground: root.dim }
+
+          Text {
+            visible: root.sources.length === 0
+            text: root.t("Разделы ещё не загружены")
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
+          Flow {
+            width: parent.width
+            spacing: Style.space(6)
+
+            Repeater {
+              model: root.sources
+              delegate: ChipToggle {
+                property string slug: modelData ? root.sourceSlug(modelData) : ""
+                text: modelData
+                  ? (root.sectionName(slug) || String(modelData.title || ""))
+                  : ""
+                on: root.sectionShown(slug)
+                enabled: root.canToggleSection(slug)
+                opacity: enabled ? 1.0 : 0.4
+                onClicked: root.toggleSection(slug)
               }
             }
           }

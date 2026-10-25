@@ -424,7 +424,15 @@ The group headers stayed: a page can hold two groups, and a caption is cheaper t
 Which of the card's three places the bar offers is a preference (`panelTabs`): three chips
 in the «Бар» page, two at the least, and a chip that is already in use greys out rather
 than swallowing the click. The daemon refuses a list shorter than two as well, because the
-CLI can write one. The gear is not one of the three: it is not a place in the card, and a
+CLI can write one.
+
+The row of section chips is the same kind of preference (`hiddenSections`), one bar down
+and in the same page: the catalogue's sections are chips, and the ones switched off leave
+the row. That list stores the *hidden* slugs, not the shown ones, so a section VK adds
+later appears by itself instead of waiting to be switched on; the floor of two sections is
+kept by the panel, which is the side that knows how many there are, and the «Люди» chip is
+not in the list at all — it is a way in to people, not a section. Switching off the section
+on screen moves the panel to the first one still offered. The gear is not one of the three: it is not a place in the card, and a
 bar that could hide the way to the settings could not be put back — the tab keys walk only
 the cells that are on the bar, so a hidden cell would be a view with no way in.
 

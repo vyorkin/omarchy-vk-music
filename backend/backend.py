@@ -118,6 +118,10 @@ DEFAULT_PREFERENCES: dict[str, Any] = {
     # Which cells the top bar of the popup shows, in this order. Two at the least: a bar
     # with one cell is a bar you cannot leave, and the gear is a cell like the views.
     "panelTabs": ["queue", "browse", "search"],
+    # Which of VK's section chips the browse bar leaves out, by slug. Stored as the *hidden*
+    # ones on purpose: a section VK adds later appears by itself instead of waiting for
+    # someone to switch it on.
+    "hiddenSections": [],
     # The interface language. English is the default; the widget translates its own
     # strings and leaves the rest of the daemon's messages to the fallback.
     "language": "en",
@@ -220,6 +224,17 @@ def coerce_preference(key: str, value: Any) -> Any:
         if low is not None:
             number = max(low, min(high, number))
         return number
+    if isinstance(default, list) and allowed is None:
+        # A list of names the daemon cannot enumerate (the catalogue's own slugs): keep the
+        # strings, drop the repeats, and leave "at least two remain" to the panel, which is
+        # the only side that knows how many sections there are.
+        items = value if isinstance(value, (list, tuple)) else str(value).split(",")
+        names: list[str] = []
+        for item in items:
+            name = str(item).strip()
+            if name and name not in names:
+                names.append(name)
+        return names
     if allowed is not None and isinstance(default, list):
         # An ordered subset: unknown names are dropped, a repeat is kept once, and a list
         # that leaves fewer than two cells is refused — the bar must always be leavable.
