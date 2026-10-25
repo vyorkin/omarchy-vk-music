@@ -4279,6 +4279,42 @@ Panel {
           onClicked: root.setSearchMode("playlists")
         }
 
+        // The three pages of the settings, as cells of the same bar that chooses a section:
+        // the rule between groups is gone with its job, and the cell in use is the fill the
+        // rest of the panel uses for «this is where you are».
+        BarCell {
+          visible: root.view === "settings"
+          Layout.fillWidth: true
+          Layout.preferredWidth: 0
+          Layout.minimumWidth: 0
+          Layout.preferredHeight: root.barCellHeight
+          text: root.t("Аккаунт")
+          selected: root.settingsTab === "account"
+          onClicked: root.settingsTab = "account"
+        }
+
+        BarCell {
+          visible: root.view === "settings"
+          Layout.fillWidth: true
+          Layout.preferredWidth: 0
+          Layout.minimumWidth: 0
+          Layout.preferredHeight: root.barCellHeight
+          text: root.t("Бар")
+          selected: root.settingsTab === "bar"
+          onClicked: root.settingsTab = "bar"
+        }
+
+        BarCell {
+          visible: root.view === "settings"
+          Layout.fillWidth: true
+          Layout.preferredWidth: 0
+          Layout.minimumWidth: 0
+          Layout.preferredHeight: root.barCellHeight
+          text: root.t("Воспроизведение")
+          selected: root.settingsTab === "playback"
+          onClicked: root.settingsTab = "playback"
+        }
+
         // Only where something has two representations: «Моя музыка» is a hundred tracks
         // and no playlists, so neither these two cells nor their keys may claim otherwise.
         BarDivider {
@@ -4535,35 +4571,13 @@ Panel {
           font.pixelSize: Style.font.bodySmall
         }
 
-        // Friends: a photo and a name each, plus a field for anyone else. The
-        // people opened before are listed too, since VK's bookmarks API is gone.
+        // Friends: a photo and a name each. The field for anyone else is not in this
+        // column — it is a band of the card, above the scroll, where the search's own
+        // field is: one kind of field looks the same wherever the panel asks for text.
         Column {
           width: parent.width
           spacing: Style.space(4)
           visible: root.browseSlug === "friends"
-
-          Row {
-            width: parent.width
-            spacing: Style.space(6)
-
-            TextField {
-              id: personField
-              width: parent.width - personGo.width - Style.space(6)
-              placeholderText: root.t("Ссылка, id или имя друга")
-              text: root.personQuery
-              onTextChanged: root.personQuery = text
-              onAccepted: root.openPersonFromField()
-            }
-
-            Button {
-              id: personGo
-              text: root.t("Открыть")
-              foreground: root.textColor
-              enabled: root.personQuery.trim() !== ""
-              opacity: enabled ? 1.0 : 0.4
-              onClicked: root.openPersonFromField()
-            }
-          }
 
           PanelSectionHeader {
             text: root.t("Друзья")
