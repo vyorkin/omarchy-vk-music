@@ -432,7 +432,12 @@ the row. That list stores the *hidden* slugs, not the shown ones, so a section V
 later appears by itself instead of waiting to be switched on; the floor of two sections is
 kept by the panel, which is the side that knows how many there are, and the «Люди» chip is
 not in the list at all — it is a way in to people, not a section. Switching off the section
-on screen moves the panel to the first one still offered. The gear is not one of the three: it is not a place in the card, and a
+on screen moves the panel to the first one still offered.
+
+The chips share the bar between them, two or six alike: `sectionChipRow.cellWidth()` gives
+each its equal part and only a name longer than that part keeps its own width, which is when
+the row scrolls. A bar of four cells that stop halfway reads as a bar with a hole in it —
+the same rule the top bar already kept with `Layout.fillWidth`. The gear is not one of the three: it is not a place in the card, and a
 bar that could hide the way to the settings could not be put back — the tab keys walk only
 the cells that are on the bar, so a hidden cell would be a view with no way in.
 

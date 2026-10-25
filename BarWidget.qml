@@ -4296,10 +4296,25 @@ Panel {
             id: sectionChipRow
             spacing: 0
 
+            // The chips share the bar between them, whether there are two of them or six:
+            // a bar of four cells that stop halfway reads as a bar with a hole in it, which
+            // is what the top bar learned first. A long name still keeps its own width and
+            // the row scrolls — the share is a floor, not a cap.
+            readonly property int cells: 1 + root.visibleSections().length
+            readonly property real base: cells > 0 ? Math.floor(sectionChips.width / cells) : sectionChips.width
+            readonly property int spare: cells > 0
+              ? Math.round(sectionChips.width) - Math.round(base) * cells : 0
+            function cellWidth(index, wanted) {
+              // The spare pixels of the division go to the first cells, one each, so the
+              // row ends on the card's edge instead of a pixel short of it.
+              var share = Math.round(base) + (index < spare ? 1 : 0)
+              return Math.max(wanted, share)
+            }
+
             // First, and deliberately: choosing a person is a way in, not a
             // section, and it must not hide behind a scrolling row.
             BarCell {
-              width: implicitWidth
+              width: sectionChipRow.cellWidth(0, implicitWidth)
               text: root.t("Люди")
               selected: root.effectiveBrowse() === "friends" || root.effectiveBrowse() === "person"
               tooltipText: root.t("Друзья и любой человек по ссылке — их плейлисты")
@@ -4309,7 +4324,7 @@ Panel {
             Repeater {
               model: root.visibleSections()
               delegate: BarCell {
-                width: implicitWidth
+                width: sectionChipRow.cellWidth(index + 1, implicitWidth)
                 text: modelData ? (root.sectionName(root.sourceSlug(modelData)) || String(modelData.title || "")) : ""
                 selected: modelData ? root.sourceSlug(modelData) === root.effectiveBrowse() : false
                 onClicked: if (modelData) {
