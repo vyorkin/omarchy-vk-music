@@ -41,7 +41,6 @@ Panel {
 
   property var status: ({})
   property var queue: []
-  property var playlists: []
   property var sources: []
   property var results: []
   property var suggestions: []
@@ -55,8 +54,8 @@ Panel {
   // page starts.
   property string browseSlug: ""
   property string browseTitle: ""
-  property var browseTracks: []
-  property var browsePlaylists: []
+  property var tracks: []
+  property var playlists: []
   property string browseNext: ""
   property var stations: []
   // A list that is being fetched is not an empty list: without these the popup
@@ -454,8 +453,8 @@ Panel {
     // Either the sections could not be fetched or the section that is chosen came back
     // with nothing in it: both leave a bar whose every item looks empty.
     running: root.opened && root.signedIn && (root.sources.length === 0
-      || (root.view === "browse" && root.browseTracks.length === 0
-          && root.browsePlaylists.length === 0 && !root.browseLoading
+      || (root.view === "browse" && root.tracks.length === 0
+          && root.playlists.length === 0 && !root.browseLoading
           && root.browseSlug !== "" && root.openPlaylist === null))
     onTriggered: {
       root.loadSources()
@@ -619,8 +618,8 @@ Panel {
 
   function markLiked(key, liked) {
     root.queue = Likes.mark(root.queue, key, liked)
-    root.browseTracks = Likes.mark(root.browseTracks, key, liked)
-    root.openPlaylistTracks = Likes.mark(root.openPlaylistTracks, key, liked)
+    root.tracks = Likes.mark(root.tracks, key, liked)
+    root.playlistTracks = Likes.mark(root.playlistTracks, key, liked)
     root.results = Likes.mark(root.results, key, liked)
   }
 
@@ -763,7 +762,6 @@ Panel {
     })
     api.request("home", {}, function(answer) {
       if (answer && answer.ok) {
-        root.playlists = answer.data.playlists || []
         root.queue = root.queue
       }
     })
@@ -878,7 +876,7 @@ Panel {
   // A playlist that was opened rather than started: what it holds, and where to
   // come back to.
   property var openPlaylist: null
-  property var openPlaylistTracks: []
+  property var playlistTracks: []
   property bool openPlaylistLoading: false
   property string playlistBack: ""
   // Where the playlist was opened from. A playlist opened from a search must come
@@ -1172,9 +1170,9 @@ Panel {
       browseLoading: root.browseLoading,
       filter: root.filter,
       queue: root.queue,
-      openPlaylistTracks: root.openPlaylistTracks,
-      browsePlaylists: root.browsePlaylists,
-      browseTracks: root.browseTracks,
+      playlistTracks: root.playlistTracks,
+      playlists: root.playlists,
+      tracks: root.tracks,
       personPlaylists: root.personPlaylists,
       friends: root.friends,
       people: root.people,
@@ -1487,9 +1485,9 @@ Panel {
     // A playlist that is open owns the heading, whichever view it was opened from.
     if (root.openPlaylist !== null) {
       if (root.openPlaylistLoading) return root.openPlaylistTitle + root.t(" · загрузка…")
-      var held = root.openPlaylistTracks.length
+      var held = root.playlistTracks.length
       if (held === 0) return root.openPlaylistTitle + root.t(" · пусто")
-      var span = root.tracksSpan(root.openPlaylistTracks)
+      var span = root.tracksSpan(root.playlistTracks)
       return root.openPlaylistTitle + " · " + held + " "
         + root.plural(held, root.t("трек"), root.t("трека"), root.t("треков")) + (span === "" ? "" : " · " + span)
     }
@@ -1569,13 +1567,13 @@ Panel {
     }
     var title = root.browseTitle !== "" ? root.browseTitle : (root.sectionTitle(root.browseSlug) || root.t("Раздел"))
     if (root.browseLoading) return title + root.t(" · загрузка…")
-    var tracks = root.browseTracks.length
-    var lists = root.browsePlaylists.length
+    var tracks = root.tracks.length
+    var lists = root.playlists.length
     if (tracks === 0 && lists === 0) return title + root.t(" · пусто")
     if (tracks === 0) {
       return title + " · " + lists + " " + root.plural(lists, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов"))
     }
-    return title + " · " + root.listSummary(root.browseTracks, root.t("трек"), root.t("трека"), root.t("треков"))
+    return title + " · " + root.listSummary(root.tracks, root.t("трек"), root.t("трека"), root.t("треков"))
   }
 
   // The sections come as opaque ids with a friendly slug inside the url. The
@@ -1590,7 +1588,7 @@ Panel {
     if (root.view !== "browse") return
     var slug = root.browseSlug
     if (slug === "" || slug === "friends" || slug === "person" || slug === "playlist") return
-    if (root.browseTracks.length > 0 || root.browsePlaylists.length > 0) return
+    if (root.tracks.length > 0 || root.playlists.length > 0) return
     if (root.emptySectionTries >= 3) return
     root.emptySectionTries = root.emptySectionTries + 1
     root.browseSource(slug, true)
@@ -1637,8 +1635,8 @@ Panel {
     root.personLoading = false
     if (force !== true) root.emptySectionTries = 0
     root.browseSlug = slug
-    root.browseTracks = []
-    root.browsePlaylists = []
+    root.tracks = []
+    root.playlists = []
     root.browseNext = ""
     root.browseTitle = ""
     root.clearBrowseLoading()
@@ -1668,8 +1666,8 @@ Panel {
       root.emptySectionTries = 0
     }
     root.browseTitle = root.sectionTitle(root.browseSlug) || String(page.title || "")
-    root.browseTracks = page.tracks || []
-    root.browsePlaylists = page.playlists || []
+    root.tracks = page.tracks || []
+    root.playlists = page.playlists || []
     root.browseNext = String(page.next || "")
   }
 
@@ -1689,15 +1687,15 @@ Panel {
       if (seqMore !== root._browseSeq) return
       if (!answer || !answer.ok) return
       var page = answer.data || {}
-      root.browseTracks = root.browseTracks.concat(page.tracks || [])
-      root.browsePlaylists = root.browsePlaylists.concat(page.playlists || [])
+      root.tracks = root.tracks.concat(page.tracks || [])
+      root.playlists = root.playlists.concat(page.playlists || [])
       root.browseNext = String(page.next || "")
     })
   }
 
   function playBrowseTrack(index) {
     // The section page is the list; the queue becomes that page, in its own order.
-    root.playList(root.browseTracks, index, "section", root.browseSlug,
+    root.playList(root.tracks, index, "section", root.browseSlug,
       root.browseTitle !== "" ? root.browseTitle : root.t("Обзор"))
   }
 
@@ -1738,7 +1736,7 @@ Panel {
     root.playlistBackView = root.view
     root.playlistBack = root.browseSlug
     root.openPlaylist = item
-    root.openPlaylistTracks = []
+    root.playlistTracks = []
     root.openPlaylistLoading = true
     root.browseSlug = "playlist"
     api.request("playlist_tracks", {
@@ -1750,7 +1748,7 @@ Panel {
       root.openPlaylistLoading = false
       if (seqList !== root._browseSeq) return
       if (answer && answer.ok && answer.data) {
-        root.openPlaylistTracks = answer.data.tracks || []
+        root.playlistTracks = answer.data.tracks || []
       } else {
       }
     })
@@ -1762,7 +1760,7 @@ Panel {
     root.clearBrowseLoading()
     root._browseSeq = root._browseSeq + 1
     root.openPlaylist = null
-    root.openPlaylistTracks = []
+    root.playlistTracks = []
     root.openPlaylistLoading = false
     root.view = root.playlistBackView !== "" ? root.playlistBackView : "browse"
     root.browseSlug = root.playlistBack !== "" ? root.playlistBack : "explore"
@@ -1771,7 +1769,7 @@ Panel {
   function playPlaylistTrack(index) {
     // «Играть» in the header is the same call with index 0: it says start from the top, so
     // it stays a command rather than a no-op when the playlist is already playing.
-    root.playList(root.openPlaylistTracks, index, "playlist", root.playlistPlace(root.openPlaylist),
+    root.playList(root.playlistTracks, index, "playlist", root.playlistPlace(root.openPlaylist),
       root.openPlaylistTitle)
   }
 
@@ -1803,8 +1801,8 @@ Panel {
     root.personPlaylists = []
     root.browseSlug = "friends"
     root.browseTitle = root.t("Друзья")
-    root.browseTracks = []
-    root.browsePlaylists = []
+    root.tracks = []
+    root.playlists = []
     root.browseNext = ""
     root.loadFriends()
   }
@@ -1822,9 +1820,9 @@ Panel {
     root.person = null
     root.personPlaylists = []
     // The previous person's playlists must not linger under the new name.
-    root.browsePlaylists = []
+    root.playlists = []
     root.browseSlug = "person"
-    root.browseTracks = []
+    root.tracks = []
     root.browseNext = ""
     root.browseTitle = root.t("Человек")
     api.request("person", { query: text }, function(answer) {
@@ -1835,7 +1833,7 @@ Panel {
         root.personPlaylists = answer.data.playlists || []
         // The same list feeds the gallery and the rows: one place decides what a
         // person's page shows.
-        root.browsePlaylists = root.personPlaylists
+        root.playlists = root.personPlaylists
         root.browseTitle = root.person ? String(root.person.name || root.t("Человек")) : root.t("Человек")
       } else {
       }
@@ -1854,8 +1852,8 @@ Panel {
     // nobody in it is what made the header say «Человек не найден» after a step back
     // instead of showing the list again — the page's own «Назад» button had the same
     // hole.
-    root.browsePlaylists = []
-    root.browseTracks = []
+    root.playlists = []
+    root.tracks = []
     root.browseNext = ""
     root.browseSlug = "friends"
     root.browseTitle = root.t("Друзья")
@@ -1967,16 +1965,15 @@ Panel {
   // keeps showing tracks the new account cannot play.
   function reloadAfterAccountChange(newStatus) {
     root.queue = []
-    root.playlists = []
     root.results = []
     root.suggestions = []
-    root.browseTracks = []
-    root.browsePlaylists = []
+    root.tracks = []
+    root.playlists = []
     root.stations = []
     root.sources = []
     root.sourcesLoadedAt = 0
     root.openPlaylist = null
-    root.openPlaylistTracks = []
+    root.playlistTracks = []
     root.playlistBack = ""
     root.playlistBackView = ""
     root.person = null
@@ -4846,7 +4843,7 @@ Panel {
           width: parent.width
           textFormat: Text.PlainText
           wrapMode: Text.WordWrap
-          visible: root.openPlaylistLoading && root.openPlaylistTracks.length === 0
+          visible: root.openPlaylistLoading && root.playlistTracks.length === 0
           text: root.t("Открываю плейлист…")
           color: root.dim
           font.family: Style.font.family
@@ -5422,7 +5419,7 @@ Panel {
               ? root.t("Забыть недавние запросы")
               : root.t("Очистить очередь"))
           enabled: root.listActionKey() === "play"
-            ? root.openPlaylistTracks.length > 0
+            ? root.playlistTracks.length > 0
             : (root.listActionKey() === "clearHistory" ? true : root.queue.length > 0)
           opacity: enabled ? 1.0 : 0.4
           onClicked: root.runListAction()

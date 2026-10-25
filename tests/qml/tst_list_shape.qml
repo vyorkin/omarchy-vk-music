@@ -52,8 +52,8 @@ TestCase {
       columns: 3,
       gridView: false,
       queue: tracks(3, "q"),
-      browsePlaylists: cards(4),
-      browseTracks: tracks(10, "t")
+      playlists: cards(4),
+      tracks: tracks(10, "t")
     }
     for (var key in extra) state[key] = extra[key]
     return state
@@ -99,7 +99,7 @@ TestCase {
     compare(planned.gallery, true)
     // «Моя музыка» answers no playlists, so both the wall and the switch are absent — and
     // the switch is absent without waiting for the answer, which is why it is not `browseLoading`.
-    var mine = ListShape.plan(sectionState({ gridView: true, browseSlug: "all", browsePlaylists: [] }))
+    var mine = ListShape.plan(sectionState({ gridView: true, browseSlug: "all", playlists: [] }))
     compare(mine.gallery, false)
     compare(mine.showsPlaylists, false)
     compare(mine.segments.length, 1)
@@ -168,7 +168,7 @@ TestCase {
     compare(person.showsPlaylists, true)
 
     var opened = ListShape.plan({ view: "search", searchMode: "playlists", gridView: true,
-      columns: 3, openPlaylist: { id: 7 }, openPlaylistTracks: tracks(6),
+      columns: 3, openPlaylist: { id: 7 }, playlistTracks: tracks(6),
       foundPlaylists: cards(9) })
     compare(kinds(opened), "playlistTracks")
     compare(columnsOf(opened), "1")
@@ -296,7 +296,7 @@ TestCase {
   function test_a_segment_names_the_list_it_was_cut_from() {
     var cases = [
       { state: { view: "queue", queue: tracks(2) }, lists: "queue" },
-      { state: { view: "browse", browseSlug: "main", browsePlaylists: cards(2), browseTracks: tracks(2) },
+      { state: { view: "browse", browseSlug: "main", playlists: cards(2), tracks: tracks(2) },
         lists: "playlists,tracks" },
       { state: { view: "browse", browseSlug: "person", personPlaylists: cards(2) },
         lists: "personPlaylists" },
@@ -313,7 +313,7 @@ TestCase {
       { state: { view: "search", searchState: "typing", queryLength: 2, suggestions: ["kino"] },
         lists: "suggestions" },
       { state: { view: "browse", browseSlug: "main", openPlaylist: { title: "P" },
-        openPlaylistTracks: tracks(2) }, lists: "playlistTracks" }
+        playlistTracks: tracks(2) }, lists: "playlistTracks" }
     ]
     for (var i = 0; i < cases.length; i++) {
       compare(namesOf(ListShape.plan(cases[i].state)), cases[i].lists)
@@ -349,7 +349,7 @@ TestCase {
     compare(ListShape.actionAt(section, "tracks", 0).index, 7)
 
     var opened = ListShape.plan(sectionState({
-      openPlaylist: { title: "P" }, openPlaylistTracks: tracks(4, "p"), filter: "p3"
+      openPlaylist: { title: "P" }, playlistTracks: tracks(4, "p"), filter: "p3"
     }))
     compare(ListShape.actionAt(opened, "playlistTracks", 0).kind, "playPlaylist")
     compare(ListShape.actionAt(opened, "playlistTracks", 0).index, 3)

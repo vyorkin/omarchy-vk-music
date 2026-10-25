@@ -122,6 +122,9 @@ function append(built, scope, name, kind, list, columns) {
   for (var i = 0; i < list.length; i++) built.items.push(list[i])
 }
 
+// `state` carries the lists under the same twelve names this function returns them by:
+// a caller that has them holds them as `queue`, `tracks`, `playlistTracks`, and nothing
+// translates between two vocabularies on the way in.
 function plan(state) {
   var s = state || {}
   var filter = trimmed(s.filter)
@@ -143,9 +146,9 @@ function plan(state) {
   // command never mean three different lists.
   var raw = {
     queue: array(s.queue),
-    playlistTracks: array(s.openPlaylistTracks),
-    playlists: array(s.browsePlaylists),
-    tracks: array(s.browseTracks),
+    playlistTracks: array(s.playlistTracks),
+    playlists: array(s.playlists),
+    tracks: array(s.tracks),
     personPlaylists: array(s.personPlaylists),
     friends: array(s.friends),
     people: array(s.people),
