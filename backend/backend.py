@@ -80,66 +80,83 @@ MPV = "/usr/bin/mpv"
 NOTIFY_SEND = "/usr/bin/notify-send"
 MPV_PID_FILE = RUNTIME_DIR / "omarchy-vk-music-mpv.pid"
 IPC_MAX_BYTES = 8 * 1024 * 1024
-DEFAULT_PREFERENCES: dict[str, Any] = {
-    "cacheEnabled": True,
-    "cacheLimitMb": 256,
-    "defaultSource": "section:all",
-    # Downloading the next queue track while the current one plays: the same
-    # file would be fetched when its turn comes, so it costs no extra traffic,
-    # only a track of lead time.
-    "prefetchEnabled": True,
-    # What comes back after a restart, one piece at a time: the queue, where it
-    # was, and how loud. Playback itself never resumes on its own.
-    "restoreQueue": True,
-    "restorePosition": True,
-    "restoreVolume": True,
-    # The bar row. These live here rather than in shell.json so the popup can
-    # change them; a shell.json entry still wins when present.
-    "showArtwork": True,
-    "showTitle": True,
-    "showArtist": True,
-    "showControls": True,
-    "showProgress": True,
-    "showTime": False,
-    "showLike": False,
-    "coverShape": "rounded",
-    "labelWidth": 180,
-    "longTitleMode": "scroll",
-    # The scrolling label: how long each end rests before the text moves, and how
-    # fast it moves (pixels a second). Both are the user's taste, not ours.
-    "marqueePauseMs": 1600,
-    "marqueeSpeed": 70,
-    # How playlists are drawn: as a gallery of covers or as rows. One setting for
-    # every list of playlists, since they are the same thing in different places.
-    "playlistView": "list",
+# Every preference in one table: what kind of value it is, what it means before it has ever
+# been set, and what a wrong value is coerced to. The panel draws its controls from this
+# table, so a range or an option exists once — here — and a new setting is one row here plus
+# one line of translation there.
+#
+# Kinds: `switch` (a boolean), `number` (with min, max and the step a slider moves by),
+# `choice` (one of options), `ordered` (a subset of options in the user's order), `list`
+# (free strings) and `text` (a free string).
+PREFERENCE_SCHEMA: dict[str, dict[str, Any]] = {
+    "cacheEnabled": {"kind": "switch", "default": True},
+    "cacheLimitMb": {"kind": "number", "default": 256, "min": 64, "max": 1024, "step": 64},
+    # Reachable from the command line only: the panel has no labelled control for it, which
+    # is what `shown` says. The catalogue's own slugs are not a list this table can offer.
+    "defaultSource": {"kind": "text", "default": "section:all", "shown": False},
+    # Downloading the next queue track while the current one plays: the same file would be
+    # fetched when its turn comes, so it costs no extra traffic, only a track of lead time.
+    "prefetchEnabled": {"kind": "switch", "default": True},
+    # What comes back after a restart, one piece at a time: the queue, where it was, and how
+    # loud. Playback itself never resumes on its own.
+    "restoreQueue": {"kind": "switch", "default": True},
+    "restorePosition": {"kind": "switch", "default": True},
+    "restoreVolume": {"kind": "switch", "default": True},
+    # The bar row. These live here rather than in shell.json so the popup can change them; a
+    # shell.json entry still wins for the instance that carries it.
+    "showArtwork": {"kind": "switch", "default": True},
+    "showTitle": {"kind": "switch", "default": True},
+    "showArtist": {"kind": "switch", "default": True},
+    "showControls": {"kind": "switch", "default": True},
+    "showProgress": {"kind": "switch", "default": True},
+    "showTime": {"kind": "switch", "default": False},
+    "showLike": {"kind": "switch", "default": False},
+    "coverShape": {"kind": "choice", "default": "rounded",
+                   "options": ["square", "rounded", "circle"]},
+    "labelWidth": {"kind": "number", "default": 180, "min": 80, "max": 400, "step": 20},
+    "longTitleMode": {"kind": "choice", "default": "scroll",
+                      "options": ["truncate", "scroll"]},
+    # The scrolling label: how long each end rests before the text moves, and how fast it
+    # moves (pixels a second). Both are the user's taste, not ours.
+    "marqueePauseMs": {"kind": "number", "default": 1600, "min": 0, "max": 6000, "step": 200},
+    "marqueeSpeed": {"kind": "number", "default": 70, "min": 10, "max": 300, "step": 10},
+    # How playlists are drawn: as a gallery of covers or as rows. One setting for every list
+    # of playlists, since they are the same thing in different places.
+    # Drawn as a glyph in the popup's own bar, not as a labelled row in the settings.
+    "playlistView": {"kind": "choice", "default": "list", "options": ["list", "grid"],
+                     "shown": False},
     # "off" or "all": a desktop notification when the track changes on its own.
-    "notifications": "off",
+    "notifications": {"kind": "choice", "default": "off", "options": ["off", "all"]},
     # Which popup to open: "compact" (the small one) or "extended".
-    "popupView": "compact",
-    # Which cells the top bar of the popup shows, in this order. Two at the least: a bar
-    # with one cell is a bar you cannot leave, and the gear is a cell like the views.
-    "panelTabs": ["queue", "browse", "search"],
+    "popupView": {"kind": "choice", "default": "compact", "options": ["compact", "extended"]},
+    # Which cells the top bar of the popup shows, in this order. Two at the least: a bar with
+    # one cell is a bar you cannot leave, and the gear is a cell like the views. The floor is
+    # the panel's rule, not this table's: only the panel knows how many cells there are.
+    "panelTabs": {"kind": "ordered", "default": ["queue", "browse", "search"],
+                  "options": ["queue", "browse", "search"]},
     # Which of VK's section chips the browse bar leaves out, by slug. Stored as the *hidden*
     # ones on purpose: a section VK adds later appears by itself instead of waiting for
     # someone to switch it on.
-    "hiddenSections": [],
-    # The interface language. English is the default; the widget translates its own
-    # strings and leaves the rest of the daemon's messages to the fallback.
-    "language": "en",
+    "hiddenSections": {"kind": "list", "default": []},
+    # The interface language. English is the default; the widget translates its own strings
+    # and leaves the rest of the daemon's messages to the fallback.
+    "language": {"kind": "choice", "default": "en",
+                 "options": ["en", "de", "es", "fr", "ja", "zh", "uk", "ru"]},
 }
 
-# Values a preference may take, for the ones that are not simple booleans. A
-# wrong value from the CLI would otherwise sit in the settings forever.
+# The three views of that table the rest of the file uses. They are derived, not written
+# down a second time: a default, a range and a set of options cannot disagree with the
+# schema because they are read from it.
+DEFAULT_PREFERENCES: dict[str, Any] = {
+    key: spec["default"] for key, spec in PREFERENCE_SCHEMA.items()
+}
 PREFERENCE_ENUMS: dict[str, tuple[str, ...]] = {
-    "coverShape": ("square", "rounded", "circle"),
-    "longTitleMode": ("truncate", "scroll"),
-    "notifications": ("off", "all"),
-    "popupView": ("compact", "extended"),
-    "language": ("en", "de", "es", "fr", "ja", "zh", "uk", "ru"),
-    "playlistView": ("list", "grid"),
-    # List-valued, handled by `coerce_preference` as a set with an order: every entry must
-    # be one of these, a repeat is dropped, and two is the floor.
-    "panelTabs": ("queue", "browse", "search"),
+    key: tuple(spec["options"]) for key, spec in PREFERENCE_SCHEMA.items() if "options" in spec
+}
+# Sliders send whatever the hand did; these keep the value inside the range the UI draws, so
+# a stored preference is always something the panel can show.
+PREFERENCE_RANGES: dict[str, tuple[int, int]] = {
+    key: (spec["min"], spec["max"]) for key, spec in PREFERENCE_SCHEMA.items() if "min" in spec
 }
 
 # Preferences that existed before and what they mean now.
@@ -192,16 +209,6 @@ def track_to_state(track: Track) -> dict[str, Any]:
         "has_lyrics": track.has_lyrics,
         "is_liked": track.is_liked,
     }
-
-
-# Sliders send whatever the hand did; these keep the value inside the range the
-# UI draws, so a stored preference is always something the panel can show.
-PREFERENCE_RANGES: dict[str, tuple[int, int]] = {
-    "cacheLimitMb": (64, 1024),
-    "labelWidth": (80, 400),
-    "marqueePauseMs": (0, 6000),
-    "marqueeSpeed": (10, 300),
-}
 
 
 def coerce_preference(key: str, value: Any) -> Any:
@@ -2620,12 +2627,18 @@ class Backend:
     # -- preferences and cache ---------------------------------------------
 
     def cmd_preferences(self, **values: Any) -> dict[str, Any]:
+        """Read the preferences, or write some of them.
+
+        The answer carries the schema beside the values: the panel draws its controls from
+        the description and its labels from the keys in it, so one request is enough to
+        open the settings and one more is enough to fill them after a change.
+        """
         settings = values.pop("set", None)
         if isinstance(settings, Mapping):
             self.player.set_preferences(settings)
         elif values:
             self.player.set_preferences(values)
-        return self.player.preferences
+        return {"values": self.player.preferences, "schema": PREFERENCE_SCHEMA}
 
     def cmd_cache(self, action: str = "stats") -> dict[str, Any]:
         if action == "clear":
