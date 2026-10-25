@@ -246,6 +246,54 @@ T["нет ссылки на поток"] = { en: "no stream link", de: "kein Str
 T["пустая ссылка"] = { en: "empty link", de: "leerer Link", es: "enlace vacío", fr: "lien vide", ja: "リンクが空です", zh: "链接为空", uk: "порожнє посилання", ru: "пустая ссылка" }
 T["Поиск"] = { en: "Search", de: "Suche", es: "Búsqueda", fr: "Recherche", ja: "検索", zh: "搜索", uk: "Пошук", ru: "Поиск" }
 
+// The daemon's refusals and notices, by code. The key is a code and never a sentence, so
+// the backend can reword its own messages without breaking this table, and a phrase here
+// can be retranslated without a release of the service. `params` fills the `{name}` holes.
+//
+// Three namespaces:
+//   error:<code>           a refusal, from the envelope
+//   halted:<reason>        why all traffic stopped — the bar's warning line
+//   notice:<code>          what the player wants to say about a track
+//   reason:<reason>        a reason inside another phrase, translated before it is used
+var MESSAGES = {
+  "error:unknown_command": { en: "The service does not know that command", de: "Der Dienst kennt diesen Befehl nicht", es: "El servicio no conoce ese comando", fr: "Le service ne connaît pas cette commande", ja: "サービスがそのコマンドを知りません", zh: "服务不认识该命令", uk: "Сервіс не знає цієї команди", ru: "Сервис не знает такой команды" },
+  "error:bad_request": { en: "The service refused the request: {detail}", de: "Der Dienst hat die Anfrage abgelehnt: {detail}", es: "El servicio rechazó la solicitud: {detail}", fr: "Le service a refusé la demande : {detail}", ja: "サービスがリクエストを拒否しました: {detail}", zh: "服务拒绝了该请求：{detail}", uk: "Сервіс відхилив запит: {detail}", ru: "Сервис отклонил запрос: {detail}" },
+  "error:halted": { en: "Stopped: {reason}", de: "Angehalten: {reason}", es: "Detenido: {reason}", fr: "Arrêté : {reason}", ja: "停止: {reason}", zh: "已停止：{reason}", uk: "Зупинено: {reason}", ru: "Остановлено: {reason}" },
+  "error:vk_error": { en: "VK: {reason} — {detail}", de: "VK: {reason} — {detail}", es: "VK: {reason} — {detail}", fr: "VK : {reason} — {detail}", ja: "VK: {reason} — {detail}", zh: "VK：{reason} — {detail}", uk: "VK: {reason} — {detail}", ru: "VK: {reason} — {detail}" },
+  "error:auth_error": { en: "Sign-in failed: {detail}", de: "Anmeldung fehlgeschlagen: {detail}", es: "Error al iniciar sesión: {detail}", fr: "Échec de la connexion : {detail}", ja: "サインインに失敗しました: {detail}", zh: "登录失败：{detail}", uk: "Вхід не вдався: {detail}", ru: "Вход не удался: {detail}" },
+  "error:cache_error": { en: "The audio cache failed: {detail}", de: "Der Audio-Cache ist fehlgeschlagen: {detail}", es: "Falló la caché de audio: {detail}", fr: "Le cache audio a échoué : {detail}", ja: "オーディオキャッシュに失敗しました: {detail}", zh: "音频缓存失败：{detail}", uk: "Кеш аудіо не вдався: {detail}", ru: "Кеш аудио не удался: {detail}" },
+  "error:mpv_error": { en: "The player failed: {detail}", de: "Der Player ist fehlgeschlagen: {detail}", es: "El reproductor falló: {detail}", fr: "Le lecteur a échoué : {detail}", ja: "プレイヤーが失敗しました: {detail}", zh: "播放器失败：{detail}", uk: "Програвач не вдався: {detail}", ru: "Плеер не удался: {detail}" },
+  "error:internal_error": { en: "The service failed: {detail}", de: "Der Dienst ist fehlgeschlagen: {detail}", es: "El servicio falló: {detail}", fr: "Le service a échoué : {detail}", ja: "サービスが失敗しました: {detail}", zh: "服务失败：{detail}", uk: "Сервіс не вдався: {detail}", ru: "Сервис не удался: {detail}" },
+  "error:bad_json": { en: "The service could not read the request", de: "Der Dienst konnte die Anfrage nicht lesen", es: "El servicio no pudo leer la solicitud", fr: "Le service n'a pas pu lire la demande", ja: "サービスがリクエストを読めませんでした", zh: "服务无法读取该请求", uk: "Сервіс не зміг прочитати запит", ru: "Сервис не смог прочитать запрос" },
+  "error:backend_down": { en: "The VK Music service is not running: systemctl --user start omarchy-vk-music", de: "Der VK-Music-Dienst läuft nicht: systemctl --user start omarchy-vk-music", es: "El servicio VK Music no está en marcha: systemctl --user start omarchy-vk-music", fr: "Le service VK Music n'est pas démarré : systemctl --user start omarchy-vk-music", ja: "VK Music サービスが動いていません: systemctl --user start omarchy-vk-music", zh: "VK Music 服务未运行：systemctl --user start omarchy-vk-music", uk: "Сервіс VK Music не запущено: systemctl --user start omarchy-vk-music", ru: "Сервис VK Music не запущен: systemctl --user start omarchy-vk-music" },
+  "error:bad_response": { en: "The service answered with something that is not JSON", de: "Der Dienst hat etwas geantwortet, das kein JSON ist", es: "El servicio respondió algo que no es JSON", fr: "Le service a répondu autre chose que du JSON", ja: "サービスが JSON でない応答を返しました", zh: "服务返回的不是 JSON", uk: "Сервіс відповів чимось, що не є JSON", ru: "Сервис ответил чем-то, что не является JSON" },
+
+  "halted:token_rejected": { en: "VK rejected the session. Sign in again.", de: "VK hat die Sitzung abgelehnt. Bitte neu anmelden.", es: "VK rechazó la sesión. Inicia sesión de nuevo.", fr: "VK a rejeté la session. Reconnectez-vous.", ja: "VK がセッションを拒否しました。もう一度サインインしてください。", zh: "VK 拒绝了这个会话。请重新登录。", uk: "VK відхилив сесію. Потрібен повторний вхід.", ru: "Сессия VK отклонена. Нужен повторный вход." },
+  "halted:flood_control": { en: "VK is limiting requests. The player is stopped.", de: "VK begrenzt Anfragen. Der Player ist angehalten.", es: "VK está limitando las solicitudes. El reproductor está detenido.", fr: "VK limite les requêtes. Le lecteur est arrêté.", ja: "VK がリクエストを制限しています。プレイヤーを停止しました。", zh: "VK 正在限制请求。播放器已停止。", uk: "VK увімкнув обмеження на запити. Програвач зупинено.", ru: "VK включил ограничение на запросы. Плеер остановлен." },
+  "halted:captcha": { en: "VK demands a captcha. The player is stopped.", de: "VK verlangt ein Captcha. Der Player ist angehalten.", es: "VK pide un captcha. El reproductor está detenido.", fr: "VK demande un captcha. Le lecteur est arrêté.", ja: "VK が captcha を要求しています。プレイヤーを停止しました。", zh: "VK 要求验证码。播放器已停止。", uk: "VK вимагає капчу. Програвач зупинено.", ru: "VK требует капчу. Плеер остановлен." },
+  "halted:other": { en: "The player is stopped: {reason}", de: "Der Player ist angehalten: {reason}", es: "El reproductor está detenido: {reason}", fr: "Le lecteur est arrêté : {reason}", ja: "プレイヤーを停止しました: {reason}", zh: "播放器已停止：{reason}", uk: "Програвач зупинено: {reason}", ru: "Плеер остановлен: {reason}" },
+
+  "notice:track_skipped": { en: "Skipped “{label}”: {reason}", de: "Übersprungen “{label}”: {reason}", es: "Omitido “{label}”: {reason}", fr: "Ignoré « {label} » : {reason}", ja: "「{label}」をスキップ: {reason}", zh: "已跳过「{label}」：{reason}", uk: "Пропущено трек «{label}»: {reason}", ru: "Пропущен трек «{label}»: {reason}" },
+
+  "reason:token_rejected": { en: "session rejected", de: "Sitzung abgelehnt", es: "sesión rechazada", fr: "session rejetée", ja: "セッションが拒否されました", zh: "会话被拒绝", uk: "сесію відхилено", ru: "сессия отклонена" },
+  "reason:captcha": { en: "a captcha is required", de: "ein Captcha ist nötig", es: "se requiere un captcha", fr: "un captcha est requis", ja: "captcha が必要です", zh: "需要验证码", uk: "потрібна капча", ru: "нужна капча" },
+  "reason:flood_control": { en: "VK is limiting requests", de: "VK begrenzt Anfragen", es: "VK está limitando las solicitudes", fr: "VK limite les requêtes", ja: "VK がリクエストを制限しています", zh: "VK 正在限制请求", uk: "VK обмежує запити", ru: "VK ограничивает запросы" },
+  "reason:rate_limited": { en: "rate limited", de: "zu viele Anfragen", es: "demasiadas solicitudes", fr: "trop de requêtes", ja: "レート制限", zh: "请求过多", uk: "забагато запитів", ru: "слишком много запросов" },
+  "reason:method_unavailable": { en: "the method is unavailable for this token", de: "die Methode ist für dieses Token nicht verfügbar", es: "el método no está disponible para este token", fr: "la méthode n'est pas disponible pour ce jeton", ja: "このトークンではこのメソッドを使えません", zh: "该令牌无法使用此方法", uk: "метод недоступний для цього токена", ru: "метод недоступен для этого токена" },
+  "reason:no_audio_access": { en: "no audio access for this account", de: "kein Audio-Zugriff für dieses Konto", es: "sin acceso a audio para esta cuenta", fr: "pas d'accès audio pour ce compte", ja: "このアカウントには音声へのアクセスがありません", zh: "该账号没有音频访问权限", uk: "немає доступу до аудіо в цього акаунта", ru: "нет доступа к аудио у этого аккаунта" },
+  "reason:request_refused": { en: "the request was refused", de: "die Anfrage wurde abgelehnt", es: "la solicitud fue rechazada", fr: "la demande a été refusée", ja: "リクエストが拒否されました", zh: "请求被拒绝", uk: "запит відхилено", ru: "запрос отклонён" },
+  "reason:vk_error": { en: "VK error", de: "VK-Fehler", es: "error de VK", fr: "erreur VK", ja: "VK エラー", zh: "VK 错误", uk: "помилка VK", ru: "ошибка VK" },
+  "reason:not_signed_in": { en: "not signed in", de: "nicht angemeldet", es: "sin sesión", fr: "non connecté", ja: "サインインしていません", zh: "未登录", uk: "немає входу", ru: "нет входа" },
+  "reason:person_not_found": { en: "person not found", de: "Person nicht gefunden", es: "persona no encontrada", fr: "personne introuvable", ja: "ユーザーが見つかりません", zh: "找不到该用户", uk: "людину не знайдено", ru: "человек не найден" },
+  "reason:no_stream_link": { en: "no stream link", de: "kein Stream-Link", es: "sin enlace de emisión", fr: "aucun lien de flux", ja: "ストリームのリンクがありません", zh: "没有流链接", uk: "немає посилання на потік", ru: "нет ссылки на поток" },
+  "reason:empty_link": { en: "empty link", de: "leerer Link", es: "enlace vacío", fr: "lien vide", ja: "リンクが空です", zh: "链接为空", uk: "порожнє посилання", ru: "пустая ссылка" },
+  "reason:unknown_section": { en: "unknown section", de: "unbekannter Bereich", es: "sección desconocida", fr: "section inconnue", ja: "不明なセクション", zh: "未知的版块", uk: "невідомий розділ", ru: "неизвестный раздел" },
+  "reason:unknown_station": { en: "unknown radio station", de: "unbekannter Radiosender", es: "emisora desconocida", fr: "station inconnue", ja: "不明なラジオ局", zh: "未知的电台", uk: "невідома радіостанція", ru: "неизвестная радиостанция" },
+  "reason:no_keys": { en: "no track keys given", de: "keine Track-Schlüssel angegeben", es: "no se dieron claves de pista", fr: "aucune clé de piste fournie", ja: "トラックのキーがありません", zh: "没有提供曲目键", uk: "не надано ключів треків", ru: "не переданы ключи треков" },
+  "reason:nothing_for_keys": { en: "VK returned nothing for those keys", de: "VK hat zu diesen Schlüsseln nichts geliefert", es: "VK no devolvió nada para esas claves", fr: "VK n'a rien renvoyé pour ces clés", ja: "そのキーに対して VK は何も返しませんでした", zh: "VK 没有返回这些键对应的内容", uk: "VK не повернув нічого за цими ключами", ru: "VK ничего не вернул по этим ключам" },
+  "reason:track_key_required": { en: "a track key is required", de: "ein Track-Schlüssel ist nötig", es: "se requiere una clave de pista", fr: "une clé de piste est requise", ja: "トラックのキーが必要です", zh: "需要曲目键", uk: "потрібен ключ треку", ru: "нужен ключ трека" }
+}
+
 // The string in the chosen language, or the key itself when this language has no line
 // for it: a half-translated panel stays readable.
 function translate(language, key) {
@@ -253,6 +301,73 @@ function translate(language, key) {
   if (!row) return key
   var value = row[language]
   return value === undefined || value === "" ? key : value
+}
+
+// -- the daemon's own words -----------------------------------------------------
+
+// A template for a key in a language, or null when this table has no line for it.
+// English stands in for a language that is missing the line, because a message is not a
+// label: an English sentence is readable in a German panel, an empty one is not.
+function templateFor(language, key) {
+  var row = MESSAGES[key]
+  if (!row) return null
+  var value = row[language]
+  if (value === undefined || value === "") value = row.en
+  return value === undefined || value === "" ? null : String(value)
+}
+
+// The `{name}` holes, filled from params. A hole with nothing behind it takes the
+// separator before it with it, so a phrase whose tail is missing still ends as a phrase.
+function fill(template, params) {
+  var text = String(template).replace(/\{(\w+)\}/g, function(_match, name) {
+    var value = params ? params[name] : undefined
+    return value === undefined || value === null ? "" : String(value)
+  })
+  return text
+    .replace(/\s*[—:,–-]\s*$/, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([.,:;!?])/g, "$1")
+    .replace(/^\s+|\s+$/g, "")
+}
+
+// A reason inside a phrase is a code of its own, and it is translated before it is
+// substituted: a phrase never quotes an English word into a Russian sentence.
+function withReason(language, params) {
+  var out = {}
+  if (params) {
+    for (var name in params) out[name] = params[name]
+  }
+  var reason = out.reason === undefined || out.reason === null ? "" : String(out.reason)
+  if (reason !== "") out.reason = templateFor(language, "reason:" + reason) || reason
+  return out
+}
+
+// A refusal from the envelope: `{code, params}`. An unknown code answers with the code
+// itself rather than an empty line — a panel that says «vk_error» is broken in a way
+// someone can see, while a panel that says nothing is broken in a way nobody notices.
+function failure(language, error) {
+  if (!error) return ""
+  var code = error.code === undefined || error.code === null ? "" : String(error.code)
+  if (code === "") return String(error.message || "")
+  var template = templateFor(language, "error:" + code)
+  if (template === null) return code
+  return fill(template, withReason(language, error.params))
+}
+
+// A notice or a halt from the status: `{code, params}`. A halt is looked up by its
+// reason, because «stopped» alone would not tell the reader what to do about it.
+function message(language, entry) {
+  if (!entry || typeof entry !== "object" || entry.code === undefined) return ""
+  var code = String(entry.code)
+  var params = withReason(language, entry.params)
+  if (code === "halted") {
+    var reason = entry.params && entry.params.reason !== undefined ? String(entry.params.reason) : ""
+    var halted = templateFor(language, "halted:" + reason)
+    if (halted === null) halted = templateFor(language, "halted:other")
+    return halted === null ? code : fill(halted, params)
+  }
+  var template = templateFor(language, "notice:" + code)
+  return template === null ? code : fill(template, params)
 }
 
 function languageName(code) {
