@@ -4705,6 +4705,23 @@ Panel {
       contentHeight: listColumn.implicitHeight
       boundsBehavior: Flickable.StopAtBounds
 
+      // The wheel scrolls the list, a row a notch. A bare Flickable takes the wheel with a
+      // one-or-two-pixel default, which is indistinguishable from a list that does not
+      // scroll at all — and the handler has to be its direct child, or Qt keeps that
+      // default and never calls this one.
+      WheelHandler {
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+        orientation: Qt.Vertical
+        grabPermissions: PointerHandler.CanTakeOverFromAnything
+        onWheel: function(event) {
+          var notches = Number(event.angleDelta.y) / 120
+          if (!notches) return
+          var limit = Math.max(0, scroller.contentHeight - scroller.height)
+          scroller.contentY = Math.max(0, Math.min(limit, scroller.contentY - notches * Style.space(48)))
+          event.accepted = true
+        }
+      }
+
     Column {
       id: listColumn
       // Air above the first row even when the heading above is empty: otherwise a
