@@ -19,7 +19,6 @@ import "LucideIcons.js" as Lucide
 import "i18n.js" as I18n
 import "CoverTint.js" as CoverTint
 import "GalleryFit.js" as GalleryFit
-import "Likes.js" as Likes
 import "GalleryWalk.js" as GalleryWalk
 import "ListShape.js" as ListShape
 
@@ -599,19 +598,17 @@ Panel {
     })
   }
 
-  // Likes made from a row: the list keeps its own copy of the track, and a delegate is
-  // handed a copy of that copy, so the heart cannot be flipped by editing the track in
-  // the list — only by handing the rows a new list. `Likes.js` does that rebuild and
-  // says why; this assigns its answer back to every list that holds the track.
   function isLiked(track) {
     return track ? track.is_liked === true : false
   }
 
+  // Likes made from a row: a list keeps its own copy of the track, and a delegate is handed
+  // a copy of that copy, so the heart cannot be flipped by editing the track in the list —
+  // only by handing the rows a new list. `Likes.js` does that rebuild and says why; which
+  // lists need it is the session's answer, not this file's, and a fifth list of tracks
+  // would otherwise join the four that were named here by being forgotten.
   function markLiked(key, liked) {
-    root.queue = Likes.mark(root.queue, key, liked)
-    root.tracks = Likes.mark(root.tracks, key, liked)
-    root.playlistTracks = Likes.mark(root.playlistTracks, key, liked)
-    root.results = Likes.mark(root.results, key, liked)
+    session.like(key, liked)
   }
 
   function toggleLikeFor(track) {
