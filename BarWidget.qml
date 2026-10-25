@@ -40,30 +40,30 @@ Panel {
 
 
   property var status: ({})
-  property var queue: []
-  property var sources: []
-  property var results: []
-  property var suggestions: []
+
+  // What the session fetched lives in one module; these names are its interface, and the
+  // widget reads them in a hundred places. Everything that maintains them — the reset, the
+  // like, the stale-answer rule, the loading flags — is the store's, not this file's.
+  SessionLists { id: session }
+  property alias queue: session.queue
+  property alias sources: session.sources
+  property alias results: session.results
+  property alias suggestions: session.suggestions
   // typing | searching | results — what the list under the field is showing.
   property string searchState: "typing"
   // Guards against a slow reply for an older query overwriting newer results.
-  property int _searchSeq: 0
   property string _searchedQuery: ""
   property string view: "queue" // queue | browse | search
   // Browsing a catalog section: which one, what came back, and where the next
   // page starts.
   property string browseSlug: ""
   property string browseTitle: ""
-  property var tracks: []
-  property var playlists: []
+  property alias tracks: session.tracks
+  property alias playlists: session.playlists
   property string browseNext: ""
-  property var stations: []
+  property alias stations: session.stations
   // A list that is being fetched is not an empty list: without these the popup
   // showed root.t("Пусто") and root.t("Очередь пуста") while the answer was still on its way.
-  property bool browseLoading: false
-  property bool browseMoreLoading: false
-  property bool queueLoading: false
-  property bool searchLoading: false
   property double sourcesLoadedAt: 0
   property double sourcesAskedAt: 0
   // How many times this session has asked again for a section that came back empty: a
@@ -149,7 +149,7 @@ Panel {
     if (root._queryLength < 2) return ""
     // A playlist search answers in playlists, so its heading counts those.
     if (root.searchMode === "playlists") {
-      if (root.playlistSearchLoading) return root.t("Ищу…")
+      if (session.loading("foundPlaylists")) return root.t("Ищу…")
       var found = root.foundPlaylists.length
       if (found === 0) return root.t("Плейлисты не найдены")
       return root.t("Найдено ") + found + " " + root.plural(found, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов"))
@@ -317,24 +317,15 @@ Panel {
 
   // Anything at all still on its way: the bottom line has one reason to be there.
   function anyLoading() {
-    // Every kind of load the panel can have in flight: one of them left behind is
-    // the difference between an honest line and one that never stops.
-    return root.browseLoading || root.browseMoreLoading || root.searchLoading
-      || root.queueLoading || root.playlistSearchLoading || root.personLoading
-      || root.friendsLoading || root.openPlaylistLoading
+    return session.anyLoading()
   }
 
-  // A reply that arrives after the pane has moved on must not paint stale rows —
-  // but it must still clear the flag it set. Forgetting the second half is what
-  // left the loading line running under the settings page forever.
-  property int _browseSeq: 0
-
+  // A reply that arrives after the pane has moved on must not paint stale rows — but it
+  // must still clear the flag it set. `session.begin()` hands out a token and `accept()`
+  // says whether the answer is still wanted and clears the flag either way: the rule lives
+  // there, and this keeps its old name for the places that step back from a page.
   function clearBrowseLoading() {
-    root.browseLoading = false
-    root.browseMoreLoading = false
-    root.openPlaylistLoading = false
-    root.personLoading = false
-    root.friendsLoading = false
+    session.clearLoading()
   }
 
   function radioValue(name, fallback) {
@@ -454,7 +445,7 @@ Panel {
     // with nothing in it: both leave a bar whose every item looks empty.
     running: root.opened && root.signedIn && (root.sources.length === 0
       || (root.view === "browse" && root.tracks.length === 0
-          && root.playlists.length === 0 && !root.browseLoading
+          && root.playlists.length === 0 && !session.loading("browse")
           && root.browseSlug !== "" && root.openPlaylist === null))
     onTriggered: {
       root.loadSources()
@@ -728,9 +719,9 @@ Panel {
   }
 
   function loadQueue() {
-    root.queueLoading = root.queue.length === 0
+    var token = session.begin("queue")
     api.request("queue", {}, function(answer) {
-      root.queueLoading = false
+      if (!session.accept(token)) return
       if (answer && answer.ok) root.queue = answer.data
       // The other moment the list may move: the queue just arrived, or the track that is
       // playing is a different one and its row has to be found in a list that is drawn
@@ -751,13 +742,13 @@ Panel {
     // for the life of the shell. Together with the retry under `sectionsWatch` the bar fills
     // itself in, whatever went wrong.
     var now = Date.now()
-    if (root.sources.length > 0 && now - root.sourcesLoadedAt < 600000) return
-    if (now - root.sourcesAskedAt < 4000) return
-    root.sourcesAskedAt = now
+    if (root.sources.length > 0 && now - session.sourcesLoadedAt < 600000) return
+    if (now - session.sourcesAskedAt < 4000) return
+    session.sourcesAskedAt = now
     api.request("sections", {}, function(answer) {
       if (answer && answer.ok) {
         root.sources = answer.data || []
-        root.sourcesLoadedAt = Date.now()
+        session.sourcesLoadedAt = Date.now()
       }
     })
     api.request("home", {}, function(answer) {
@@ -812,13 +803,10 @@ Panel {
     // retried by typing again.
     if (!force && text === root._searchedQuery && root.searchState !== "typing") return
     root._searchedQuery = text
-    root._searchSeq = root._searchSeq + 1
-    var seq = root._searchSeq
+    var token = session.begin("search")
     root.searchState = "searching"
-    root.searchLoading = true
     api.request("search", { query: text, remember: true }, function(answer) {
-      if (seq !== root._searchSeq) return
-      root.searchLoading = false
+      if (!session.accept(token)) return
       if (answer && answer.ok) {
         root.results = answer.data.tracks || []
         root.searchState = "results"
@@ -831,11 +819,9 @@ Panel {
   // People and their playlists: the friend list, anyone opened by link or name,
   // and whatever the playlist search found. VK's own bookmarks API is gone, so
   // «Недавние» — the people opened before — stands in for «закладки».
-  property var friends: []
-  property bool friendsLoading: false
+  property alias friends: session.friends
   property var person: null
-  property var personPlaylists: []
-  property bool personLoading: false
+  property alias personPlaylists: session.personPlaylists
   property string personQuery: ""
   // «/» filters the list in front of you rather than searching VK: vim's search
   // inside the open buffer. It applies to whatever the panel is showing, and it is
@@ -876,15 +862,12 @@ Panel {
   // A playlist that was opened rather than started: what it holds, and where to
   // come back to.
   property var openPlaylist: null
-  property var playlistTracks: []
-  property bool openPlaylistLoading: false
+  property alias playlistTracks: session.playlistTracks
   property string playlistBack: ""
   // Where the playlist was opened from. A playlist opened from a search must come
   // back to that search, with the query still in the field.
   property string playlistBackView: ""
-  property var foundPlaylists: []
-  property int foundPlaylistsTotal: 0
-  property bool playlistSearchLoading: false
+  property alias foundPlaylists: session.foundPlaylists
   // «Треки» or «Плейлисты»: one search box, two kinds of answer.
   property string searchMode: "tracks"
   // Which page of the settings is open. Three pages instead of one column with rules
@@ -1132,8 +1115,8 @@ Panel {
     root.clearFilterQuiet()
     if (root.searchMode === mode) return
     root.cursor = -1
-    root.searchLoading = false
-    root.playlistSearchLoading = false
+    session.cancel("search")
+    session.cancel("foundPlaylists")
     root.searchMode = mode
     root.cursor = -1
     if (root.query.trim().length >= 2) root.runSearch(true)
@@ -1157,31 +1140,25 @@ Panel {
   // Every field is read here, in this file, rather than inside the module: QML captures a
   // binding's dependencies through the reads it makes, and these are the reads.
   function listPlan() {
-    return ListShape.plan({
-      view: root.view,
-      browseSlug: root.browseSlug,
-      openPlaylist: root.openPlaylist,
-      searchMode: root.searchMode,
-      searchState: root.searchState,
-      queryLength: root._queryLength,
-      extended: root.isExtended(),
-      columns: root.galleryColumns,
-      gridView: root.gridView,
-      browseLoading: root.browseLoading,
-      filter: root.filter,
-      queue: root.queue,
-      playlistTracks: root.playlistTracks,
-      playlists: root.playlists,
-      tracks: root.tracks,
-      personPlaylists: root.personPlaylists,
-      friends: root.friends,
-      people: root.people,
-      stations: root.stations,
-      foundPlaylists: root.foundPlaylists,
-      results: root.results,
-      suggestions: root.suggestions,
-      history: root.history
-    })
+    // The page's own state is the panel's, the lists are the session's, and the plan reads
+    // both under the names it returns them by: nothing is translated on the way in.
+    var state = session.state()
+    state.view = root.view
+    state.browseSlug = root.browseSlug
+    state.openPlaylist = root.openPlaylist
+    state.searchMode = root.searchMode
+    state.searchState = root.searchState
+    state.queryLength = root._queryLength
+    state.extended = root.isExtended()
+    state.columns = root.galleryColumns
+    state.gridView = root.gridView
+    state.browseLoading = session.loading("browse")
+    state.filter = root.filter
+    // The recent queries and the recent people arrive with the status rather than from a
+    // fetch, so they are not the store's to keep.
+    state.history = root.history
+    state.people = root.people
+    return ListShape.plan(state)
   }
 
   // The list the keyboard walks through: the plan's segments joined, so an index the cursor
@@ -1484,7 +1461,7 @@ Panel {
   function listHeading() {
     // A playlist that is open owns the heading, whichever view it was opened from.
     if (root.openPlaylist !== null) {
-      if (root.openPlaylistLoading) return root.openPlaylistTitle + root.t(" · загрузка…")
+      if (session.loading("playlist")) return root.openPlaylistTitle + root.t(" · загрузка…")
       var held = root.playlistTracks.length
       if (held === 0) return root.openPlaylistTitle + root.t(" · пусто")
       var span = root.tracksSpan(root.playlistTracks)
@@ -1547,26 +1524,26 @@ Panel {
   readonly property string browseHeader: {
     if (root.browseSlug === "") return ""
     if (root.browseSlug === "person") {
-      if (root.personLoading) return root.t("Открываю…")
+      if (session.loading("person")) return root.t("Открываю…")
       var mine = root.personPlaylists.length
       if (!root.person) return root.t("Человек не найден")
       return String(root.person.name || root.t("Человек"))
         + (mine === 0 ? root.t(" · пусто") : " · " + mine + " " + root.plural(mine, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов")))
     }
     if (root.browseSlug === "friends") {
-      if (root.friendsLoading) return root.t("Друзья · загрузка…")
+      if (session.loading("friends")) return root.t("Друзья · загрузка…")
       var count = root.friends.length
       return root.t("Друзья · ") + count + " " + root.plural(count, root.t("человек"), root.t("человека"), root.t("человек"))
     }
     if (root.browseSlug === "radiostations") {
-      if (root.browseLoading) return root.t("Радио · загрузка…")
+      if (session.loading("browse")) return root.t("Радио · загрузка…")
       var stations = root.stations.length
       return root.t("Радио · ") + (stations === 0
         ? root.t("пусто")
         : stations + " " + root.plural(stations, root.t("станция"), root.t("станции"), root.t("станций")))
     }
     var title = root.browseTitle !== "" ? root.browseTitle : (root.sectionTitle(root.browseSlug) || root.t("Раздел"))
-    if (root.browseLoading) return title + root.t(" · загрузка…")
+    if (session.loading("browse")) return title + root.t(" · загрузка…")
     var tracks = root.tracks.length
     var lists = root.playlists.length
     if (tracks === 0 && lists === 0) return title + root.t(" · пусто")
@@ -1589,8 +1566,8 @@ Panel {
     var slug = root.browseSlug
     if (slug === "" || slug === "friends" || slug === "person" || slug === "playlist") return
     if (root.tracks.length > 0 || root.playlists.length > 0) return
-    if (root.emptySectionTries >= 3) return
-    root.emptySectionTries = root.emptySectionTries + 1
+    if (session.emptySectionTries >= 3) return
+    session.emptySectionTries = session.emptySectionTries + 1
     root.browseSource(slug, true)
   }
 
@@ -1632,30 +1609,28 @@ Panel {
     // and a page nobody is looking at must not keep the sections off the bar.
     root.person = null
     root.personPlaylists = []
-    root.personLoading = false
-    if (force !== true) root.emptySectionTries = 0
+    if (force !== true) session.emptySectionTries = 0
     root.browseSlug = slug
     root.tracks = []
     root.playlists = []
     root.browseNext = ""
     root.browseTitle = ""
-    root.clearBrowseLoading()
-    root._browseSeq = root._browseSeq + 1
-    var seq = root._browseSeq
+    // One guard for the page: a section, a person and an opened playlist answer into
+    // different lists but cancel one another, because the user has moved on to another page.
+    var token = session.begin("browse")
     if (slug === "radiostations") {
-      if (root.stations.length > 0) return
-      root.browseLoading = true
+      if (root.stations.length > 0) {
+        session.accept(token)
+        return
+      }
       api.request("radio", {}, function(answer) {
-        root.browseLoading = false
-        if (seq !== root._browseSeq) return
+        if (!session.accept(token)) return
         if (answer && answer.ok) root.stations = answer.data || []
       })
       return
     }
-    root.browseLoading = true
     api.request("section", { id: slug }, function(answer) {
-      root.browseLoading = false
-      if (seq !== root._browseSeq) return
+      if (!session.accept(token)) return
       if (answer && answer.ok) root.adoptSection(answer.data)
     })
   }
@@ -1663,7 +1638,7 @@ Panel {
   function adoptSection(page) {
     if (!page) return
     if ((page.tracks || []).length > 0 || (page.playlists || []).length > 0) {
-      root.emptySectionTries = 0
+      session.emptySectionTries = 0
     }
     root.browseTitle = root.sectionTitle(root.browseSlug) || String(page.title || "")
     root.tracks = page.tracks || []
@@ -1674,17 +1649,14 @@ Panel {
   // «Ещё»: the sections are paged by a cursor, the tracks are appended to the
   // list the user is already looking at.
   function browseMore() {
-    if (root.browseNext === "" || root.browseMoreLoading) return
+    if (root.browseNext === "" || session.loading("browseMore")) return
     var slug = root.browseSlug
     var cursor = root.browseNext
-    root.browseMoreLoading = false
-    root._browseSeq = root._browseSeq + 1
-    var seqMore = root._browseSeq
-    root.browseMoreLoading = true
+    // The same page guard, a flag of its own: «Ещё» appends to what is on screen and must
+    // not be cancelled by the page it belongs to.
+    var token = session.begin("browse", "browseMore")
     api.request("section", { id: slug, startFrom: cursor }, function(answer) {
-      if (root.browseSlug !== slug) return
-      root.browseMoreLoading = false
-      if (seqMore !== root._browseSeq) return
+      if (!session.accept(token)) return
       if (!answer || !answer.ok) return
       var page = answer.data || {}
       root.tracks = root.tracks.concat(page.tracks || [])
@@ -1729,15 +1701,12 @@ Panel {
     // a `list > 0` here dropped exactly those clicks: the card under the pointer, nothing
     // happening. Only zero is no playlist at all.
     if (!(owner !== 0 && list !== 0)) return
-    root.clearBrowseLoading()
-    root._browseSeq = root._browseSeq + 1
-    var seqList = root._browseSeq
+    var token = session.begin("browse", "playlist")
     root.cursor = -1
     root.playlistBackView = root.view
     root.playlistBack = root.browseSlug
     root.openPlaylist = item
     root.playlistTracks = []
-    root.openPlaylistLoading = true
     root.browseSlug = "playlist"
     api.request("playlist_tracks", {
       ownerId: owner,
@@ -1745,8 +1714,7 @@ Panel {
       accessKey: String(item.access_key || ""),
       title: String(item.title || "")
     }, function(answer) {
-      root.openPlaylistLoading = false
-      if (seqList !== root._browseSeq) return
+      if (!session.accept(token)) return
       if (answer && answer.ok && answer.data) {
         root.playlistTracks = answer.data.tracks || []
       } else {
@@ -1758,10 +1726,8 @@ Panel {
     root.focusList()
     root.cursor = -1
     root.clearBrowseLoading()
-    root._browseSeq = root._browseSeq + 1
     root.openPlaylist = null
     root.playlistTracks = []
-    root.openPlaylistLoading = false
     root.view = root.playlistBackView !== "" ? root.playlistBackView : "browse"
     root.browseSlug = root.playlistBack !== "" ? root.playlistBack : "explore"
   }
@@ -1781,9 +1747,9 @@ Panel {
   // opened far more often than it changes.
   function loadFriends() {
     if (root.friends.length > 0) return
-    root.friendsLoading = true
+    var token = session.begin("friends")
     api.request("friends", {}, function(answer) {
-      root.friendsLoading = false
+      if (!session.accept(token)) return
       root.friends = (answer && answer.ok && answer.data) ? answer.data : []
     })
   }
@@ -1793,7 +1759,6 @@ Panel {
     root.cursor = -1
     root.focusList()
     root.clearBrowseLoading()
-    root._browseSeq = root._browseSeq + 1
     // Everything a person's page left behind goes, but by clearing it here rather than
     // by calling closePerson: that function returns to this list, and two functions
     // that call each other are a loop, not a pair.
@@ -1813,10 +1778,7 @@ Panel {
     var text = String(reference || "").trim()
     if (text === "") return
     root.cursor = -1
-    root.clearBrowseLoading()
-    root._browseSeq = root._browseSeq + 1
-    var seqPerson = root._browseSeq
-    root.personLoading = true
+    var token = session.begin("browse", "person")
     root.person = null
     root.personPlaylists = []
     // The previous person's playlists must not linger under the new name.
@@ -1826,8 +1788,7 @@ Panel {
     root.browseNext = ""
     root.browseTitle = root.t("Человек")
     api.request("person", { query: text }, function(answer) {
-      root.personLoading = false
-      if (seqPerson !== root._browseSeq) return
+      if (!session.accept(token)) return
       if (answer && answer.ok && answer.data) {
         root.person = answer.data.person || null
         root.personPlaylists = answer.data.playlists || []
@@ -1865,18 +1826,18 @@ Panel {
     var text = root.query.trim()
     if (text.length < 2) {
       root.foundPlaylists = []
-      root.foundPlaylistsTotal = 0
+      session.foundPlaylistsTotal = 0
       return
     }
-    root.playlistSearchLoading = true
+    var token = session.begin("foundPlaylists")
     api.request("playlist_search", { query: text }, function(answer) {
-      root.playlistSearchLoading = false
+      if (!session.accept(token)) return
       if (answer && answer.ok && answer.data) {
         root.foundPlaylists = answer.data.playlists || []
-        root.foundPlaylistsTotal = Number(answer.data.total || 0)
+        session.foundPlaylistsTotal = Number(answer.data.total || 0)
       } else {
         root.foundPlaylists = []
-        root.foundPlaylistsTotal = 0
+        session.foundPlaylistsTotal = 0
       }
     })
   }
@@ -1964,23 +1925,13 @@ Panel {
   // every list on screen belongs to the old session and must go, or the panel
   // keeps showing tracks the new account cannot play.
   function reloadAfterAccountChange(newStatus) {
-    root.queue = []
-    root.results = []
-    root.suggestions = []
-    root.tracks = []
-    root.playlists = []
-    root.stations = []
-    root.sources = []
-    root.sourcesLoadedAt = 0
+    // Every list, every flag and every counter, in one call: a field added to the session
+    // is forgotten by an account switch without anyone remembering to add it here.
+    session.reset()
     root.openPlaylist = null
-    root.playlistTracks = []
     root.playlistBack = ""
     root.playlistBackView = ""
     root.person = null
-    root.personPlaylists = []
-    root.friends = []
-    root.foundPlaylists = []
-    root.foundPlaylistsTotal = 0
     root.pendingTrack = null
     root.pendingIndex = -1
     // A filter belongs to the list it was typed in, and every one of those lists
@@ -1994,13 +1945,9 @@ Panel {
     root.cursor = -1
     root._queueIndex = -2
     // The bar's sections are the one list the panel cannot leave to a retry: their ids
-    // belong to the account that answered, so they go with the rest of the old session,
-    // and the watchdog under `sectionsWatch` would leave the bar with nothing but «Люди»
-    // for five seconds — «the menu vanished» is what that looks like. A page whose three
-    // re-asks were spent stayed «пусто» for the rest of the session, because that counter
-    // survived the switch. Both are reset and asked for here, in the same turn as the
-    // switch.
-    root.emptySectionTries = 0
+    // belong to the account that answered, so they go with the rest of the old session —
+    // `reset()` cleared them — and the watchdog under `sectionsWatch` would leave the bar
+    // with nothing but «Люди» for five seconds. So they are asked for in the same turn.
     var stale = root.browseSlug
     root.loadSources()
     // A person's page and an opened playlist were the old account's, and neither can be
@@ -4657,7 +4604,7 @@ Panel {
         }
 
         Text {
-          visible: root.queue.length === 0 && !root.queueLoading
+          visible: root.queue.length === 0 && !session.loading("queue")
           textFormat: Text.PlainText
           text: root.t("Очередь пуста. Начни с «Моя музыка».")
           color: root.dim
@@ -4765,7 +4712,7 @@ Panel {
             width: parent.width
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
-            visible: !root.friendsLoading && root.friends.length === 0 && root.people.length === 0
+            visible: !session.loading("friends") && root.friends.length === 0 && root.people.length === 0
             text: root.t("Список друзей пуст. Вставь ссылку на человека — например vk.com/id213706100.")
             color: root.dim
             font.family: Style.font.family
@@ -4809,7 +4756,7 @@ Panel {
           width: listColumn.width
           leftAlign: true
           visible: root.browseNext !== ""
-          enabled: !root.browseMoreLoading
+          enabled: !session.loading("browseMore")
           opacity: enabled ? 1.0 : 0.5
           text: root.t("Ещё")
           foreground: root.textColor
@@ -4843,7 +4790,7 @@ Panel {
           width: parent.width
           textFormat: Text.PlainText
           wrapMode: Text.WordWrap
-          visible: root.openPlaylistLoading && root.playlistTracks.length === 0
+          visible: session.loading("playlist") && root.playlistTracks.length === 0
           text: root.t("Открываю плейлист…")
           color: root.dim
           font.family: Style.font.family
