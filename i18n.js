@@ -86,6 +86,7 @@ T["В мою музыку"] = { en: "Add to my music", de: "Zu meiner Musik", es
 T["Убрать из моей музыки"] = { en: "Remove from my music", de: "Aus meiner Musik entfernen", es: "Quitar de mi música", fr: "Retirer de ma musique", ja: "マイミュージックから削除", zh: "从我的音乐移除", uk: "Прибрати з моєї музики", ru: "Убрать из моей музыки" }
 T["Убрать из очереди"] = { en: "Remove from the queue", de: "Aus der Warteschlange", es: "Quitar de la cola", fr: "Retirer de la file", ja: "キューから削除", zh: "从队列移除", uk: "Прибрати з черги", ru: "Убрать из очереди" }
 T["Очистить очередь"] = { en: "Clear the queue", de: "Warteschlange leeren", es: "Vaciar la cola", fr: "Vider la file", ja: "キューをクリア", zh: "清空队列", uk: "Очистити чергу", ru: "Очистить очередь" }
+T["Забыть недавние запросы"] = { en: "Forget the recent searches", de: "Letzte Suchen vergessen", es: "Olvidar las búsquedas recientes", fr: "Oublier les recherches récentes", ja: "最近の検索を忘れる", zh: "忘记最近的搜索", uk: "Забути недавні запити", ru: "Забыть недавние запросы" }
 T["Выключить звук"] = { en: "Mute", de: "Stummschalten", es: "Silenciar", fr: "Couper le son", ja: "ミュート", zh: "静音", uk: "Вимкнути звук", ru: "Выключить звук" }
 T["Включить звук"] = { en: "Unmute", de: "Ton an", es: "Activar sonido", fr: "Rétablir le son", ja: "ミュート解除", zh: "取消静音", uk: "Увімкнути звук", ru: "Включить звук" }
 T["Громкость"] = { en: "Volume", de: "Lautstärke", es: "Volumen", fr: "Volume", ja: "音量", zh: "音量", uk: "Гучність", ru: "Громкость" }

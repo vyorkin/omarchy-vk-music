@@ -1333,6 +1333,19 @@ class Player:
                 self.queue[self.index + 1:self.index + 1] = list(tracks)
             self.save_state()
 
+    def forget_search_history(self) -> None:
+        """Drop the recent queries.
+
+        They sit in the account's slice of the state file beside its queue and its likes,
+        because they are answers about what that account searched for; forgetting them is
+        a write like any other.
+        """
+        with self.lock:
+            if not self.search_history:
+                return
+            self.search_history = []
+            self.save_state()
+
     def remember_search(self, query: str) -> None:
         """Keep the last few committed searches, most recent first."""
         text = " ".join(str(query).split())
@@ -2365,6 +2378,10 @@ class Backend:
         return self.player.status()
 
     RADIO_CACHE_SECONDS = 600
+
+    def cmd_history_clear(self) -> dict[str, Any]:
+        self.player.forget_search_history()
+        return self.player.status()
 
     def cmd_radio(self) -> list[dict[str, Any]]:
         """The live stations. Cached: the list barely changes and VK is asked

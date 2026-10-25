@@ -1481,10 +1481,43 @@ Panel {
     return base
   }
 
-  function listAction() {
-    if (root.view === "browse" && root.openPlaylist !== null) return root.t("Играть")
-    if (root.view === "queue" && root.queue.length > 0) return root.t("Очистить")
+  // What can be done with the list on screen, as a key rather than a sentence: the cell's
+  // label and the cell's click are one decision, and telling them apart by comparing
+  // translated strings was one language away from doing the wrong thing.
+  function listActionKey() {
+    if (root.view === "browse" && root.openPlaylist !== null) return "play"
+    if (root.view === "queue" && root.queue.length > 0) return "clearQueue"
+    // The recent queries are a list too, and it has exactly one thing to do with them.
+    if (root.view === "search" && root.openPlaylist === null && root.searchMode === "tracks"
+        && root._queryLength < 2 && root.history.length > 0) return "clearHistory"
     return ""
+  }
+
+  function listAction() {
+    var key = root.listActionKey()
+    if (key === "play") return root.t("Играть")
+    if (key === "clearQueue" || key === "clearHistory") return root.t("Очистить")
+    return ""
+  }
+
+  function runListAction() {
+    var key = root.listActionKey()
+    if (key === "play") root.playPlaylistTrack(0)
+    else if (key === "clearQueue") root.clearQueue()
+    else if (key === "clearHistory") root.clearHistory()
+  }
+
+  // The list empties now and the daemon forgets it a moment later: a cell that waits for a
+  // round trip before doing anything reads as a dead button. `status` is the document the
+  // history is read from, so the empty answer is put there — mutating the object cannot
+  // wake the binding that reads it.
+  function clearHistory() {
+    var doc = JSON.parse(JSON.stringify(root.status || ({})))
+    doc.history = []
+    root.status = doc
+    root.callRequest({ command: "history_clear" }, function(answer) {
+      if (answer && answer.ok && answer.data) root.status = answer.data
+    })
   }
 
   readonly property string browseHeader: {
@@ -5052,7 +5085,7 @@ Panel {
           Layout.fillWidth: true
           Layout.preferredHeight: root.topBarHeight
           Layout.alignment: Qt.AlignVCenter
-          visible: root.view === "search" && !root.filtering
+          visible: root.view === "search" && root.openPlaylist === null && !root.filtering
           background: null
           horizontalPadding: root.cardInset
           verticalPadding: 0
@@ -5086,7 +5119,7 @@ Panel {
           Layout.leftMargin: root.cardInset
           Layout.rightMargin: Style.space(8)
           Layout.alignment: Qt.AlignVCenter
-          visible: !root.filtering && root.view !== "search"
+          visible: !root.filtering && (root.view !== "search" || root.openPlaylist !== null)
           textFormat: Text.PlainText
           elide: Text.ElideRight
           text: root.statusText !== "" ? root.statusText : root.listHeading()
@@ -5104,28 +5137,29 @@ Panel {
           visible: !root.filtering && root.listAction() !== ""
           Layout.preferredHeight: root.topBarHeight
           text: root.listAction()
-          tooltipText: root.listAction() === root.t("Играть")
+          tooltipText: root.listActionKey() === "play"
             ? root.t("Играть весь плейлист")
-            : root.t("Очистить очередь")
-          enabled: root.listAction() === root.t("Играть")
+            : (root.listActionKey() === "clearHistory"
+              ? root.t("Забыть недавние запросы")
+              : root.t("Очистить очередь"))
+          enabled: root.listActionKey() === "play"
             ? root.openPlaylistTracks.length > 0
-            : root.queue.length > 0
+            : (root.listActionKey() === "clearHistory" ? true : root.queue.length > 0)
           opacity: enabled ? 1.0 : 0.4
-          onClicked: {
-            if (root.listAction() === root.t("Играть")) root.playPlaylistTrack(0)
-            else root.clearQueue()
-          }
+          onClicked: root.runListAction()
         }
 
         // Clearing the query was a button inside the old field's row; it is a cell of the
         // bar now, next to the sheet's, because that is where the field's own tools live.
         BarDivider {
-          visible: root.view === "search" && !root.filtering && root.query.length > 0
+          visible: root.view === "search" && root.openPlaylist === null
+            && !root.filtering && root.query.length > 0
           Layout.preferredHeight: root.topBarHeight
         }
 
         BarCell {
-          visible: root.view === "search" && !root.filtering && root.query.length > 0
+          visible: root.view === "search" && root.openPlaylist === null
+            && !root.filtering && root.query.length > 0
           Layout.preferredWidth: root.topBarHeight
           Layout.preferredHeight: root.topBarHeight
           horizontalPadding: 0
@@ -6211,6 +6245,11 @@ Panel {
       // key back: the same thing the «Назад» button does, from anywhere in the panel.
       Keys.onReleased: function(event) {
         if (event.key !== Qt.Key_Backspace) return
+        // A key that was typed into a field belongs to the field. The catcher's own
+        // handler ran before this one could be told the keyboard was elsewhere, so
+        // Backspace in a search field deleted a character *and* stepped back a screen.
+        if (root.activeField().visible && root.activeField().activeFocus) return
+        if (root.filterFocused || root.accountFieldFocus > 0) return
         event.accepted = true
         if (root.openPlaylist !== null) { root.closePlaylistView(); return }
         if (root.person !== null) { root.closePerson(); return }

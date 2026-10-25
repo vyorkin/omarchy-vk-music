@@ -180,6 +180,23 @@ class AccountTestCase(unittest.TestCase):
         self.assertEqual([item.key for item in player.queue], ["1_7"])
         self.assertEqual(player.position, 3)
 
+    def test_recent_queries_can_be_forgotten(self) -> None:
+        vk_auth.save_account(web_record(111, "token-111"))
+        player = backend.Player()
+        player.mpv = _SilentMpv()
+        player.load_session()
+        player.remember_search("radiohead")
+        player.remember_search("kino")
+        player.remember_search("kino")  # a repeat moves to the front, it does not double
+        self.assertEqual(player.search_history, ["kino", "radiohead"])
+
+        player.forget_search_history()
+
+        self.assertEqual(player.search_history, [])
+        document = json.loads(backend.STATE_FILE.read_text())
+        self.assertEqual(document["accounts"]["111"]["searchHistory"], [])
+        self.assertEqual(player.status()["history"], [])
+
     def test_removing_an_account_drops_its_state_slice(self) -> None:
         vk_auth.save_account(web_record(111, "token-111"))
         vk_auth.save_account(web_record(222, "token-222"))
