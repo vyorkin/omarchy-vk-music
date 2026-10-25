@@ -138,6 +138,9 @@ Panel {
 
   onViewChanged: {
     root.cursor = -1
+    // The search tab with nothing typed is a place to type: arriving there puts the caret in
+    // the field, which is what «начни печатать» promises.
+    if (root.view === "search") Qt.callLater(root.focusSearchField)
     if (root.view === "settings") root.loadAccounts()
     // A section page that was left empty by an account change while the panel was on
     // another tab is asked for on arrival: the page on screen is the one the watchdog
@@ -941,6 +944,12 @@ Panel {
 
   function startFilter() {
     root.filtering = true
+  }
+
+  function focusSearchField() {
+    if (root.view !== "search" || root.openPlaylist !== null || root.filtering) return
+    var field = root.activeList().searchField
+    if (field && field.visible) field.forceActiveFocus()
   }
 
   function clearFilter() {
@@ -4309,6 +4318,126 @@ Panel {
       }
     }
 
+    // The query field, directly under the bar that chooses what it searches within. The
+    // search is the one view whose own text belongs at the top of the list rather than in
+    // the line that describes it: every other view's line is a filter over somebody else's
+    // answer, this one's is the answer's question.
+    RowLayout {
+      id: queryBar
+      Layout.fillWidth: true
+      spacing: 0
+      visible: root.view === "search" && root.openPlaylist === null && !root.filtering
+
+      TextField {
+        id: searchField
+        Layout.fillWidth: true
+        Layout.preferredHeight: root.topBarHeight
+        Layout.alignment: Qt.AlignVCenter
+        background: null
+        horizontalPadding: root.cardInset
+        verticalPadding: 0
+        foreground: root.textColor
+        placeholderTextColor: root.dim
+        placeholderText: root.t("Артист, трек, альбом")
+        text: root.query
+        // Two-way in one direction only: the field follows the query, and a keystroke
+        // writes it back. The stored query is what the commands use, which is why the
+        // missing half of this pair left searching silently doing nothing.
+        onTextChanged: {
+          if (text !== root.query) root.query = text
+          suggestTimer.restart()
+          searchTimer.restart()
+        }
+        // Enter is not handled here: the panel's key catcher owns it, and two handlers meant
+        // the field re-ran the search first, which reset the list selection before Enter
+        // could play it. Esc drops the focus and nothing else.
+        Keys.onEscapePressed: function(event) {
+          root.focusList()
+          event.accepted = true
+        }
+        // The field takes the keyboard when the tab opens, so the two keys that walk the
+        // tabs must keep working from an empty one: a field with nothing in it is a place to
+        // type, not a mode, and a `]` that types itself into the query traps the keyboard
+        // here for good. Tab hands the keyboard to the list.
+        Keys.onPressed: function(event) {
+          if (root.query.length === 0 && (event.text === "]" || event.text === "[")) {
+            root.cycleView(event.text === "]" ? 1 : -1)
+            event.accepted = true
+            return
+          }
+          if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
+            root.focusList()
+            event.accepted = true
+          }
+        }
+      }
+
+      BarDivider {
+        visible: root.query.length > 0
+        Layout.preferredHeight: root.topBarHeight
+      }
+
+      BarCell {
+        visible: root.query.length > 0
+        Layout.preferredWidth: root.topBarHeight
+        Layout.preferredHeight: root.topBarHeight
+        horizontalPadding: 0
+        iconText: "󰅖"
+        tooltipText: root.t("Очистить")
+        onClicked: {
+          root.clearSearch()
+          root.activeField().forceActiveFocus()
+        }
+      }
+    }
+
+    PanelSeparator {
+      Layout.fillWidth: true
+      foreground: root.textColor
+      visible: queryBar.visible
+    }
+
+    // A page with nothing to search yet: the hint is all of it, so it stands in the middle
+    // of the room the list has instead of in the list's top-left corner, where it read as
+    // the first row of a list that had failed to load.
+    Column {
+      anchors.centerIn: scroller
+      width: Math.min(scroller.width - 2 * root.cardInset, Style.space(300))
+      spacing: Style.space(8)
+      visible: root.view === "search" && root.openPlaylist === null
+        && root._queryLength < 2 && root.listPlan().lists.history.length === 0
+
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        textFormat: Text.PlainText
+        text: "\u{f0349}"
+        color: root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.space(34)
+      }
+
+      Text {
+        width: parent.width
+        horizontalAlignment: Text.AlignHCenter
+        textFormat: Text.PlainText
+        text: root.t("Начни печатать")
+        color: root.textColor
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+      }
+
+      Text {
+        width: parent.width
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.WordWrap
+        textFormat: Text.PlainText
+        text: root.t("подсказки ВК придут после паузы")
+        color: root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+    }
+
     Flickable {
       id: scroller
       Layout.fillWidth: true
@@ -4586,17 +4715,6 @@ Panel {
         width: parent.width
         spacing: Style.space(4)
         visible: root.view === "search" && root.openPlaylist === null
-
-        Text {
-          visible: root._queryLength < 2 && root.history.length === 0
-          width: parent.width
-          textFormat: Text.PlainText
-          wrapMode: Text.WordWrap
-          text: root.t("Начни печатать — подсказки ВК появятся сами, поиск пойдёт после паузы")
-          color: root.dim
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-        }
 
         // What was searched before, offered back while the field is empty.
         PanelSectionHeader {
@@ -5075,41 +5193,6 @@ Panel {
           }
         }
 
-        // The search's own field, in the same place and with the same shape as the filter:
-        // the line under the list is where a text field belongs in this panel, and the
-        // query it holds is a fact about the list on screen, not a block above it. It used
-        // to be a framed box in the body, which cost the list a row and left the card with
-        // two boxes that meant the same thing and looked different.
-        TextField {
-          id: searchField
-          Layout.fillWidth: true
-          Layout.preferredHeight: root.topBarHeight
-          Layout.alignment: Qt.AlignVCenter
-          visible: root.view === "search" && root.openPlaylist === null && !root.filtering
-          background: null
-          horizontalPadding: root.cardInset
-          verticalPadding: 0
-          foreground: root.textColor
-          placeholderTextColor: root.dim
-          placeholderText: root.t("Артист, трек, альбом")
-          text: root.query
-          // Two-way in one direction only: the field follows the query, and a keystroke
-          // writes it back. The stored query is what the commands use, which is why the
-          // missing half of this pair left searching silently doing nothing.
-          onTextChanged: {
-            if (text !== root.query) root.query = text
-            suggestTimer.restart()
-            searchTimer.restart()
-          }
-          // Enter is not handled here: the panel's key catcher owns it, and two handlers
-          // meant the field re-ran the search first, which reset the list selection before
-          // Enter could play it. Esc drops the focus and nothing else.
-          Keys.onEscapePressed: function(event) {
-            root.focusList()
-            event.accepted = true
-          }
-        }
-
         // What the list is: «Друзья · 3 человека», «Главная · 54 трека · 3ч 44мин»,
         // «Моя музыка · загрузка…» — and a complaint from the daemon when there is one,
         // which wins the line because it is the thing the reader cannot guess.
@@ -5119,7 +5202,7 @@ Panel {
           Layout.leftMargin: root.cardInset
           Layout.rightMargin: Style.space(8)
           Layout.alignment: Qt.AlignVCenter
-          visible: !root.filtering && (root.view !== "search" || root.openPlaylist !== null)
+          visible: !root.filtering
           textFormat: Text.PlainText
           elide: Text.ElideRight
           text: root.statusText !== "" ? root.statusText : root.listHeading()
@@ -5147,28 +5230,6 @@ Panel {
             : (root.listActionKey() === "clearHistory" ? true : root.queue.length > 0)
           opacity: enabled ? 1.0 : 0.4
           onClicked: root.runListAction()
-        }
-
-        // Clearing the query was a button inside the old field's row; it is a cell of the
-        // bar now, next to the sheet's, because that is where the field's own tools live.
-        BarDivider {
-          visible: root.view === "search" && root.openPlaylist === null
-            && !root.filtering && root.query.length > 0
-          Layout.preferredHeight: root.topBarHeight
-        }
-
-        BarCell {
-          visible: root.view === "search" && root.openPlaylist === null
-            && !root.filtering && root.query.length > 0
-          Layout.preferredWidth: root.topBarHeight
-          Layout.preferredHeight: root.topBarHeight
-          horizontalPadding: 0
-          iconText: "󰅖"
-          tooltipText: root.t("Очистить")
-          onClicked: {
-            root.clearSearch()
-            root.activeField().forceActiveFocus()
-          }
         }
 
         BarDivider { Layout.preferredHeight: root.topBarHeight }

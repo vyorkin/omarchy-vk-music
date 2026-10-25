@@ -884,7 +884,12 @@ A delayed load also means the section's SLUG is still the old one for those 600 
   nothing and it is the place a status belongs: the same line the panel already had for
   a skipped track, now shared with the heading, with the filter field while «/» is being
   typed, and with the two cells that act on the list («Назад», «Играть»/«Очистить») and
-  the question mark. Those cells are drawn as cells of a bar, not as buttons in a row:
+  the question mark. The search's own field is the one exception: it sits directly under
+  the band that chooses what it searches within («Треки» / «Плейлисты»), because every
+  other view's line is a filter over somebody else's answer while this one's is the
+  answer's question. Arriving at that tab with an empty query puts the caret in the field —
+  the empty page says «начни печатать», and the keys that walk the tabs keep working from
+  an empty field, so the caret is not a mode. Those cells are drawn as cells of a bar, not as buttons in a row:
   the rule above them and the card's own edge below are the bar's edges, a divider marks
   where the line stops being text, and the last cell carries the card's corner the way
   the first cell of the top bar does. A bar that closes a card is the bar that opens it —
