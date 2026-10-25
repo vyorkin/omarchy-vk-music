@@ -96,7 +96,13 @@ def safe_error_text(exc: BaseException) -> str:
 
 
 class VkApiError(RuntimeError):
-    """A structured error returned by the VK API."""
+    """A structured error returned by the VK API.
+
+    `reason` is a code the panel can translate (`token_rejected`, `person_not_found`,
+    …), and `params` carries what a template needs to finish the sentence. `message` is
+    the sentence itself, for the CLI and the journal: nothing in the panel reads it, so
+    rewording it can never break the interface.
+    """
 
     def __init__(
         self,
@@ -107,6 +113,8 @@ class VkApiError(RuntimeError):
         captcha_sid: str = "",
         captcha_img: str = "",
         details: Any = None,
+        reason: str = "",
+        params: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__(f"VK API error {code}: {message}")
         self.code = code
@@ -115,6 +123,8 @@ class VkApiError(RuntimeError):
         self.captcha_sid = captcha_sid
         self.captcha_img = captcha_img
         self.details = details
+        self.reason = reason
+        self.params = dict(params or {})
 
     @property
     def needs_captcha(self) -> bool:
@@ -145,26 +155,63 @@ class VkHaltError(VkApiError):
             captcha_sid=error.captcha_sid,
             captcha_img=error.captcha_img,
             details=error.details,
+            reason=error.reason,
+            params=error.params,
         )
 
 
 def classify(error: VkApiError) -> str:
-    """A short, user-facing reason for a failed call."""
-    if error.code == 0:
-        return error.message
-    if error.code == ERROR_AUTH_FAILED:
-        return "token rejected"
-    if error.code == ERROR_CAPTCHA:
-        return "captcha required"
-    if error.code == 9:
-        return "flood control"
-    if error.code == ERROR_TOO_MANY_REQUESTS:
-        return "rate limited"
-    if error.code == 3:
-        return "method unavailable for this token's app"
+    """A reason code for a failed call — never a sentence.
+
+    The code is what the panel translates and what `describe` turns into a phrase for the
+    journal and the CLI. Keeping the two apart is the point: a reworded sentence cannot
+    change what the interface shows, and a new phrase needs no release of the panel.
+    """
+    if error.reason:
+        return error.reason
     if error.audio_denied:
-        return "no audio access for this account or token"
-    return f"vk error {error.code}"
+        return "no_audio_access"
+    mapped = REASON_BY_CODE.get(error.code)
+    if mapped:
+        return mapped
+    return "request_refused" if error.code == 0 else "vk_error"
+
+
+# VK's own codes that the plugin has reason to name.
+REASON_BY_CODE = {
+    ERROR_AUTH_FAILED: "token_rejected",
+    ERROR_CAPTCHA: "captcha",
+    9: "flood_control",
+    ERROR_TOO_MANY_REQUESTS: "rate_limited",
+    3: "method_unavailable",
+}
+
+# The sentence each reason stands for, in the one place a human reads it: the journal and
+# the command line. The panel never sees these; it translates the codes itself.
+DESCRIPTIONS = {
+    "token_rejected": "token rejected",
+    "captcha": "captcha required",
+    "flood_control": "flood control",
+    "rate_limited": "rate limited",
+    "method_unavailable": "method unavailable for this token's app",
+    "no_audio_access": "no audio access for this account or token",
+    "request_refused": "the request was refused",
+    "vk_error": "vk error",
+    "not_signed_in": "not signed in",
+    "person_not_found": "person not found",
+    "no_stream_link": "no stream link",
+    "empty_link": "empty link",
+    "unknown_section": "unknown section",
+    "unknown_station": "unknown radio station",
+    "no_keys": "no track keys given",
+    "nothing_for_keys": "VK returned nothing for those keys",
+    "track_key_required": "track key is required",
+}
+
+
+def describe(reason: str) -> str:
+    """The phrase the CLI and the journal print for a reason code."""
+    return DESCRIPTIONS.get(reason, f"vk error: {reason}")
 
 
 @dataclass(frozen=True)

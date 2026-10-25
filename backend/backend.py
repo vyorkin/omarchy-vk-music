@@ -38,6 +38,7 @@ from vk_api import (
     VkClient,
     VkHaltError,
     classify,
+    describe,
     safe_error_text,
 )
 from vk_auth import (
@@ -160,11 +161,12 @@ SEARCH_HISTORY_LIMIT = 8
 PEOPLE_HISTORY_LIMIT = 8
 FRIENDS_TTL = 600.0
 
-# Errors that mean "stop and tell the user", mapped to the message the bar shows.
-HALT_MESSAGES = {
-    5: "Сессия VK отклонена. Нужен повторный вход.",
-    9: "VK включил ограничение на запросы. Плагин остановлен.",
-    14: "VK требует капчу. Плагин остановлен.",
+# Errors that mean "stop and tell the user". The value is a reason code: the panel
+# translates it, and `describe` turns it into the phrase the journal prints.
+HALT_REASONS = {
+    5: "token_rejected",
+    9: "flood_control",
+    14: "captcha",
 }
 
 
@@ -868,30 +870,33 @@ class Player:
     def authenticated(self) -> bool:
         return self.client is not None and not self.client.halted
 
-    def halted_reason(self) -> str:
+    def halted_reason(self) -> dict[str, Any] | None:
+        """Why all traffic stopped, as a code the panel translates, or None."""
         if self.client and self.client.halted:
-            return self.client.halted_reason
-        return ""
+            return {"code": "halted", "params": {"reason": self.client.halted_reason}}
+        return None
 
     def api(self, function: Callable[[], Any]) -> Any:
         """Run one API call, translating failures into state the UI can show."""
         if not self.load_session():
-            raise VkApiError(0, "not signed in", method="session")
+            raise VkApiError(0, "not signed in", method="session", reason="not_signed_in")
         assert self.client is not None
         try:
             with self._api_lock:
                 return function()
         except VkHaltError as exc:
-            message = HALT_MESSAGES.get(exc.code) or f"VK: {classify(exc)}"
-            self.error = message
-            self.notice = message
+            reason = HALT_REASONS.get(exc.code) or classify(exc)
+            # `error` is the sentence the CLI and the journal show; `notice` is the code
+            # the panel translates. They are set together and mean the same thing.
+            self.error = describe(reason)
+            self.notice = {"code": "halted", "params": {"reason": reason}}
             if self.client:
-                self.client.halt(classify(exc))
-            log(f"halted: {message} ({exc.message})")
+                self.client.halt(reason)
+            log(f"halted: {describe(reason)} ({exc.message})")
             raise
         except VkApiError as exc:
-            self.error = f"VK: {classify(exc)}"
-            log(f"api error: {classify(exc)} — {exc.message}")
+            self.error = f"VK: {describe(classify(exc))}"
+            log(f"api error: {describe(classify(exc))} — {exc.message}")
             raise
 
     # -- sources -----------------------------------------------------------
@@ -938,7 +943,8 @@ class Player:
         for section in self.api(lambda: self.client.sections()):  # type: ignore[union-attr]
             if section.url.endswith(f"section={reference}") or section.id == reference:
                 return section.id
-        raise VkApiError(0, f"unknown section: {reference}", method="catalog.getAudio")
+        raise VkApiError(0, f"unknown section: {reference}", method="catalog.getAudio",
+                           reason="unknown_section", params={"section": reference})
 
     def search_items(self, query: str, offset: int | None = None) -> dict[str, Any]:
         tracks = self.api(lambda: self.client.search(query, offset=offset))  # type: ignore[union-attr]
@@ -975,7 +981,7 @@ class Player:
         """
         reference = parse_person_reference(query)
         if not reference:
-            raise VkApiError(0, "пустая ссылка", method="person")
+            raise VkApiError(0, "empty link", method="person", reason="empty_link")
         person: Person | None = None
         for candidate in self.friends_list():
             if reference.casefold() in {candidate.screen_name.casefold(), str(candidate.id)}:
@@ -984,7 +990,8 @@ class Player:
         if person is None:
             found = self.api(lambda: self.client.users(reference))
             if not found:
-                raise VkApiError(0, f"человек не найден: {query}", method="person")
+                raise VkApiError(0, f"person not found: {query}", method="person",
+                                 reason="person_not_found", params={"query": query})
             person = found[0]
         playlists = self.api(lambda: self.client.audio_playlists(person.id, count=100))
         self.remember_person(person)
@@ -1278,11 +1285,15 @@ class Player:
 
     def _mark_unplayable(self, track: Track, reason: str) -> None:
         self.unplayable.add(track.key)
-        # The reason is ffmpeg's own text, newlines and all, and the notice is a
-        # single line in the panel's header: one line here keeps it from
-        # stretching that row.
-        self.notice = f"Пропущен трек «{track.label}»: {' '.join(str(reason).split())}"
-        log(self.notice)
+        # The reason is ffmpeg's own text, newlines and all, and the notice is a single
+        # line in the panel's header: one line here keeps it from stretching that row.
+        # It travels as a parameter, not as a sentence: the sentence is the panel's.
+        clean = " ".join(str(reason).split())
+        self.notice = {
+            "code": "track_skipped",
+            "params": {"label": track.label, "reason": clean},
+        }
+        log(f"track skipped: {track.label}: {clean}")
         self.next(automatic=True)
 
     def next(self, *, automatic: bool = False) -> None:
@@ -2133,25 +2144,39 @@ class Backend:
         self.served += 1
         handler = getattr(self, f"cmd_{command}", None)
         if handler is None:
-            return error_payload("unknown_command", f"unknown command: {command}")
+            return error_payload("unknown_command", f"unknown command: {command}",
+                                 {"command": command})
         params = {k: v for k, v in request.items() if k != "command"}
         try:
             result = handler(**params)
         except TypeError as exc:
-            return error_payload("bad_request", str(exc))
+            return error_payload("bad_request", str(exc), {"detail": str(exc)})
         except VkHaltError as exc:
-            return error_payload("halted", self.player.error or classify(exc))
+            reason = HALT_REASONS.get(exc.code) or classify(exc)
+            return error_payload("halted", self.player.error or describe(reason),
+                                 {"reason": reason})
         except VkApiError as exc:
-            return error_payload("vk_error", f"{classify(exc)}: {exc.message}")
+            reason = classify(exc)
+            detail = {"reason": reason}
+            if exc.params:
+                detail.update(exc.params)
+            single = describe(reason)
+            # Our own refusals carry a sentence already ("person not found: x"); a VK
+            # error carries VK's own wording. Only when the message is just the reason
+            # does the description stand in for it, so nothing is said twice.
+            message = exc.message or single
+            if exc.message and exc.message != single:
+                detail.setdefault("detail", exc.message)
+            return error_payload("vk_error", message, detail)
         except VkAuthError as exc:
-            return error_payload("auth_error", str(exc))
+            return error_payload("auth_error", str(exc), {"detail": str(exc)})
         except CacheError as exc:
-            return error_payload("cache_error", str(exc))
+            return error_payload("cache_error", str(exc), {"detail": str(exc)})
         except MpvError as exc:
-            return error_payload("mpv_error", str(exc))
+            return error_payload("mpv_error", str(exc), {"detail": str(exc)})
         except Exception as exc:  # noqa: BLE001 - the UI must get an answer
             log(f"command {command} failed: {exc!r}")
-            return error_payload("internal_error", repr(exc))
+            return error_payload("internal_error", repr(exc), {"detail": repr(exc)})
         return {"ok": True, "data": result}
 
     # -- session -----------------------------------------------------------
@@ -2423,7 +2448,7 @@ class Backend:
             return cached
         client = self.player.client
         if client is None:
-            raise VkApiError(0, "not signed in", method="radio")
+            raise VkApiError(0, "not signed in", method="radio", reason="not_signed_in")
         stations = self.player.api(lambda: client.radio_stations())
         payload = [asdict(station) for station in stations]
         self._radio_cache = (payload, now + self.RADIO_CACHE_SECONDS)
@@ -2434,7 +2459,8 @@ class Backend:
             (item for item in self.cmd_radio() if int(item.get("id", 0)) == int(id)), None
         )
         if station is None:
-            raise VkApiError(0, f"unknown radio station: {id}", method="play_radio")
+            raise VkApiError(0, f"unknown radio station: {id}", method="play_radio",
+                                 reason="unknown_station", params={"id": id})
         self.player.play_radio(station)
         return self.player.status()
 
@@ -2497,13 +2523,14 @@ class Backend:
         """Turn track keys into tracks: one `audio.getById` for the whole batch."""
         wanted = [str(key) for key in keys if str(key).strip()]
         if not wanted:
-            raise VkApiError(0, "no track keys given", method=method)
+            raise VkApiError(0, "no track keys given", method=method, reason="no_keys")
         client = self.player.client
         if client is None:
-            raise VkApiError(0, "not signed in", method=method)
+            raise VkApiError(0, "not signed in", method=method, reason="not_signed_in")
         tracks = self.player.api(lambda: client.audio_get_by_keys(wanted[:100]))
         if not tracks:
-            raise VkApiError(0, "VK returned nothing for those keys", method=method)
+            raise VkApiError(0, "VK returned nothing for those keys", method=method,
+                                 reason="nothing_for_keys")
         return list(tracks)
 
     def cmd_playlist_tracks(
@@ -2623,7 +2650,7 @@ class Backend:
         and those are what a later removal needs.
         """
         if not key:
-            raise VkApiError(0, "track key is required", method="like")
+            raise VkApiError(0, "track key is required", method="like", reason="track_key_required")
         if liked:
             owner_id, _, audio_id = key.partition("_")
             result = self.player.api(
@@ -2651,7 +2678,7 @@ class Backend:
 
     def cmd_lyrics(self, key: str = "") -> dict[str, Any]:
         if not key:
-            raise VkApiError(0, "track key is required", method="lyrics")
+            raise VkApiError(0, "track key is required", method="lyrics", reason="track_key_required")
         owner_id, _, audio_id = key.partition("_")
         track = Track(
             key=key,
@@ -2700,7 +2727,7 @@ class Backend:
                 try:
                     request = json.loads(line or b"{}")
                 except json.JSONDecodeError:
-                    response = error_payload("bad_json", "request is not JSON")
+                    response = error_payload("bad_json", "request is not JSON", {"detail": "request is not JSON"})
                 else:
                     response = self.handle(request)
                 try:
@@ -2710,8 +2737,18 @@ class Backend:
                 return
 
 
-def error_payload(code: str, message: str) -> dict[str, Any]:
-    return {"ok": False, "error": {"code": code, "message": message}}
+def error_payload(
+    code: str, message: str, params: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
+    """One refusal, in the shape both adapters read.
+
+    `code` and `params` are the interface: the panel translates them. `message` is the
+    sentence for the CLI and the journal, and nothing in the panel may read it.
+    """
+    error: dict[str, Any] = {"code": code, "message": message}
+    if params:
+        error["params"] = dict(params)
+    return {"ok": False, "error": error}
 
 
 def main() -> int:
