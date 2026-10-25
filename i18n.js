@@ -119,6 +119,7 @@ T["Фильтр по списку: название или исполнител�
 T["Артист, трек, альбом"] = { en: "Artist, track, album", de: "Künstler, Titel, Album", es: "Artista, pista, álbum", fr: "Artiste, titre, album", ja: "アーティスト・曲・アルバム", zh: "歌手、曲目、专辑", uk: "Артист, трек, альбом", ru: "Артист, трек, альбом" }
 T["Искать плейлисты других людей"] = { en: "Search other people's playlists", de: "Playlists anderer suchen", es: "Buscar listas de otros", fr: "Chercher les playlists des autres", ja: "他の人のプレイリストを検索", zh: "搜索别人的歌单", uk: "Шукати плейлисти інших людей", ru: "Искать плейлисты других людей" }
 T["Строка в баре"] = { en: "The bar row", de: "Die Leiste", es: "La barra", fr: "La barre", ja: "バーの表示", zh: "任务栏显示", uk: "Рядок у барі", ru: "Строка в баре" }
+T["Кнопки в строке"] = { en: "Cells in the bar", de: "Zellen in der Leiste", es: "Celdas en la barra", fr: "Cellules de la barre", ja: "バーのセル", zh: "栏中的格子", uk: "Клітинки в рядку", ru: "Кнопки в строке" }
 T["Вид"] = { en: "Looks", de: "Aussehen", es: "Aspecto", fr: "Aspect", ja: "外観", zh: "外观", uk: "Вигляд", ru: "Вид" }
 T["Попап"] = { en: "Popup", de: "Popup", es: "Ventana", fr: "Fenêtre", ja: "ポップアップ", zh: "弹窗", uk: "Попап", ru: "Попап" }
 T["Воспроизведение"] = { en: "Playback", de: "Wiedergabe", es: "Reproducción", fr: "Lecture", ja: "再生", zh: "播放", uk: "Відтворення", ru: "Воспроизведение" }

@@ -982,6 +982,56 @@ Panel {
   property bool playlistSearchLoading: false
   // «Треки» or «Плейлисты»: one search box, two kinds of answer.
   property string searchMode: "tracks"
+  // Which page of the settings is open. Three pages instead of one column with rules
+  // between its groups: the rules were the only thing telling a reader where one group
+  // ended, and a bar of cells says it without a line — the same bar that chooses a section
+  // or the kind of search answer.
+  property string settingsTab: "account"
+  readonly property var settingsTabs: ["account", "bar", "playback"]
+
+  // Which of the card's places the popup's bar offers, in the order they stand there. The
+  // gear is not one of them: it is not a place in the card, and a bar that could hide the
+  // way to the settings could not be put back. Read through a function and never cached —
+  // a `readonly property` over a field of a `var` keeps its first value in this file, and a
+  // bar that cannot be re-arranged until the shell restarts is exactly that bug.
+  readonly property var panelTabOrder: ["queue", "browse", "search"]
+  function panelTabs() {
+    var stored = root.prefs.panelTabs
+    var out = []
+    if (stored && stored.length !== undefined) {
+      for (var i = 0; i < stored.length; i++) {
+        var name = String(stored[i])
+        if (root.panelTabOrder.indexOf(name) >= 0 && out.indexOf(name) < 0) out.push(name)
+      }
+    }
+    return out.length >= 2 ? out : ["queue", "browse", "search"]
+  }
+
+  function panelTabShown(key) {
+    return root.panelTabs().indexOf(key) >= 0
+  }
+
+  // Two cells are the floor: a bar with one cell is a bar you cannot leave, so the cell
+  // that would take the count below two does nothing rather than the click being ignored
+  // silently by the daemon.
+  function canTogglePanelTab(key) {
+    return !root.panelTabShown(key) || root.panelTabs().length > 2
+  }
+
+  function togglePanelTab(key) {
+    if (!root.canTogglePanelTab(key)) return
+    var chosen = root.panelTabs()
+    var index = chosen.indexOf(key)
+    if (index >= 0) chosen.splice(index, 1)
+    else chosen.push(key)
+    // Sent in the bar's own order, so switching a cell back on returns it to its place
+    // rather than to the end.
+    var ordered = []
+    for (var i = 0; i < root.panelTabOrder.length; i++) {
+      if (chosen.indexOf(root.panelTabOrder[i]) >= 0) ordered.push(root.panelTabOrder[i])
+    }
+    root.setPreference("panelTabs", ordered)
+  }
 
   // Right-clicking a row offers what can be done with a track without throwing
   // away the queue you are listening to.
@@ -1083,8 +1133,18 @@ Panel {
     return root._pendingBrowse !== "" ? root._pendingBrowse : root.browseSlug
   }
 
+  function cycleSettingsTab(step) {
+    var index = root.settingsTabs.indexOf(root.settingsTab)
+    if (index < 0) index = 0
+    var count = root.settingsTabs.length
+    root.settingsTab = root.settingsTabs[(index + step + count) % count]
+  }
+
   function cycleView(step) {
-    var views = ["queue", "browse", "search", "settings"]
+    // The cells on the bar, not all four: a key that lands on a view whose cell is off the
+    // bar is a key that takes you somewhere you cannot see and cannot leave. The settings
+    // are always there — the gear is not a cell that can be switched off.
+    var views = root.panelTabs().concat(["settings"])
     var index = views.indexOf(root.view)
     if (index < 0) index = 0
     var next = views[(index + step + views.length) % views.length]
@@ -4136,6 +4196,7 @@ Panel {
         // what it is, so it is also where the list says how to leave, and a bar that
         // disappears leaves the reader looking for the way out in a corner.
         visible: root.view === "browse" || root.view === "search" || root.view === "queue"
+          || root.view === "settings"
 
         // The way out of a playlist or a person's page, at the bar's own left end.
         readonly property bool backShown: root.view === "browse"
@@ -4354,6 +4415,51 @@ Panel {
       }
     }
 
+    // The friends page's way in, in the shape the search's field has: one line of the card
+    // with a field at its left end and the cell that acts on it at its right.
+    RowLayout {
+      id: personBar
+      Layout.fillWidth: true
+      spacing: 0
+      visible: root.view === "browse" && root.openPlaylist === null
+        && root.browseSlug === "friends" && !root.filtering
+
+      TextField {
+        id: personField
+        Layout.fillWidth: true
+        Layout.preferredHeight: root.topBarHeight
+        Layout.alignment: Qt.AlignVCenter
+        background: null
+        horizontalPadding: root.cardInset
+        verticalPadding: 0
+        foreground: root.textColor
+        placeholderTextColor: root.dim
+        placeholderText: root.t("Ссылка, id или имя друга")
+        text: root.personQuery
+        onTextChanged: root.personQuery = text
+        onAccepted: root.openPersonFromField()
+      }
+
+      BarDivider {
+        visible: root.personQuery.trim() !== ""
+        Layout.preferredHeight: root.topBarHeight
+      }
+
+      BarCell {
+        id: personGo
+        visible: root.personQuery.trim() !== ""
+        Layout.preferredHeight: root.topBarHeight
+        text: root.t("Открыть")
+        onClicked: root.openPersonFromField()
+      }
+    }
+
+    PanelSeparator {
+      Layout.fillWidth: true
+      foreground: root.textColor
+      visible: personBar.visible
+    }
+
     // The query field, directly under the bar that chooses what it searches within. The
     // search is the one view whose own text belongs at the top of the list rather than in
     // the line that describes it: every other view's line is a filter over somebody else's
@@ -4433,11 +4539,21 @@ Panel {
       visible: queryBar.visible
     }
 
-    // A page with nothing to search yet: the hint is all of it, so it stands in the middle
-    // of the room the list has instead of in the list's top-left corner, where it read as
-    // the first row of a list that had failed to load.
+    // A page with nothing to search yet. The hint cannot be anchored to the viewport —
+    // this component is a layout, and an anchored child of a layout is undefined
+    // behaviour — so the room above it is a spacer, measured against the viewport the
+    // scroller reports. It puts the hint in the middle of the list rather than at its
+    // top-left corner, where it read as the first row of a list that had failed to load.
+    Item {
+      Layout.fillWidth: true
+      Layout.preferredHeight: searchHint.visible
+        ? Math.max(0, Math.round((scroller.height - searchHint.implicitHeight) / 2) - root.topBarHeight)
+        : 0
+    }
+
     Column {
-      anchors.centerIn: scroller
+      id: searchHint
+      Layout.alignment: Qt.AlignHCenter
       width: Math.min(scroller.width - 2 * root.cardInset, Style.space(300))
       spacing: Style.space(8)
       visible: root.view === "search" && root.openPlaylist === null
@@ -4796,352 +4912,376 @@ Panel {
       // sends the new value and re-reads the status, so the daemon stays the
       // one place that knows how the plugin behaves. The account block above
       // the preferences is not a preference — it reads and changes sessions.
+      //
+      // Three pages rather than one column with a rule between each group: the rules were
+      // the only thing saying where a group ended, and the bar of cells says it without a
+      // line — the same bar that chooses a section or the kind of search answer. «Аккаунт»
+      // reads and changes sessions, «Бар» is what the row shows, and «Воспроизведение» is
+      // what happens between one track and the next.
       Column {
         width: parent.width
         spacing: Style.spacing.controlGap
         visible: root.view === "settings"
 
-        PanelSectionHeader { text: root.t("Аккаунты"); foreground: root.dim }
-
-        AccountsBlock { width: parent.width }
-
-        PanelSeparator { Layout.fillWidth: true; foreground: root.textColor }
-
-        // Eight names never fit one row, and a row that scrolls is a row nobody scrolls.
-        // One line with the current language, the rest behind a click.
-        Dropdown {
+        Column {
           width: parent.width
-          label: root.t("Язык")
-          value: root.language
-          options: I18n.LANGUAGES.map(function(entry) { return { value: entry.code, label: entry.name } })
-          foreground: root.textColor
-          onChanged: function(value) { root.setPreference("language", value) }
-        }
+          spacing: Style.spacing.controlGap
+          visible: root.settingsTab === "account"
 
-        PanelSeparator { Layout.fillWidth: true; foreground: root.textColor }
+          PanelSectionHeader { text: root.t("Аккаунты"); foreground: root.dim }
 
-        PanelSectionHeader { text: root.t("Строка в баре"); foreground: root.dim }
+          AccountsBlock { width: parent.width }
 
-        ToggleRow { label: root.t("Обложка трека"); key: "showArtwork"; on: root.prefs.showArtwork !== false }
-        ToggleRow { label: root.t("Название трека"); key: "showTitle"; on: root.prefs.showTitle !== false }
-        ToggleRow { label: root.t("Исполнитель"); key: "showArtist"; on: root.prefs.showArtist !== false }
-        ToggleRow { label: root.t("Кнопки управления"); key: "showControls"; on: root.prefs.showControls !== false }
-        ToggleRow { label: root.t("Линия прогресса"); key: "showProgress"; on: root.prefs.showProgress !== false }
-        ToggleRow { label: root.t("Время трека"); key: "showTime"; on: root.prefs.showTime === true }
-        ToggleRow { label: root.t("Кнопка «Нравится»"); key: "showLike"; on: root.prefs.showLike === true }
-
-        ChoiceRow {
-          label: root.t("Форма обложки")
-          key: "coverShape"
-          value: String(root.prefs.coverShape || "rounded")
-          options: [
-            { value: "square", label: root.t("Квадрат") },
-            { value: "rounded", label: root.t("Скруглённая") },
-            { value: "circle", label: root.t("Круг") }
-          ]
-        }
-
-        ChoiceRow {
-          label: root.t("Длинные названия")
-          key: "longTitleMode"
-          value: String(root.prefs.longTitleMode || "scroll")
-          options: [
-            { value: "truncate", label: root.t("Обрезать") },
-            { value: "scroll", label: root.t("Прокрутка") }
-          ]
+          // Eight names never fit one row, and a row that scrolls is a row nobody scrolls.
+          // One line with the current language, the rest behind a click.
+          Dropdown {
+            width: parent.width
+            label: root.t("Язык")
+            value: root.language
+            options: I18n.LANGUAGES.map(function(entry) { return { value: entry.code, label: entry.name } })
+            foreground: root.textColor
+            onChanged: function(value) { root.setPreference("language", value) }
+          }
         }
 
         Column {
           width: parent.width
-          spacing: Style.space(4)
-          // Both matter only while the label scrolls.
-          opacity: root.barLongTitle === "scroll" ? 1.0 : 0.4
+          spacing: Style.spacing.controlGap
+          visible: root.settingsTab === "bar"
 
-          Text {
-            text: root.t("Пауза перед прокруткой")
-            color: root.dim
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-          }
+          // The bar's own cells, before what they show: which places the popup can be in.
+          // Two at the least, and a cell that is already in use cannot take the count below
+          // two — it greys out rather than swallowing the click.
+          PanelSectionHeader { text: root.t("Кнопки в строке"); foreground: root.dim }
 
           Row {
-            id: pauseRow
-            width: parent.width
-            spacing: Style.space(8)
-
-            PanelSlider {
-              width: parent.width - pauseLabel.width - Style.space(8)
-              anchors.verticalCenter: parent.verticalCenter
-              minimum: 0
-              maximum: 4000
-              step: 200
-              integer: true
-              enabled: root.barLongTitle === "scroll"
-              value: root.marqueePause
-              bar: root.bar
-              onReleased: function(value) { root.setPreference("marqueePauseMs", Math.round(value)) }
-            }
-
-            Text {
-              id: pauseLabel
-              width: 62
-              text: root.marqueePause + " мс"
-              horizontalAlignment: Text.AlignRight
-              anchors.verticalCenter: parent.verticalCenter
-              color: root.dim
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
-            }
-          }
-        }
-
-        Column {
-          width: parent.width
-          spacing: Style.space(4)
-          opacity: root.barLongTitle === "scroll" ? 1.0 : 0.4
-
-          Text {
-            text: root.t("Скорость прокрутки")
-            color: root.dim
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-          }
-
-          Row {
-            id: speedRow
-            width: parent.width
-            spacing: Style.space(8)
-
-            PanelSlider {
-              width: parent.width - speedLabel.width - Style.space(8)
-              anchors.verticalCenter: parent.verticalCenter
-              minimum: 10
-              maximum: 300
-              step: 10
-              integer: true
-              enabled: root.barLongTitle === "scroll"
-              value: root.marqueeSpeed
-              bar: root.bar
-              onReleased: function(value) { root.setPreference("marqueeSpeed", Math.round(value)) }
-            }
-
-            Text {
-              id: speedLabel
-              width: 62
-              text: root.marqueeSpeed + " px/с"
-              horizontalAlignment: Text.AlignRight
-              anchors.verticalCenter: parent.verticalCenter
-              color: root.dim
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
-            }
-          }
-        }
-
-        Column {
-          width: parent.width
-          spacing: Style.space(4)
-
-          Text {
-            text: root.t("Ширина подписи")
-            color: root.dim
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-          }
-
-          RowLayout {
-            width: parent.width
-            spacing: 0
+            spacing: Style.space(6)
 
             Repeater {
               model: [
-                { value: 120, label: root.t("Узкая") },
-                { value: 180, label: root.t("Обычная") },
-                { value: 260, label: root.t("Широкая") }
+                { key: "queue", label: root.t("Очередь") },
+                { key: "browse", label: root.t("Обзор") },
+                { key: "search", label: root.t("Поиск") }
               ]
-              delegate: BarCell {
-                Layout.fillWidth: true
-                Layout.preferredWidth: 0
-                Layout.minimumWidth: 0
-                Layout.preferredHeight: root.barCellHeight
-                text: modelData ? String(modelData.label) : ""
-                selected: (Number(root.prefs.labelWidth) || 180) === (modelData ? modelData.value : -1)
-                onClicked: if (modelData) root.setPreference("labelWidth", modelData.value)
+              delegate: ChipToggle {
+                text: modelData.label
+                on: root.panelTabShown(modelData.key)
+                enabled: root.canTogglePanelTab(modelData.key)
+                opacity: enabled ? 1.0 : 0.4
+                onClicked: root.togglePanelTab(modelData.key)
               }
             }
           }
 
+          PanelSectionHeader { text: root.t("Строка в баре"); foreground: root.dim }
+
+          ToggleRow { label: root.t("Обложка трека"); key: "showArtwork"; on: root.prefs.showArtwork !== false }
+          ToggleRow { label: root.t("Название трека"); key: "showTitle"; on: root.prefs.showTitle !== false }
+          ToggleRow { label: root.t("Исполнитель"); key: "showArtist"; on: root.prefs.showArtist !== false }
+          ToggleRow { label: root.t("Кнопки управления"); key: "showControls"; on: root.prefs.showControls !== false }
+          ToggleRow { label: root.t("Линия прогресса"); key: "showProgress"; on: root.prefs.showProgress !== false }
+          ToggleRow { label: root.t("Время трека"); key: "showTime"; on: root.prefs.showTime === true }
+          ToggleRow { label: root.t("Кнопка «Нравится»"); key: "showLike"; on: root.prefs.showLike === true }
+
+          ChoiceRow {
+            label: root.t("Форма обложки")
+            key: "coverShape"
+            value: String(root.prefs.coverShape || "rounded")
+            options: [
+              { value: "square", label: root.t("Квадрат") },
+              { value: "rounded", label: root.t("Скруглённая") },
+              { value: "circle", label: root.t("Круг") }
+            ]
+          }
+
+          ChoiceRow {
+            label: root.t("Длинные названия")
+            key: "longTitleMode"
+            value: String(root.prefs.longTitleMode || "scroll")
+            options: [
+              { value: "truncate", label: root.t("Обрезать") },
+              { value: "scroll", label: root.t("Прокрутка") }
+            ]
+          }
+
+          Column {
+            width: parent.width
+            spacing: Style.space(4)
+            // Both matter only while the label scrolls.
+            opacity: root.barLongTitle === "scroll" ? 1.0 : 0.4
+
+            Text {
+              text: root.t("Пауза перед прокруткой")
+              color: root.dim
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+
+            Row {
+              id: pauseRow
+              width: parent.width
+              spacing: Style.space(8)
+
+              PanelSlider {
+                width: parent.width - pauseLabel.width - Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+                minimum: 0
+                maximum: 4000
+                step: 200
+                integer: true
+                enabled: root.barLongTitle === "scroll"
+                value: root.marqueePause
+                bar: root.bar
+                onReleased: function(value) { root.setPreference("marqueePauseMs", Math.round(value)) }
+              }
+
+              Text {
+                id: pauseLabel
+                width: 62
+                text: root.marqueePause + " мс"
+                horizontalAlignment: Text.AlignRight
+                anchors.verticalCenter: parent.verticalCenter
+                color: root.dim
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+            }
+          }
+
+          Column {
+            width: parent.width
+            spacing: Style.space(4)
+            opacity: root.barLongTitle === "scroll" ? 1.0 : 0.4
+
+            Text {
+              text: root.t("Скорость прокрутки")
+              color: root.dim
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+
+            Row {
+              id: speedRow
+              width: parent.width
+              spacing: Style.space(8)
+
+              PanelSlider {
+                width: parent.width - speedLabel.width - Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+                minimum: 10
+                maximum: 300
+                step: 10
+                integer: true
+                enabled: root.barLongTitle === "scroll"
+                value: root.marqueeSpeed
+                bar: root.bar
+                onReleased: function(value) { root.setPreference("marqueeSpeed", Math.round(value)) }
+              }
+
+              Text {
+                id: speedLabel
+                width: 62
+                text: root.marqueeSpeed + " px/с"
+                horizontalAlignment: Text.AlignRight
+                anchors.verticalCenter: parent.verticalCenter
+                color: root.dim
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+            }
+          }
+
+          Column {
+            width: parent.width
+            spacing: Style.space(4)
+
+            Text {
+              text: root.t("Ширина подписи")
+              color: root.dim
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+
+            RowLayout {
+              width: parent.width
+              spacing: 0
+
+              Repeater {
+                model: [
+                  { value: 120, label: root.t("Узкая") },
+                  { value: 180, label: root.t("Обычная") },
+                  { value: 260, label: root.t("Широкая") }
+                ]
+                delegate: BarCell {
+                  Layout.fillWidth: true
+                  Layout.preferredWidth: 0
+                  Layout.minimumWidth: 0
+                  Layout.preferredHeight: root.barCellHeight
+                  text: modelData ? String(modelData.label) : ""
+                  selected: (Number(root.prefs.labelWidth) || 180) === (modelData ? modelData.value : -1)
+                  onClicked: if (modelData) root.setPreference("labelWidth", modelData.value)
+                }
+              }
+            }
+
+            Row {
+              width: parent.width
+              spacing: Style.space(8)
+
+              PanelSlider {
+                width: parent.width - widthLabel.width - Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+                minimum: 80
+                maximum: 400
+                step: 20
+                integer: true
+                value: Number(root.prefs.labelWidth) || 180
+                bar: root.bar
+                onReleased: function(value) { root.setPreference("labelWidth", Math.round(value)) }
+              }
+
+              Text {
+                id: widthLabel
+                width: 46
+                text: (Number(root.prefs.labelWidth) || 180) + " px"
+                horizontalAlignment: Text.AlignRight
+                anchors.verticalCenter: parent.verticalCenter
+                color: root.dim
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+            }
+          }
+
+          // Out of the column's inset and across the card: see the heading separator.
+
+          PanelSectionHeader { text: root.t("Попап"); foreground: root.dim }
+
+          ChoiceRow {
+            label: root.t("Вид попапа")
+            key: "popupView"
+            value: String(root.prefs.popupView || "compact")
+            options: [
+              { value: "compact", label: root.t("Компактный") },
+              { value: "extended", label: root.t("Расширенный") }
+            ]
+          }
+
+          // Out of the column's inset and across the card: see the heading separator.
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.spacing.controlGap
+          visible: root.settingsTab === "playback"
+
+          PanelSectionHeader { text: root.t("Воспроизведение"); foreground: root.dim }
+
+          ToggleRow {
+            label: root.t("Скачивать следующий трек заранее — переключение без паузы")
+            key: "prefetchEnabled"
+            on: root.prefs.prefetchEnabled !== false && root.prefs.cacheEnabled !== false
+            dim: root.prefs.cacheEnabled === false
+          }
+
+          Text {
+            text: root.t("Возвращать при запуске")
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
+          Row {
+            spacing: Style.space(6)
+
+            ChipToggle { text: root.t("Очередь"); key: "restoreQueue"; on: root.prefs.restoreQueue !== false }
+            ChipToggle { text: root.t("Позицию"); key: "restorePosition"; on: root.prefs.restorePosition !== false }
+            ChipToggle { text: root.t("Громкость"); key: "restoreVolume"; on: root.prefs.restoreVolume !== false }
+          }
+
+          // Out of the column's inset and across the card: see the heading separator.
+
+          PanelSectionHeader { text: root.t("Уведомления"); foreground: root.dim }
+
+          ChoiceRow {
+            label: root.t("Уведомлять о смене трека")
+            key: "notifications"
+            value: String(root.prefs.notifications || "off")
+            options: [
+              { value: "off", label: root.t("Нет") },
+              { value: "all", label: root.t("Показывать") }
+            ]
+          }
+
+          // Out of the column's inset and across the card: see the heading separator.
+
+          PanelSectionHeader { text: root.t("Кеш"); foreground: root.dim }
+
+          ToggleRow {
+            label: root.t("Хранить треки на диске · ")
+              + root.megabytes(root.status.cache ? root.status.cache.bytes : 0)
+              + " из " + root.megabytes(root.status.cache ? root.status.cache.limit_bytes : 0)
+              + (root.status.cache && root.status.cache.files ? root.t(" · файлов ") + root.status.cache.files : "")
+            key: "cacheEnabled"
+            on: root.prefs.cacheEnabled !== false
+          }
+
           Row {
             width: parent.width
             spacing: Style.space(8)
+            visible: root.prefs.cacheEnabled !== false
+
+            Text {
+              text: root.t("Лимит кеша")
+              anchors.verticalCenter: parent.verticalCenter
+              color: root.dim
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
 
             PanelSlider {
-              width: parent.width - widthLabel.width - Style.space(8)
+              width: parent.width - 150
               anchors.verticalCenter: parent.verticalCenter
-              minimum: 80
-              maximum: 400
-              step: 20
+              minimum: 64
+              maximum: 1024
+              step: 64
               integer: true
-              value: Number(root.prefs.labelWidth) || 180
+              value: Number(root.prefs.cacheLimitMb) || 256
               bar: root.bar
-              onReleased: function(value) { root.setPreference("labelWidth", Math.round(value)) }
+              onReleased: function(value) { root.setPreference("cacheLimitMb", Math.round(value)) }
             }
 
             Text {
-              id: widthLabel
-              width: 46
-              text: (Number(root.prefs.labelWidth) || 180) + " px"
-              horizontalAlignment: Text.AlignRight
+              text: (Number(root.prefs.cacheLimitMb) || 256) + " МБ"
               anchors.verticalCenter: parent.verticalCenter
               color: root.dim
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
             }
           }
-        }
 
-        // Out of the column's inset and across the card: see the heading separator.
-        PanelSeparator {
-          x: -root.cardInset
-          width: parent.width + 2 * root.cardInset
-          foreground: root.textColor
-        }
+          Row {
+            width: parent.width
+            spacing: Style.space(8)
+            visible: root.prefs.cacheEnabled !== false
 
-        PanelSectionHeader { text: root.t("Попап"); foreground: root.dim }
+            Text {
+              width: parent.width - clearButton.width - Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              wrapMode: Text.WordWrap
+              text: root.t("Освободить место прямо сейчас")
+              color: root.dim
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
 
-        ChoiceRow {
-          label: root.t("Вид попапа")
-          key: "popupView"
-          value: String(root.prefs.popupView || "compact")
-          options: [
-            { value: "compact", label: root.t("Компактный") },
-            { value: "extended", label: root.t("Расширенный") }
-          ]
-        }
-
-        // Out of the column's inset and across the card: see the heading separator.
-        PanelSeparator {
-          x: -root.cardInset
-          width: parent.width + 2 * root.cardInset
-          foreground: root.textColor
-        }
-
-        PanelSectionHeader { text: root.t("Воспроизведение"); foreground: root.dim }
-
-        ToggleRow {
-          label: root.t("Скачивать следующий трек заранее — переключение без паузы")
-          key: "prefetchEnabled"
-          on: root.prefs.prefetchEnabled !== false && root.prefs.cacheEnabled !== false
-          dim: root.prefs.cacheEnabled === false
-        }
-
-        Text {
-          text: root.t("Возвращать при запуске")
-          color: root.dim
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-        }
-
-        Row {
-          spacing: Style.space(6)
-
-          ChipToggle { text: root.t("Очередь"); key: "restoreQueue"; on: root.prefs.restoreQueue !== false }
-          ChipToggle { text: root.t("Позицию"); key: "restorePosition"; on: root.prefs.restorePosition !== false }
-          ChipToggle { text: root.t("Громкость"); key: "restoreVolume"; on: root.prefs.restoreVolume !== false }
-        }
-
-        // Out of the column's inset and across the card: see the heading separator.
-        PanelSeparator {
-          x: -root.cardInset
-          width: parent.width + 2 * root.cardInset
-          foreground: root.textColor
-        }
-
-        PanelSectionHeader { text: root.t("Уведомления"); foreground: root.dim }
-
-        ChoiceRow {
-          label: root.t("Уведомлять о смене трека")
-          key: "notifications"
-          value: String(root.prefs.notifications || "off")
-          options: [
-            { value: "off", label: root.t("Нет") },
-            { value: "all", label: root.t("Показывать") }
-          ]
-        }
-
-        // Out of the column's inset and across the card: see the heading separator.
-        PanelSeparator {
-          x: -root.cardInset
-          width: parent.width + 2 * root.cardInset
-          foreground: root.textColor
-        }
-
-        PanelSectionHeader { text: root.t("Кеш"); foreground: root.dim }
-
-        ToggleRow {
-          label: root.t("Хранить треки на диске · ")
-            + root.megabytes(root.status.cache ? root.status.cache.bytes : 0)
-            + " из " + root.megabytes(root.status.cache ? root.status.cache.limit_bytes : 0)
-            + (root.status.cache && root.status.cache.files ? root.t(" · файлов ") + root.status.cache.files : "")
-          key: "cacheEnabled"
-          on: root.prefs.cacheEnabled !== false
-        }
-
-        Row {
-          width: parent.width
-          spacing: Style.space(8)
-          visible: root.prefs.cacheEnabled !== false
-
-          Text {
-            text: root.t("Лимит кеша")
-            anchors.verticalCenter: parent.verticalCenter
-            color: root.dim
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-          }
-
-          PanelSlider {
-            width: parent.width - 150
-            anchors.verticalCenter: parent.verticalCenter
-            minimum: 64
-            maximum: 1024
-            step: 64
-            integer: true
-            value: Number(root.prefs.cacheLimitMb) || 256
-            bar: root.bar
-            onReleased: function(value) { root.setPreference("cacheLimitMb", Math.round(value)) }
-          }
-
-          Text {
-            text: (Number(root.prefs.cacheLimitMb) || 256) + " МБ"
-            anchors.verticalCenter: parent.verticalCenter
-            color: root.dim
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-          }
-        }
-
-        Row {
-          width: parent.width
-          spacing: Style.space(8)
-          visible: root.prefs.cacheEnabled !== false
-
-          Text {
-            width: parent.width - clearButton.width - Style.space(8)
-            anchors.verticalCenter: parent.verticalCenter
-            textFormat: Text.PlainText
-            wrapMode: Text.WordWrap
-            text: root.t("Освободить место прямо сейчас")
-            color: root.dim
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-          }
-
-          Button {
-            id: clearButton
-            text: root.t("Очистить кеш")
-            foreground: root.textColor
-            onClicked: root.call([root.cli, "cache", "clear"], function() { root.refresh() })
+            Button {
+              id: clearButton
+              text: root.t("Очистить кеш")
+              foreground: root.textColor
+              onClicked: root.call([root.cli, "cache", "clear"], function() { root.refresh() })
+            }
           }
         }
       }
@@ -5149,7 +5289,7 @@ Panel {
     }
     }
 
-    // The status bar: what the list is showing, how much of it there is, and the two
+// The status bar: what the list is showing, how much of it there is, and the two
     // things that can be done with it — under the list and behind a full-width rule.
     // It used to be a heading above the first row, which cost the list a line and made
     // the list's own state look like the first thing in the list.
@@ -5968,9 +6108,11 @@ Panel {
 
     BarDivider { Layout.preferredHeight: topRow.cellHeight }
 
-    // Three equal cells. Equal because each asks for no width of its own and takes a
-    // third of what is left — the bar's width does not depend on the longest label.
+    // Equal cells. Equal because each asks for no width of its own and takes a share of
+    // what is left — the bar's width does not depend on the longest label and does not
+    // change when a cell is switched off.
     BarCell {
+      visible: root.panelTabShown("queue")
       Layout.fillWidth: true
       Layout.preferredWidth: 0
       Layout.minimumWidth: 0
@@ -5986,6 +6128,7 @@ Panel {
     }
 
     BarCell {
+      visible: root.panelTabShown("browse")
       Layout.fillWidth: true
       Layout.preferredWidth: 0
       Layout.minimumWidth: 0
@@ -6002,6 +6145,7 @@ Panel {
     }
 
     BarCell {
+      visible: root.panelTabShown("search")
       Layout.fillWidth: true
       Layout.preferredWidth: 0
       Layout.minimumWidth: 0
@@ -6346,6 +6490,7 @@ Panel {
         // sometimes moves and sometimes rearranges the panel cannot be learned. The
         // switch has its own key, «m».
         if (dx !== 0) {
+          if (root.view === "settings") { root.cycleSettingsTab(dx); return }
           if (root.listPlan().gallery) root.moveCursor(dx)
           return
         }

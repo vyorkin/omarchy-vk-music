@@ -115,6 +115,9 @@ DEFAULT_PREFERENCES: dict[str, Any] = {
     "notifications": "off",
     # Which popup to open: "compact" (the small one) or "extended".
     "popupView": "compact",
+    # Which cells the top bar of the popup shows, in this order. Two at the least: a bar
+    # with one cell is a bar you cannot leave, and the gear is a cell like the views.
+    "panelTabs": ["queue", "browse", "search"],
     # The interface language. English is the default; the widget translates its own
     # strings and leaves the rest of the daemon's messages to the fallback.
     "language": "en",
@@ -129,6 +132,9 @@ PREFERENCE_ENUMS: dict[str, tuple[str, ...]] = {
     "popupView": ("compact", "extended"),
     "language": ("en", "de", "es", "fr", "ja", "zh", "uk", "ru"),
     "playlistView": ("list", "grid"),
+    # List-valued, handled by `coerce_preference` as a set with an order: every entry must
+    # be one of these, a repeat is dropped, and two is the floor.
+    "panelTabs": ("queue", "browse", "search"),
 }
 
 # Preferences that existed before and what they mean now.
@@ -214,6 +220,16 @@ def coerce_preference(key: str, value: Any) -> Any:
         if low is not None:
             number = max(low, min(high, number))
         return number
+    if allowed is not None and isinstance(default, list):
+        # An ordered subset: unknown names are dropped, a repeat is kept once, and a list
+        # that leaves fewer than two cells is refused — the bar must always be leavable.
+        items = value if isinstance(value, (list, tuple)) else str(value).split(",")
+        seen: list[str] = []
+        for item in items:
+            name = str(item).strip()
+            if name in allowed and name not in seen:
+                seen.append(name)
+        return seen if len(seen) >= 2 else list(default)
     if allowed is not None:
         text = str(value)
         return text if text in allowed else default
