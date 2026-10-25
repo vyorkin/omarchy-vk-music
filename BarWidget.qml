@@ -20,6 +20,7 @@ import "i18n.js" as I18n
 import "GalleryFit.js" as GalleryFit
 import "GalleryWalk.js" as GalleryWalk
 import "ListShape.js" as ListShape
+import "BarShares.js" as BarShares
 
 Panel {
   id: root
@@ -3699,56 +3700,18 @@ Panel {
             spacing: 0
 
             // The chips share the bar between them, and the row always ends on the card's
-            // edge. A name that needs more than its even share keeps what it needs — «Моя
-            // музыка» is wider than a sixth of the bar — and the cells that need less take
-            // the rest in equal parts. That way nothing is sliced by the card's edge: a name
-            // cut mid-glyph reads as a bug, while the ellipsis a cell draws when its label is
-            // wider than what is left reads as a decision. The pixels left over by the
-            // division go to the first cells, one each.
+            // edge: the division itself is `BarShares.widths`, where the arithmetic is tested.
             //
             // Measured on the cells themselves: `implicitWidth` is what a label asks for, and
-            // it is the same number the cell would take if nothing shared the bar.
+            // it is the same number the cell would take if nothing shared the bar. The row's
+            // Repeater is a child of this row too, and asks for nothing — the division keeps
+            // its share out of the bar, so the chips take the whole width.
             readonly property var needs: {
               var out = []
               for (var i = 0; i < children.length; i++) out.push(children[i].implicitWidth)
               return out
             }
-            readonly property var shares: {
-              var want = sectionChipRow.needs
-              var count = want.length
-              var room = sectionChips.width
-              if (count === 0 || room <= 0) return []
-              var width = new Array(count)
-              var pinned = 0
-              var used = 0
-              // Pin the labels that ask for more than an even share against the rest of the
-              // bar, then share what is left among the others — a few passes settle it.
-              for (var pass = 0; pass < 8; pass++) {
-                var free = count - pinned
-                var share = (room - used) / free
-                var changed = false
-                for (var i = 0; i < count; i++) {
-                  if (width[i] !== undefined) continue
-                  if (want[i] >= share) {
-                    width[i] = Math.ceil(want[i])
-                    used += width[i]
-                    pinned++
-                    changed = true
-                  }
-                }
-                if (!changed) break
-              }
-              var left = count - pinned
-              var each = left > 0 ? Math.floor((room - used) / left) : 0
-              var spare = left > 0 ? Math.round(room - used) - each * left : 0
-              for (var j = 0; j < count; j++) {
-                if (width[j] === undefined) {
-                  width[j] = each + (spare > 0 ? 1 : 0)
-                  if (spare > 0) spare--
-                }
-              }
-              return width
-            }
+            readonly property var shares: BarShares.widths(sectionChipRow.needs, sectionChips.width)
             function cellWidth(index) {
               return index < shares.length ? Math.max(1, shares[index]) : 1
             }
