@@ -31,7 +31,7 @@ Panel {
   // ------------------------------------------------------------- state ---
   // The interface language: a backend preference, English by default, read through a
   // function so a switch in the settings takes effect without a reload.
-  readonly property string language: String(root.setting("language", root.prefs.language || "en"))
+  readonly property string language: String(root.setting("language", root.prefs.language))
 
   function t(text) {
     return I18n.translate(root.language, text)
@@ -253,6 +253,48 @@ Panel {
     : String((root.haltedEntry.params || {}).reason || "halted")
   readonly property string haltText: I18n.message(root.language, root.haltedEntry)
   readonly property var prefs: status.preferences || ({})
+
+  // What the daemon says about its own preferences — kind, default, range, options — read
+  // once when the panel opens. The controls below draw themselves from it, so a range or a
+  // set of options exists once, in `backend.py`, and a new setting needs no range here.
+  property var preferenceSchema: ({})
+  readonly property bool schemaReady: {
+    for (var key in root.preferenceSchema) return true
+    return false
+  }
+
+  function spec(key) {
+    return root.preferenceSchema[String(key)] || ({})
+  }
+
+  // A choice's options are the schema's values and the panel's words. `choice:<setting>:<value>`
+  // is a row in the translation table; a word nobody wrote falls back to the value itself, which
+  // is readable in an incomplete translation and impossible to miss in a complete one.
+  function choiceOptions(key) {
+    var values = root.spec(key).options || []
+    var out = []
+    for (var i = 0; i < values.length; i++) {
+      var value = String(values[i])
+      var label = value
+      if (key === "language") {
+        // The name of a language is written in its own table, not in eight translations.
+        label = I18n.languageName(value)
+      } else {
+        var text = root.t("choice:" + key + ":" + value)
+        if (text !== "choice:" + key + ":" + value) label = text
+      }
+      out.push({ value: value, label: label })
+    }
+    return out
+  }
+
+  function loadPreferences() {
+    api.request("preferences", {}, function(answer) {
+      if (answer && answer.ok && answer.data) {
+        root.preferenceSchema = answer.data.schema || ({})
+      }
+    })
+  }
   // The card's own inset, in one place. The card is given no padding of its own and
   // everything is placed inside this: a bar or a row that is meant to reach the card's
   // edge needs an ancestor that reaches it too, and an item that hangs outside its parent
@@ -284,7 +326,7 @@ Panel {
   // `var` kept its first value, and the card stayed 400 wide after the setting
   // was switched until the shell was restarted.
   function isExtended() {
-    return String(root.setting("popupView", root.prefs.popupView || "compact")) === "extended"
+    return String(root.setting("popupView", root.prefs.popupView)) === "extended"
   }
 
   function activeList() {
@@ -2139,26 +2181,26 @@ Panel {
 
   // What the bar row shows. A shell.json entry wins for that instance; the popup
   // settings are the fallback, since they are the backend's preferences.
-  readonly property bool barShowArtwork: root.setting("showArtwork", root.prefs.showArtwork !== false)
-  readonly property bool barShowTitle: root.setting("showTitle", root.prefs.showTitle !== false)
-  readonly property bool barShowArtist: root.setting("showArtist", root.prefs.showArtist !== false)
-  readonly property bool barShowControls: root.setting("showControls", root.prefs.showControls !== false)
-  readonly property bool barShowProgress: root.setting("showProgress", root.prefs.showProgress !== false)
-  readonly property bool barShowTime: root.setting("showTime", root.prefs.showTime === true)
-  readonly property bool barShowLike: root.setting("showLike", root.prefs.showLike === true)
-  readonly property string barCoverShape: String(root.setting("coverShape", root.prefs.coverShape || "rounded"))
-  readonly property string barLongTitle: String(root.setting("longTitleMode", root.prefs.longTitleMode || "scroll"))
-  readonly property int barInformationWidth: Number(root.setting("labelWidth", Number(root.prefs.labelWidth) || 180))
+  // `setting()` is the shell.json override for this instance and nothing else: the value
+  // that arrives from the daemon is already the default the schema names, already the type
+  // the schema says and already inside the range the schema draws.
+  readonly property bool barShowArtwork: root.setting("showArtwork", root.prefs.showArtwork)
+  readonly property bool barShowTitle: root.setting("showTitle", root.prefs.showTitle)
+  readonly property bool barShowArtist: root.setting("showArtist", root.prefs.showArtist)
+  readonly property bool barShowControls: root.setting("showControls", root.prefs.showControls)
+  readonly property bool barShowProgress: root.setting("showProgress", root.prefs.showProgress)
+  readonly property bool barShowTime: root.setting("showTime", root.prefs.showTime)
+  readonly property bool barShowLike: root.setting("showLike", root.prefs.showLike)
+  readonly property string barCoverShape: String(root.setting("coverShape", root.prefs.coverShape))
+  readonly property string barLongTitle: String(root.setting("longTitleMode", root.prefs.longTitleMode))
+  readonly property int barInformationWidth: Number(root.setting("labelWidth", root.prefs.labelWidth))
   // The scrolling label: how long each end of the text rests, and how fast it
   // moves in pixels a second. Both are taste, so both live in the settings.
-  readonly property int marqueePause: {
-    var value = Number(root.setting("marqueePauseMs", root.prefs.marqueePauseMs))
-    return isNaN(value) ? 1600 : Math.max(0, Math.min(6000, value))
-  }
+  readonly property int marqueePause: Number(root.setting("marqueePauseMs", root.prefs.marqueePauseMs))
   // Playlists look the same wherever they appear: covers in a gallery, or rows.
   // Three across the wide popup, two across the narrow one, so a cover is never
   // too small to recognise.
-  readonly property string playlistView: String(root.setting("playlistView", root.prefs.playlistView || "list"))
+  readonly property string playlistView: String(root.setting("playlistView", root.prefs.playlistView))
   readonly property bool gridView: root.playlistView === "grid"
   // The height the card grows by so that a gallery ends where a row ends. The list asks
   // for it (`TrackList.alignGallery`) instead of the card computing it: the room the list
@@ -2184,10 +2226,7 @@ Panel {
   // this: a playlist's tracks and the queue are lists even when the gallery is on for
   // playlists, and stepping four at a time there is what made «j» land on the wrong track.
 
-  readonly property int marqueeSpeed: {
-    var value = Number(root.setting("marqueeSpeed", root.prefs.marqueeSpeed))
-    return isNaN(value) ? 70 : Math.max(10, Math.min(300, value))
-  }
+  readonly property int marqueeSpeed: Number(root.setting("marqueeSpeed", root.prefs.marqueeSpeed))
   // The progress line has something to say only for a track with a length: a
   // station is endless and shows nothing.
   readonly property bool barHasProgress: root.hasTrack && !root.onAir() && root.duration > 0
@@ -2491,6 +2530,7 @@ Panel {
   onOpenedChanged: {
     if (root.opened) {
       root.refresh()
+      root.loadPreferences()
       root._queueIndex = -2
       root.loadQueue()
       root.loadSources()
@@ -4869,10 +4909,24 @@ Panel {
       // line — the same bar that chooses a section or the kind of search answer. «Аккаунт»
       // reads and changes sessions, «Бар» is what the row shows, and «Воспроизведение» is
       // what happens between one track and the next.
+      // Without the daemon there is no schema and no place to write a value to, so the page
+      // says so rather than drawing controls over empty ranges. The status line already
+      // carries the refusal; this is the page's own answer.
+      Text {
+        width: parent.width
+        visible: root.view === "settings" && !root.schemaReady
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        text: root.t("Настройки недоступны: нет ответа от сервиса")
+        color: root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
+
       Column {
         width: parent.width
         spacing: Style.spacing.controlGap
-        visible: root.view === "settings"
+        visible: root.view === "settings" && root.schemaReady
 
         Column {
           width: parent.width
@@ -4887,9 +4941,9 @@ Panel {
           // One line with the current language, the rest behind a click.
           Dropdown {
             width: parent.width
-            label: root.t("Язык")
+            label: root.t("setting:language")
             value: root.language
-            options: I18n.LANGUAGES.map(function(entry) { return { value: entry.code, label: entry.name } })
+            options: root.choiceOptions("language")
             foreground: root.textColor
             onChanged: function(value) { root.setPreference("language", value) }
           }
@@ -4903,7 +4957,7 @@ Panel {
           // The bar's own cells, before what they show: which places the popup can be in.
           // Two at the least, and a cell that is already in use cannot take the count below
           // two — it greys out rather than swallowing the click.
-          PanelSectionHeader { text: root.t("Кнопки в строке"); foreground: root.dim }
+          PanelSectionHeader { text: root.t("setting:panelTabs"); foreground: root.dim }
 
           Row {
             spacing: Style.space(6)
@@ -4927,7 +4981,7 @@ Panel {
           // The same idea one bar down: which of VK's sections the browse bar offers. The
           // chips are the catalogue's, so they arrive with it — and «Люди» is not among
           // them, because it is the way in to people rather than a section.
-          PanelSectionHeader { text: root.t("Разделы в полосе"); foreground: root.dim }
+          PanelSectionHeader { text: root.t("setting:hiddenSections"); foreground: root.dim }
 
           Text {
             visible: root.sources.length === 0
@@ -4958,33 +5012,26 @@ Panel {
 
           PanelSectionHeader { text: root.t("Строка в баре"); foreground: root.dim }
 
-          ToggleRow { label: root.t("Обложка трека"); key: "showArtwork"; on: root.prefs.showArtwork !== false }
-          ToggleRow { label: root.t("Название трека"); key: "showTitle"; on: root.prefs.showTitle !== false }
-          ToggleRow { label: root.t("Исполнитель"); key: "showArtist"; on: root.prefs.showArtist !== false }
-          ToggleRow { label: root.t("Кнопки управления"); key: "showControls"; on: root.prefs.showControls !== false }
-          ToggleRow { label: root.t("Линия прогресса"); key: "showProgress"; on: root.prefs.showProgress !== false }
-          ToggleRow { label: root.t("Время трека"); key: "showTime"; on: root.prefs.showTime === true }
-          ToggleRow { label: root.t("Кнопка «Нравится»"); key: "showLike"; on: root.prefs.showLike === true }
+          ToggleRow { label: root.t("setting:showArtwork"); key: "showArtwork"; on: root.prefs.showArtwork !== false }
+          ToggleRow { label: root.t("setting:showTitle"); key: "showTitle"; on: root.prefs.showTitle !== false }
+          ToggleRow { label: root.t("setting:showArtist"); key: "showArtist"; on: root.prefs.showArtist !== false }
+          ToggleRow { label: root.t("setting:showControls"); key: "showControls"; on: root.prefs.showControls !== false }
+          ToggleRow { label: root.t("setting:showProgress"); key: "showProgress"; on: root.prefs.showProgress !== false }
+          ToggleRow { label: root.t("setting:showTime"); key: "showTime"; on: root.prefs.showTime === true }
+          ToggleRow { label: root.t("setting:showLike"); key: "showLike"; on: root.prefs.showLike === true }
 
           ChoiceRow {
-            label: root.t("Форма обложки")
+            label: root.t("setting:coverShape")
             key: "coverShape"
             value: String(root.prefs.coverShape || "rounded")
-            options: [
-              { value: "square", label: root.t("Квадрат") },
-              { value: "rounded", label: root.t("Скруглённая") },
-              { value: "circle", label: root.t("Круг") }
-            ]
+            options: root.choiceOptions("coverShape")
           }
 
           ChoiceRow {
-            label: root.t("Длинные названия")
+            label: root.t("setting:longTitleMode")
             key: "longTitleMode"
             value: String(root.prefs.longTitleMode || "scroll")
-            options: [
-              { value: "truncate", label: root.t("Обрезать") },
-              { value: "scroll", label: root.t("Прокрутка") }
-            ]
+            options: root.choiceOptions("longTitleMode")
           }
 
           Column {
@@ -4994,7 +5041,7 @@ Panel {
             opacity: root.barLongTitle === "scroll" ? 1.0 : 0.4
 
             Text {
-              text: root.t("Пауза перед прокруткой")
+              text: root.t("setting:marqueePauseMs")
               color: root.dim
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
@@ -5008,9 +5055,9 @@ Panel {
               PanelSlider {
                 width: parent.width - pauseLabel.width - Style.space(8)
                 anchors.verticalCenter: parent.verticalCenter
-                minimum: 0
-                maximum: 4000
-                step: 200
+                minimum: root.spec("marqueePauseMs").min
+                maximum: root.spec("marqueePauseMs").max
+                step: root.spec("marqueePauseMs").step
                 integer: true
                 enabled: root.barLongTitle === "scroll"
                 value: root.marqueePause
@@ -5037,7 +5084,7 @@ Panel {
             opacity: root.barLongTitle === "scroll" ? 1.0 : 0.4
 
             Text {
-              text: root.t("Скорость прокрутки")
+              text: root.t("setting:marqueeSpeed")
               color: root.dim
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
@@ -5051,9 +5098,9 @@ Panel {
               PanelSlider {
                 width: parent.width - speedLabel.width - Style.space(8)
                 anchors.verticalCenter: parent.verticalCenter
-                minimum: 10
-                maximum: 300
-                step: 10
+                minimum: root.spec("marqueeSpeed").min
+                maximum: root.spec("marqueeSpeed").max
+                step: root.spec("marqueeSpeed").step
                 integer: true
                 enabled: root.barLongTitle === "scroll"
                 value: root.marqueeSpeed
@@ -5079,7 +5126,7 @@ Panel {
             spacing: Style.space(4)
 
             Text {
-              text: root.t("Ширина подписи")
+              text: root.t("setting:labelWidth")
               color: root.dim
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
@@ -5114,9 +5161,9 @@ Panel {
               PanelSlider {
                 width: parent.width - widthLabel.width - Style.space(8)
                 anchors.verticalCenter: parent.verticalCenter
-                minimum: 80
-                maximum: 400
-                step: 20
+                minimum: root.spec("labelWidth").min
+                maximum: root.spec("labelWidth").max
+                step: root.spec("labelWidth").step
                 integer: true
                 value: Number(root.prefs.labelWidth) || 180
                 bar: root.bar
@@ -5141,13 +5188,10 @@ Panel {
           PanelSectionHeader { text: root.t("Попап"); foreground: root.dim }
 
           ChoiceRow {
-            label: root.t("Вид попапа")
+            label: root.t("setting:popupView")
             key: "popupView"
             value: String(root.prefs.popupView || "compact")
-            options: [
-              { value: "compact", label: root.t("Компактный") },
-              { value: "extended", label: root.t("Расширенный") }
-            ]
+            options: root.choiceOptions("popupView")
           }
 
           // Out of the column's inset and across the card: see the heading separator.
@@ -5161,14 +5205,14 @@ Panel {
           PanelSectionHeader { text: root.t("Воспроизведение"); foreground: root.dim }
 
           ToggleRow {
-            label: root.t("Скачивать следующий трек заранее — переключение без паузы")
+            label: root.t("setting:prefetchEnabled")
             key: "prefetchEnabled"
             on: root.prefs.prefetchEnabled !== false && root.prefs.cacheEnabled !== false
             dim: root.prefs.cacheEnabled === false
           }
 
           Text {
-            text: root.t("Возвращать при запуске")
+            text: root.t("setting:restoreQueue")
             color: root.dim
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
@@ -5177,9 +5221,9 @@ Panel {
           Row {
             spacing: Style.space(6)
 
-            ChipToggle { text: root.t("Очередь"); key: "restoreQueue"; on: root.prefs.restoreQueue !== false }
-            ChipToggle { text: root.t("Позицию"); key: "restorePosition"; on: root.prefs.restorePosition !== false }
-            ChipToggle { text: root.t("Громкость"); key: "restoreVolume"; on: root.prefs.restoreVolume !== false }
+            ChipToggle { text: root.t("setting:restoreQueue"); key: "restoreQueue"; on: root.prefs.restoreQueue !== false }
+            ChipToggle { text: root.t("setting:restorePosition"); key: "restorePosition"; on: root.prefs.restorePosition !== false }
+            ChipToggle { text: root.t("setting:restoreVolume"); key: "restoreVolume"; on: root.prefs.restoreVolume !== false }
           }
 
           // Out of the column's inset and across the card: see the heading separator.
@@ -5187,13 +5231,10 @@ Panel {
           PanelSectionHeader { text: root.t("Уведомления"); foreground: root.dim }
 
           ChoiceRow {
-            label: root.t("Уведомлять о смене трека")
+            label: root.t("setting:notifications")
             key: "notifications"
             value: String(root.prefs.notifications || "off")
-            options: [
-              { value: "off", label: root.t("Нет") },
-              { value: "all", label: root.t("Показывать") }
-            ]
+            options: root.choiceOptions("notifications")
           }
 
           // Out of the column's inset and across the card: see the heading separator.
@@ -5201,7 +5242,7 @@ Panel {
           PanelSectionHeader { text: root.t("Кеш"); foreground: root.dim }
 
           ToggleRow {
-            label: root.t("Хранить треки на диске · ")
+            label: root.t("setting:cacheEnabled")
               + root.megabytes(root.status.cache ? root.status.cache.bytes : 0)
               + " из " + root.megabytes(root.status.cache ? root.status.cache.limit_bytes : 0)
               + (root.status.cache && root.status.cache.files ? root.t(" · файлов ") + root.status.cache.files : "")
@@ -5215,7 +5256,7 @@ Panel {
             visible: root.prefs.cacheEnabled !== false
 
             Text {
-              text: root.t("Лимит кеша")
+              text: root.t("setting:cacheLimitMb")
               anchors.verticalCenter: parent.verticalCenter
               color: root.dim
               font.family: Style.font.family
@@ -5225,9 +5266,9 @@ Panel {
             PanelSlider {
               width: parent.width - 150
               anchors.verticalCenter: parent.verticalCenter
-              minimum: 64
-              maximum: 1024
-              step: 64
+              minimum: root.spec("cacheLimitMb").min
+              maximum: root.spec("cacheLimitMb").max
+              step: root.spec("cacheLimitMb").step
               integer: true
               value: Number(root.prefs.cacheLimitMb) || 256
               bar: root.bar
