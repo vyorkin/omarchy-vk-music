@@ -3652,17 +3652,24 @@ Panel {
         visible: root.view === "browse" || root.view === "search" || root.view === "queue"
           || root.view === "settings"
 
-        // The way out of a playlist or a person's page, at the bar's own left end.
-        readonly property bool backShown: root.view === "browse"
-          && (root.openPlaylist !== null || root.browseSlug === "person")
+        // The way out of a playlist or a person's page, at the bar's own left end. A
+        // playlist opened from the search results is a playlist all the same: the search
+        // field steps aside while it is up, so a bar that left the cell to the browse view
+        // left the search with no field and no way out of it — which reads as a search
+        // that has lost its own field rather than as a playlist that is open.
+        readonly property bool backShown: (root.view === "browse"
+          && (root.openPlaylist !== null || root.browseSlug === "person"))
+          || (root.view === "search" && root.openPlaylist !== null)
 
         BarCell {
           visible: sectionBar.backShown
           iconText: "󰁍"
           text: root.t("Назад")
-          tooltipText: root.openPlaylist !== null
-            ? root.t("К плейлистам")
-            : root.t("К списку людей")
+          tooltipText: root.view === "search"
+            ? root.t("К поиску")
+            : (root.openPlaylist !== null
+              ? root.t("К плейлистам")
+              : root.t("К списку людей"))
           onClicked: {
             if (root.openPlaylist !== null) {
               root.closePlaylistView()
@@ -3674,7 +3681,8 @@ Panel {
         }
 
         BarDivider {
-          visible: sectionBar.backShown && (sectionChips.visible || root.listPlan().showsPlaylists)
+          visible: sectionBar.backShown
+            && (sectionChips.visible || root.listPlan().showsPlaylists || root.view === "search")
           Layout.preferredHeight: root.barCellHeight
         }
 
@@ -3779,8 +3787,10 @@ Panel {
           // Only when nothing else in the bar fills it: inside a playlist or on somebody's
           // page, where the way back is the whole of the left side. In the queue and in the
           // search view the cells themselves are what fills the width, and a spacer among
-          // them would squeeze them into a third each.
-          Layout.fillWidth: sectionBar.backShown
+          // them would squeeze them into a third each. In the search view the way out of
+          // a playlist shares the bar with those two cells, and the spacer would take the
+          // width the switch needs.
+          Layout.fillWidth: root.view === "browse" && sectionBar.backShown
           Layout.preferredWidth: 0
           Layout.preferredHeight: 1
         }

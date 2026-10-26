@@ -653,6 +653,12 @@ chips to push them. A heading that floats where a bar used to be is what a reade
 for the way out in; the bar is where the list says what it is, so it is where the list says
 how to leave it.
 
+A playlist opened from the search results is the same page, and it needs the same cell. The
+search field steps aside while an open playlist is up, so without «Назад» at the bar's left
+end that view had neither a field nor a way out of it, and read as a search that had lost
+its own field. The cell says where it goes — «К плейлистам» from a section, «К поиску» from
+the search — and the search's two halves of the bar keep their width beside it.
+
 The bar over the list is framed by the same rule that closes the player, and the cells sit
 flush between the two: one line above them, one under them, no gap either side. A rule that
 floats a few pixels above a band of cells reads as the bottom border of the block above it
