@@ -1006,6 +1006,42 @@ Panel {
     root.runSearch(true)
   }
 
+  // A click on the artist is the way in to everything else by them: VK offers this client
+  // no artist page, so the search for the name is the page. The request goes out at once
+  // rather than through the debounce a keystroke would restart — a link that says nothing
+  // for a second reads as a link that did nothing.
+  function searchArtist(name) {
+    var text = String(name || "").trim()
+    if (text === "") return
+    // A filter narrows the list in front of you, and a search brings its own.
+    root.clearFilterQuiet()
+    // An artist is searched in tracks: left on «Плейлисты», the tab would open on a list of
+    // playlists that mention the name rather than on the artist's own songs.
+    if (root.searchMode !== "tracks") {
+      session.cancel("foundPlaylists")
+      root.searchMode = "tracks"
+    }
+    root.query = text
+    root.enterSearch()
+    root.runSearch(true)
+  }
+
+  // Every way in to the search tab, because one of them was a dead cell. An opened playlist
+  // owns the card whichever tab is showing — that is what keeps its tracks and its «Назад»
+  // when the tab beside it is pressed — so «Поиск» pressed from a playlist opened in the
+  // section view put the tab up under a card that went on showing the playlist, and read as
+  // a tab that does nothing. The tab that cannot show the page is the tab that ends it, and
+  // the caret goes to the field last, because a field that is not on screen cannot take it.
+  //
+  // A person's page is left alone: it is the one page the other tabs show around, so the
+  // friends list stays behind the search and comes back with the browse tab.
+  function enterSearch() {
+    root.cursor = -1
+    if (root.openPlaylist !== null) root.closePlaylistView()
+    root.view = "search"
+    root.activeField().forceActiveFocus()
+  }
+
   function focusList() {
     keys.forceActiveFocus()
   }
@@ -1075,6 +1111,12 @@ Panel {
     var index = views.indexOf(root.view)
     if (index < 0) index = 0
     var next = views[(index + step + views.length) % views.length]
+    // The same way in as the cells: a key that landed on the search from an opened playlist
+    // found the playlist still there and read as a key that did nothing.
+    if (next === "search") {
+      root.enterSearch()
+      return
+    }
     root.view = next
     root.cursor = -1
     if (next === "browse" && root.browseSlug === "") root.scheduleBrowse("friends")
@@ -1393,6 +1435,9 @@ Panel {
   function openSection(slug) {
     if (String(slug) === "") return
     root.cursor = -1
+    // The section is what the click asked for, so the playlist goes: it would keep the card
+    // and the cell would look like it had done nothing.
+    if (root.openPlaylist !== null) root.closePlaylistView()
     root.view = "browse"
     root.browseSource(slug)
     root.focusList()
@@ -3665,7 +3710,9 @@ Panel {
           visible: sectionBar.backShown
           iconText: "󰁍"
           text: root.t("Назад")
-          tooltipText: root.view === "search"
+          // Where the cell lands, not which tab is showing it: a playlist opened from the
+          // search comes back to the search even when it is the browse tab under it.
+          tooltipText: root.openPlaylist !== null && root.playlistBackView === "search"
             ? root.t("К поиску")
             : (root.openPlaylist !== null
               ? root.t("К плейлистам")
@@ -5052,6 +5099,47 @@ Panel {
     AccountLoginForm { Layout.fillWidth: true }
   }
 
+  // The artist's name as a link. The player has one thing that goes somewhere, and this is
+  // it: VK offers this client no artist page, so «somewhere» is the search tab with the
+  // name already in its field.
+  //
+  // A Text and not a Button: a name that filled in under the pointer would be a second
+  // shape on a line that has always been plain type. The underline is the whole
+  // affordance, and the target is the line's own band — the artist's line belongs to the
+  // artist, and a name forty pixels wide is a name somebody has to aim at.
+  //
+  // `artist` is the name; `otherwise` is what the line says when the name is not its own —
+  // a stream says it is on air, and a stopped player says nothing. A line with no name
+  // behind it is not a link: no underline, no hand, and nothing to search for.
+  component ArtistLink: Text {
+    id: artistLink
+    property string artist: ""
+    property string otherwise: ""
+    readonly property bool linked: artistLink.artist !== ""
+    signal activated()
+
+    textFormat: Text.PlainText
+    elide: Text.ElideRight
+    text: artistLink.linked ? artistLink.artist : artistLink.otherwise
+    visible: artistLink.linked || artistLink.otherwise !== ""
+    font.family: Style.font.family
+    font.underline: artistLink.linked && artistPointer.containsMouse
+
+    MouseArea {
+      id: artistPointer
+      anchors.fill: parent
+      enabled: artistLink.linked
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: artistLink.activated()
+    }
+
+    PanelToolTip {
+      visible: artistLink.linked && artistPointer.containsMouse
+      text: root.t("Искать исполнителя")
+    }
+  }
+
   // Album art in the two sizes the popup uses. The buffering indicator lives
   // here so both sizes keep exactly the same one.
   component CoverArt: BorderSurface {
@@ -5151,21 +5239,38 @@ Panel {
           font.bold: true
         }
 
-        Text {
+        // The artist and the times share this line, as they always have, but only the
+        // artist is a way in: the times belong to the track, and a search for «0:36» is a
+        // query nobody asked for. Two Texts for that reason — and the name is the one that
+        // gives up its width when the line runs out of room.
+        RowLayout {
           Layout.fillWidth: true
-          textFormat: Text.PlainText
-          elide: Text.ElideRight
-          text: root.onAir()
-            ? root.t("Радио · в эфире")
-            : (root.hasTrack
-               ? (root.trackValue("artist", "") + (root.duration > 0
-                  ? (root.trackValue("artist", "") ? " · " : "") + I18n.clock(root.displayPosition)
-                    + " / " + I18n.clock(root.duration)
-                  : ""))
-               : "")
-          color: root.dim
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          spacing: 0
+
+          ArtistLink {
+            id: barArtist
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+            artist: root.onAir() ? "" : (root.hasTrack ? String(root.trackValue("artist", "")) : "")
+            otherwise: root.onAir() ? root.t("Радио · в эфире") : ""
+            color: root.dim
+            font.pixelSize: Style.font.caption
+            onActivated: root.searchArtist(barArtist.artist)
+          }
+
+          Text {
+            Layout.alignment: Qt.AlignVCenter
+            textFormat: Text.PlainText
+            text: {
+              if (!root.hasTrack || root.onAir() || !(root.duration > 0)) return ""
+              var artist = String(root.trackValue("artist", ""))
+              return (artist !== "" ? " · " : "")
+                + I18n.clock(root.displayPosition) + " / " + I18n.clock(root.duration)
+            }
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
         }
       }
 
@@ -5328,19 +5433,17 @@ Panel {
           font.bold: true
         }
 
-        Text {
+        ArtistLink {
           id: artistText
           Layout.fillWidth: true
-          textFormat: Text.PlainText
-          elide: Text.ElideRight
-          visible: root.hasTrack || root.onAir()
-          text: root.onAir() ? root.t("Радио · в эфире") : root.trackValue("artist", "")
+          artist: root.onAir() ? "" : String(root.trackValue("artist", ""))
+          otherwise: root.onAir() ? root.t("Радио · в эфире") : ""
           // The artist is not a second headline and not a colour of its own: the
           // reference draws the three lines below the title in one weight and one
           // colour, and it is the bold title that separates them.
           color: root.textColor
-          font.family: Style.font.family
           font.pixelSize: Math.round(Style.font.subtitle * 1.1)
+          onActivated: root.searchArtist(artistText.artist)
         }
 
         Text {
@@ -5674,11 +5777,7 @@ Panel {
       iconText: "󰍉"
       text: root.t("Поиск")
       selected: root.view === "search"
-      onClicked: {
-        root.cursor = -1
-        root.view = "search"
-        root.activeField().forceActiveFocus()
-      }
+      onClicked: root.enterSearch()
     }
 
     BarDivider { Layout.preferredHeight: topRow.cellHeight }
