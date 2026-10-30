@@ -524,6 +524,17 @@ The popup comes in two shapes, chosen in the settings:
   and the two buttons crowded the seek line, and the extra 80 pixels are also what lets
   the gallery put three covers across instead of two.
 
+  That line has no grid of its own: it is read off the row above it, because three
+  placements the eye checks against that row cannot each be measured from the line's own
+  widths. Shuffle and repeat are the pair centred on the transport they answer to, so the
+  two rows read as one cluster of buttons; the volume is the seek line's own span — the
+  same x, the same width, the same dot for a handle — and sits directly under it, since a
+  line shorter or longer than the one above reads as a second, lesser control rather than
+  the same one on another value; and the percentage, a step larger than the caption it
+  was, is centred on the speaker and the menu button at the row's far end instead of
+  hanging off the card's right edge, where it sat under the menu alone and read as the
+  menu's.
+
   The seek line, the transport and the two buttons at the right are one line, and the
   times hang under it: a block that held both and was centred as a whole would put the
   line itself a caption's height too high, on the one row where it has to be level with

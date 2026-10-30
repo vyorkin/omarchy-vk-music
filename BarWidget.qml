@@ -5698,6 +5698,7 @@ Panel {
       }
 
       GlyphButton {
+        id: nextButton
         iconText: "󰒭"
         tint: root.textColor
         enabled: root.queue.length > 0
@@ -5791,6 +5792,7 @@ Panel {
 
       // The three dots: the controls that did not fit the row, one line below it.
       GlyphButton {
+        id: menuButton
         iconText: "󰇙"
         tint: root.playerControlsOpen ? Color.accent : root.textColor
         glyphSize: Math.round(Style.font.iconLarge * 0.95)
@@ -5801,13 +5803,52 @@ Panel {
       }
     }
 
-    // What the menu button opens: the three controls the row above has no place for.
-    RowLayout {
+    // What the menu button opens: the two controls that answer what plays next, and the
+    // sound. The row has no grid of its own — it is read off the row above it, because two
+    // rows that are meant to look like one block cannot each be laid out from their own
+    // widths. Shuffle and repeat are the pair centred on the transport they answer to, so
+    // the two lines read as one cluster seen from below; the volume is the seek line's own
+    // width, with the same dot for a handle, and sits exactly under it — a line shorter or
+    // longer than the one above it is a second, lesser control rather than the same one on
+    // another value; and the percentage is centred on the speaker and the dots at the row's
+    // end, a step larger than the caption it was, so it answers the two times under the
+    // line above. Everything is placed by hand rather than by a `RowLayout`, since a row
+    // that lays its children out itself spends the widths the row above had already fixed.
+    Item {
+      id: controlsMenuRow
       Layout.fillWidth: true
-      spacing: Style.space(6)
+      Layout.preferredHeight: Math.max(shuffleItem.height, volumeSlider.implicitHeight)
       visible: root.signedIn && root.playerControlsOpen
 
+      // The transport's span, read off the row above rather than summed from the buttons'
+      // own boxes: `prevButton.x` is where the row put it, and a sum written out here would
+      // be the same numbers kept in a second place.
+      readonly property real transportLeft: prevButton.x
+      readonly property real transportSpan: nextButton.x + nextButton.width - transportLeft
+      readonly property real transportCentre: transportLeft + transportSpan / 2
+      readonly property real pairGap: Style.space(6)
+      readonly property real pairWidth: shuffleItem.width + pairGap + repeatItem.width
+
+      // Where the seek line is, and — with no length to seek in, when the seek column is
+      // not there — what the transport and the sound leave between them.
+      readonly property bool seekShown: seekColumn.visible
+      readonly property real lineLeft: seekShown
+        ? seekColumn.x
+        : transportLeft + transportSpan + controlsRow.spacing
+      readonly property real lineRight: seekShown
+        ? seekColumn.x + seekColumn.width
+        : speakerButton.x - controlsRow.spacing
+
+      // The speaker and the dots are one pair at the row's right end, and the number under
+      // them hangs off their middle: aligned to the right edge instead it sat under the
+      // dots alone, and read as the menu's rather than as the sound's.
+      readonly property real percentWidth: Style.space(40)
+      readonly property real percentCentre: (speakerButton.x + menuButton.x + menuButton.width) / 2
+
       GlyphButton {
+        id: shuffleItem
+        x: Math.round(controlsMenuRow.transportCentre - controlsMenuRow.pairWidth / 2)
+        anchors.verticalCenter: parent.verticalCenter
         iconText: "󰒟"
         tint: root.shuffled ? Color.accent : root.textColor
         glyphSize: Math.round(Style.font.iconLarge * 0.95)
@@ -5816,6 +5857,9 @@ Panel {
       }
 
       GlyphButton {
+        id: repeatItem
+        x: shuffleItem.x + shuffleItem.width + controlsMenuRow.pairGap
+        anchors.verticalCenter: parent.verticalCenter
         iconText: root.repeatGlyph
         tint: root.repeatMode === "off" ? root.textColor : Color.accent
         glyphSize: Math.round(Style.font.iconLarge * 0.95)
@@ -5825,8 +5869,13 @@ Panel {
       }
 
       PanelSlider {
-        Layout.fillWidth: true
-        Layout.alignment: Qt.AlignVCenter
+        id: volumeSlider
+        x: Math.round(controlsMenuRow.lineLeft)
+        width: Math.max(0, Math.round(controlsMenuRow.lineRight - controlsMenuRow.lineLeft))
+        anchors.verticalCenter: parent.verticalCenter
+        // The seek line's own handle: the two sliders are one control drawn on two values,
+        // and the kit's 14-pixel knob on a line this long reads as a different slider.
+        knobSize: Style.space(9)
         minimum: 0
         maximum: 100
         value: root.displayVolume
@@ -5837,14 +5886,16 @@ Panel {
       }
 
       Text {
-        Layout.preferredWidth: Style.space(38)
-        Layout.alignment: Qt.AlignVCenter
-        horizontalAlignment: Text.AlignRight
+        id: volumePercent
+        x: Math.round(controlsMenuRow.percentCentre - width / 2)
+        width: controlsMenuRow.percentWidth
+        anchors.verticalCenter: parent.verticalCenter
+        horizontalAlignment: Text.AlignHCenter
         textFormat: Text.PlainText
         text: Math.round(root.displayVolume) + "%"
         color: root.dim
         font.family: Style.font.family
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Style.font.body
       }
     }
 
@@ -5856,6 +5907,14 @@ Panel {
       if (root.isExtended()) return
       if (playerColumn._reported || playerColumn.width <= 0 || playerColumn.height <= 0) return
       playerColumn._reported = true
+      // A frame later rather than at once: the widths the row above hands down arrive
+      // after the heights that brought us here, and a report taken on this pass can
+      // carry a seek line a quarter of its width. The numbers are only worth having if
+      // they are the ones the card was laid out with.
+      Qt.callLater(playerColumn.reportGeometry)
+    }
+
+    function reportGeometry() {
       console.log("[vk-music] player", JSON.stringify({
         column: [playerColumn.width, playerColumn.height],
         cover: [playerCover.width, playerCover.height],
@@ -5866,7 +5925,19 @@ Panel {
         play: [playButton.width, playButton.height],
         glyphs: [playButton.iconSize, prevButton.glyphSize, speakerButton.glyphSize],
         type: [titleText.font.pixelSize, artistText.fontSize,
-               captionText.font.pixelSize, elapsedText.font.pixelSize]
+               captionText.font.pixelSize, elapsedText.font.pixelSize],
+        // The line the menu button opens, against the one it hangs under: the pair's
+        // centre against the transport's, the volume's span against the seek line's, and
+        // the number's centre against the speaker and the dots.
+        menu: {
+          pairCentre: shuffleItem.x + controlsMenuRow.pairWidth / 2,
+          transportCentre: controlsMenuRow.transportCentre,
+          volume: [volumeSlider.x, volumeSlider.width],
+          seek: [seekColumn.x, seekColumn.width],
+          percentCentre: volumePercent.x + volumePercent.width / 2,
+          soundCentre: controlsMenuRow.percentCentre,
+          percentSize: volumePercent.font.pixelSize
+        }
       }))
     }
   }
