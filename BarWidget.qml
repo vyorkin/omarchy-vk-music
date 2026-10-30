@@ -1046,6 +1046,33 @@ Panel {
     keys.forceActiveFocus()
   }
 
+  // The cell of «Обзор» is two things: the way in to the tab, and — pressed from inside
+  // the tab — the way back to the tab's own first page. A section is a page under this
+  // tab, and so is a playlist opened on top of one, and a person's page; a cell that only
+  // ever set `view` did nothing from any of them, and read as a dead button rather than as
+  // the tab it is.
+  function enterBrowse() {
+    root.cursor = -1
+    if (root.view !== "browse") {
+      root.view = "browse"
+      root.scheduleBrowse(root.browseSlug !== "" ? root.browseSlug : "friends")
+      root.focusList()
+      return
+    }
+    // Already here. A browse that was scheduled on the way through the tabs is dropped:
+    // the page being asked for is the first one, and a section landing a moment later
+    // would take it back.
+    root._pendingBrowse = ""
+    if (root.openPlaylist !== null) root.closePlaylistView()
+    // The view is stated rather than left to `closePlaylistView`: that function returns to
+    // the tab the playlist was opened from, and this cell is the browse tab whatever the
+    // playlist recorded.
+    root.view = "browse"
+    // `browseFriends` clears what a person's page and a section left behind, so the
+    // person whose page is up needs no step of its own.
+    root.browseFriends()
+  }
+
   // A filter belongs to the list it was typed in. Carrying it into a list the user did
   // not type it in hides rows they have every reason to expect: filtering a section
   // and then opening a playlist showed an empty playlist.
@@ -5726,6 +5753,10 @@ Panel {
       tooltipText: root.t("Настройки")
       onClicked: {
         root.cursor = -1
+        // The settings are a tab with three pages, and the gear is the way back to the
+        // first of them: pressed from «Бар» or «Воспроизведение» it used to change
+        // nothing at all.
+        if (root.view === "settings") root.settingsTab = "account"
         root.view = "settings"
       }
     }
@@ -5760,12 +5791,7 @@ Panel {
       iconText: "󰊊"
       text: root.t("Обзор")
       selected: root.view === "browse"
-      onClicked: {
-        root.cursor = -1
-        root.view = "browse"
-        root.scheduleBrowse(root.browseSlug !== "" ? root.browseSlug : "friends")
-        root.focusList()
-      }
+      onClicked: root.enterBrowse()
     }
 
     BarCell {

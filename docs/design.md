@@ -659,6 +659,15 @@ end that view had neither a field nor a way out of it, and read as a search that
 its own field. The cell says where it goes — «К плейлистам» from a section, «К поиску» from
 the search — and the search's two halves of the bar keep their width beside it.
 
+A cell pressed while its own tab is the tab on screen is the same distinction read the other
+way: it is not a switch but the way back to that tab's first page. «Обзор» pressed from a
+section, from a playlist opened over one, or from a person's page goes to the list of people
+(`enterBrowse()`), and the gear pressed from «Бар» or «Воспроизведение» goes to «Аккаунт».
+Both cells used to set a state the panel was already in and nothing on screen moved, which
+is what made a section page or a settings sub-page a place the tab could not take you out
+of. The `[`/`]` keys are not covered by the rule: they walk from tab to tab and never land
+on the one already shown, so the rule lives where the press does, on the cell itself.
+
 The bar over the list is framed by the same rule that closes the player, and the cells sit
 flush between the two: one line above them, one under them, no gap either side. A rule that
 floats a few pixels above a band of cells reads as the bottom border of the block above it
