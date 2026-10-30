@@ -666,6 +666,20 @@ end that view had neither a field nor a way out of it, and read as a search that
 its own field. The cell says where it goes — «К плейлистам» from a section, «К поиску» from
 the search — and the search's two halves of the bar keep their width beside it.
 
+A tab is not a page, and the two were being pressed as if they were the same switch. An
+opened playlist owns the card whichever tab is showing — that is what keeps its tracks and
+its «Назад» when the tab beside it is pressed — so «Поиск» pressed from a playlist opened in
+the section view put the search tab up under a card that went on showing the playlist, and
+the tab read as a cell that does nothing. There is one way in to the tab now
+(`enterSearch()`), and it ends the page before it shows the field: the tab that cannot show
+a page is the tab that ends it. The click and the `[`/`]` keys go through it alike, since a
+key that lands where a click lands is the same way in. The queue's section cells had the
+same hole — `openSection` asked for a page while an opened playlist kept the card — so they
+let go of the page too. The person's page is the exception: the other tabs show around it,
+so it stays behind the search and comes back with the browse tab. What the way out says is
+where it lands rather than which tab is showing it, because a playlist opened from the
+search returns to the search even when the browse tab is the one over it.
+
 A cell pressed while its own tab is the tab on screen is the same distinction read the other
 way: it is not a switch but the way back to that tab's first page. «Обзор» pressed from a
 section, from a playlist opened over one, or from a person's page goes to the list of people
