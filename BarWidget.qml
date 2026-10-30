@@ -281,11 +281,13 @@ Panel {
   // is the invisible Text at the bottom of this file that measures it.
   readonly property real barCellHeight: Math.ceil(barProbe.implicitHeight)
     + 2 * Style.spacing.controlPaddingY
-  // The bar at the top of the card is a fifth taller than the others, because it is the
-  // first thing the eye lands on and the one a hand reaches for without looking. The bar
-  // of status under the list is drawn to the same height: the two close the card, and two
-  // bars that frame a card should be the same bar.
-  readonly property real topBarHeight: Math.round(barCellHeight * 1.2)
+  // The bar at the top of the card is two fifths taller than the others, because it is the
+  // first thing the eye lands on and the one a hand reaches for without looking — a tab
+  // bar is read as a band with a line under it rather than as a strip of buttons, and the
+  // room around the label is what makes that read. The bar of status under the list is
+  // drawn to the same height: the two close the card, and two bars that frame a card
+  // should be the same bar.
+  readonly property real topBarHeight: Math.round(barCellHeight * 1.4)
 
   // Which popup shape is in use: the compact one or the extended two-column one.
   // Both are built from the same blocks, and only the visible one takes keys.
@@ -6020,14 +6022,14 @@ Panel {
     }
   }
 
-  // The bar's bottom edge: a solid rule the width of the card's own border, and the
-  // reason it is solid rather than one of the panel's 12 % separators is that the cell in
-  // use has to run into it. A soft line under a hard fill leaves the fill floating, and
-  // the eye reads the gap between them as a margin the bar does not have.
+  // The bar's bottom edge: a hairline the width of the card, in the bar's own colour at a
+  // quarter. Thin and soft because the bar is closed by a line and not by a border: the
+  // fill of the cell in use runs into it, and that fill is the whole of the mark — a rule
+  // thick enough to be a mark of its own reads as a second, heavier bottom border.
   component BarEdge: Rectangle {
     Layout.fillWidth: true
-    Layout.preferredHeight: Math.max(1, Style.space(2))
-    color: root.textColor
+    Layout.preferredHeight: Style.space(1)
+    color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.25)
   }
 
   // A divider between a tool at the bar's end and the views in the middle. Only there:

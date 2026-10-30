@@ -547,9 +547,13 @@ views the fill of the one in use is the divider. The bar's height is stated once
 (`cellHeight`, one line of text plus the control padding) instead of measured per cell,
 and the two tools are as wide as that height is tall: a cell that measured its own glyph
 left the fill of the active one a pixel off its neighbours, which in a band of flush
-cells is exactly what the eye picks up. The bar at the top of the card is a fifth taller
-than the bars under it — `cellHeight` is `barCellHeight * 1.2` there — because it is the
-first thing the eye lands on and the one a hand reaches for without looking.
+cells is exactly what the eye picks up. The bar at the top of the card is two fifths
+taller than the bars under it — `cellHeight` is `barCellHeight * 1.4` there — because it
+is the first thing the eye lands on and the one a hand reaches for without looking: the
+room around a label is what makes a band read as a tab bar rather than as a strip of
+buttons. The fill of the cell in use is the whole of its mark: an accent rule under it was
+tried and taken out, because a band that closes on a hairline is closed by that line, and
+anything heavier under one cell reads as a second, thicker bottom border of the whole bar.
 
 The card has no padding of its own (`padding: 0` on the panel) and everything is placed
 inside `cardInset` instead: the bar takes none, so it is the card's lid and the cell in
@@ -568,10 +572,13 @@ arrow everywhere else. An item that is drawn outside its parent is an item the p
 can miss; the bar's own cells are now inside their ancestors like any other control, and
 nothing in the panel overhangs its parent for paint either.
 
-That bottom edge is a solid two-pixel rule the width of the card's border, not one of
-the panel's 12 % separators: the cell in use has to run into it. Under a soft line the
-fill stopped a gap short and floated, and the eye read the gap as a margin the bar does
-not have — which is exactly what «я всё ещё вижу отступ снизу» was looking at.
+That bottom edge is a hairline of the bar's own colour at a quarter, and the cell in use
+runs into it: under a line with nothing under it, the fill stopped a gap short and
+floated, and the eye read the gap as a margin the bar does not have — which is exactly
+what «я всё ещё вижу отступ снизу» was looking at. It is one pixel rather than two, and
+a quarter rather than the full foreground, because the bar is closed by a line and not by
+a border: a rule bright enough to be a mark of its own under a fill that dark reads as a
+heavy border the card does not have.
 
 The bar over the list — the catalog's sections — is the same bar as the one at the top of
 the card: flush, square, from the card's edge to its edge and with no inset of its own,
