@@ -373,7 +373,12 @@ Panel {
   readonly property bool statusUrgent: api.errorText !== "" || root.halted !== ""
 
   readonly property color fg: bar && bar.barForeground !== undefined ? bar.barForeground : Color.foreground
-  readonly property color dim: Qt.darker(root.fg, 1.5)
+  // Text that is there but not speaking: the artist under the title, the hints, a
+  // placeholder in an empty field. It cannot be `Qt.darker(fg)`, which is what this was:
+  // darkening the ink of a light theme darkens the darkest colour there is, so on a light
+  // card every one of those lines came out as black as the title it sits under. Half-
+  // strength ink over whatever is behind it is dimmer on both kinds of card.
+  readonly property color dim: Util.alpha(root.fg, 0.55)
   readonly property color textColor: Color.popups ? Color.popups.text : Color.foreground
   readonly property color cardBg: bar && bar.background !== undefined ? bar.background : Color.background
   // The surface the popup sits on. Used for the scrim under the percentage: the
@@ -2559,6 +2564,7 @@ Panel {
     TextField {
       id: accountLoginField
       Layout.fillWidth: true
+      placeholderTextColor: root.dim
       placeholderText: root.t("Телефон, email или id")
       foreground: root.textColor
       accent: Color.accent
@@ -2574,6 +2580,7 @@ Panel {
     TextField {
       id: accountPasswordField
       Layout.fillWidth: true
+      placeholderTextColor: root.dim
       placeholderText: root.t("Пароль")
       password: true
       foreground: root.textColor
@@ -2633,6 +2640,7 @@ Panel {
       TextField {
         id: accountCodeField
         Layout.fillWidth: true
+        placeholderTextColor: root.dim
         placeholderText: root.t("Код подтверждения")
         foreground: root.textColor
         accent: Color.accent
@@ -2680,6 +2688,7 @@ Panel {
       TextField {
         id: accountCaptchaField
         Layout.fillWidth: true
+        placeholderTextColor: root.dim
         placeholderText: "success_token"
         foreground: root.textColor
         accent: Color.accent
@@ -5128,44 +5137,100 @@ Panel {
     AccountLoginForm { Layout.fillWidth: true }
   }
 
-  // The artist's name as a link. The player has one thing that goes somewhere, and this is
-  // it: VK offers this client no artist page, so «somewhere» is the search tab with the
-  // name already in its field.
+  // The names of what is playing, each one a link of its own. VK hands the artists over as
+  // one string — «Coolio, Holy Priest, 1 World» — and a search for that whole line finds
+  // nothing that any one of them wrote: a search belongs to a name, so every name is a link
+  // and the commas between them are just commas (and still no link: a click on «, » is a
+  // click on nothing).
   //
-  // A Text and not a Button: a name that filled in under the pointer would be a second
-  // shape on a line that has always been plain type. The underline is the whole
-  // affordance, and the target is the line's own band — the artist's line belongs to the
-  // artist, and a name forty pixels wide is a name somebody has to aim at.
+  // Texts and not Buttons: a name that filled in under the pointer would be a second shape
+  // on a line that has always been plain type. The underline is the whole affordance, and
+  // the target is the name's own band — a name forty pixels wide is a name somebody has to
+  // aim at, and the clickable width stops where the drawn one does, so the empty room at the
+  // end of a short line is not a link either.
   //
-  // `artist` is the name; `otherwise` is what the line says when the name is not its own —
-  // a stream says it is on air, and a stopped player says nothing. A line with no name
-  // behind it is not a link: no underline, no hand, and nothing to search for.
-  component ArtistLink: Text {
-    id: artistLink
+  // The line does not wrap: it is a caption under the title, and a block of text there would
+  // push the time — or the transport beside it — off the row. When the names run out of room
+  // the last of them gives up its end (`elide`) and the ones before it keep their whole
+  // width: the alternative, every name cut short, is a line nobody can read at all.
+  //
+  // `artist` is the string as VK sent it; `otherwise` is what the line says when there is no
+  // name of its own — a stream says it is on air. A line with no name behind it is not a
+  // link: no underline, no hand, and nothing to search for.
+  component ArtistLinks: RowLayout {
+    id: artistLinks
     property string artist: ""
     property string otherwise: ""
-    readonly property bool linked: artistLink.artist !== ""
-    signal activated()
+    property color ink: root.dim
+    property int fontSize: Style.font.subtitle
 
-    textFormat: Text.PlainText
-    elide: Text.ElideRight
-    text: artistLink.linked ? artistLink.artist : artistLink.otherwise
-    visible: artistLink.linked || artistLink.otherwise !== ""
-    font.family: Style.font.family
-    font.underline: artistLink.linked && artistPointer.containsMouse
+    // One entry per drawn piece: `name` is empty on a comma, which is what makes a segment
+    // a separator rather than a link.
+    readonly property var segments: {
+      var parts = String(artistLinks.artist).split(",")
+      var out = []
+      for (var i = 0; i < parts.length; i++) {
+        var name = parts[i].trim()
+        if (name === "") continue
+        if (out.length > 0) out.push({ "name": "", "text": ", " })
+        out.push({ "name": name, "text": name })
+      }
+      return out
+    }
+    readonly property bool linked: artistLinks.segments.length > 0
 
-    MouseArea {
-      id: artistPointer
-      anchors.fill: parent
-      enabled: artistLink.linked
-      hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      onClicked: artistLink.activated()
+    spacing: 0
+    visible: artistLinks.linked || artistLinks.otherwise !== ""
+
+    // A stream, or a player with no track: one line that says so and goes nowhere.
+    Text {
+      Layout.fillWidth: true
+      visible: !artistLinks.linked
+      textFormat: Text.PlainText
+      elide: Text.ElideRight
+      text: artistLinks.otherwise
+      color: artistLinks.ink
+      font.family: Style.font.family
+      font.pixelSize: artistLinks.fontSize
     }
 
-    PanelToolTip {
-      visible: artistLink.linked && artistPointer.containsMouse
-      text: root.t("Искать исполнителя")
+    Repeater {
+      model: artistLinks.segments
+      delegate: Text {
+        id: segment
+        readonly property bool isLink: modelData.name !== ""
+
+        // Only the last name may grow or shrink: with room to spare it takes it (a short
+        // line is still read from the left), and with too little it is the one that elides.
+        Layout.fillWidth: segment.isLink && index === artistLinks.segments.length - 1
+        Layout.minimumWidth: 0
+        Layout.preferredWidth: implicitWidth
+
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        text: modelData.text
+        color: artistLinks.ink
+        font.family: Style.font.family
+        font.pixelSize: artistLinks.fontSize
+        font.underline: segment.isLink && segmentPointer.containsMouse
+
+        MouseArea {
+          id: segmentPointer
+          // The drawn name, not the room the row handed out: a link that answers where
+          // nothing is written is a link that lies about its own size.
+          width: Math.min(segment.width, segment.implicitWidth)
+          height: segment.height
+          enabled: segment.isLink
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.searchArtist(modelData.name)
+        }
+
+        PanelToolTip {
+          visible: segment.isLink && segmentPointer.containsMouse
+          text: root.t("Искать исполнителя")
+        }
+      }
     }
   }
 
@@ -5232,30 +5297,47 @@ Panel {
     }
   }
 
-  // The wide popup keeps its player to one band at the top: the cover, what it
-  // is playing, and everything that controls it in a single row, with a thin
-  // seek line under it. The list below gets the full width.
+  // The wide popup keeps its player to two bands at the top, laid out the way the compact
+  // player lays its block out: one row holding the cover, what is playing — the title, the
+  // artist, and the time on a line of its own — the transport, and the heart at the row's
+  // far end; under it the seek line, with shuffle and repeat at its left and the sound at
+  // its right. The transport shares the row with the title instead of buying a band of its
+  // own: it is what the hand reaches for while the eye is on the title, and a band of plain
+  // glyphs spent the height the list can use. Shuffle and repeat are not part of it — they
+  // answer what comes after this track, not what plays now — so they sit on the row that
+  // says where the track is going. The cover and the type are the compact player's own
+  // sizes; the transport is the one thing bigger than its compact twin — it shares a band
+  // with a wide title rather than a bar the height of one line, and a 30-pixel box in the
+  // middle of that band reads as a speck. It keeps the right end, before the heart: the
+  // room between it and the cover belongs to the words, and a trio parked in the middle of
+  // the card would spend a title's width on air. The list below gets the full width.
   component PlayerBar: ColumnLayout {
     id: playerBar
-    spacing: Style.space(4)
+    spacing: Style.space(8)
 
+    // What is playing, and what controls it: the cover, the three lines, the transport,
+    // and the heart at the row's far end.
     RowLayout {
+      id: barMetaRow
       Layout.fillWidth: true
-      spacing: Style.space(8)
+      spacing: Style.space(16)
       visible: root.signedIn
 
       CoverArt {
+        id: barCover
         Layout.alignment: Qt.AlignVCenter
-        size: Style.space(56)
+        // The compact player's cover: the two cards are one player in two shapes.
+        size: Style.space(91)
       }
 
       ColumnLayout {
         Layout.fillWidth: true
         Layout.minimumWidth: Style.space(110)
         Layout.alignment: Qt.AlignVCenter
-        spacing: Style.space(1)
+        spacing: Style.space(4)
 
         Text {
+          id: barTitle
           Layout.fillWidth: true
           textFormat: Text.PlainText
           elide: Text.ElideRight
@@ -5264,106 +5346,97 @@ Panel {
             : (root.hasTrack ? root.trackValue("title") : root.t("Ничего не играет"))
           color: root.textColor
           font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
+          font.pixelSize: Style.font.heading
           font.bold: true
         }
 
-        // The artist and the times share this line, as they always have, but only the
-        // artist is a way in: the times belong to the track, and a search for «0:36» is a
-        // query nobody asked for. Two Texts for that reason — and the name is the one that
-        // gives up its width when the line runs out of room.
-        RowLayout {
+        // Only the artist is a way in: the times belong to the track, and a search for
+        // «0:36» is a query nobody asked for. That is why the time is a line of its own
+        // under the artist instead of a suffix on the artist's line — as a suffix it was
+        // the first thing a long name ate, and a time nobody can read is the one number
+        // the seek line cannot say.
+        ArtistLinks {
+          id: barArtist
           Layout.fillWidth: true
-          spacing: 0
+          Layout.alignment: Qt.AlignVCenter
+          artist: root.onAir() ? "" : (root.hasTrack ? String(root.trackValue("artist", "")) : "")
+          otherwise: root.onAir() ? root.t("Радио · в эфире") : ""
+          ink: root.dim
+          fontSize: Style.font.subtitle
+        }
 
-          ArtistLink {
-            id: barArtist
-            Layout.fillWidth: true
-            Layout.alignment: Qt.AlignVCenter
-            artist: root.onAir() ? "" : (root.hasTrack ? String(root.trackValue("artist", "")) : "")
-            otherwise: root.onAir() ? root.t("Радио · в эфире") : ""
-            color: root.dim
-            font.pixelSize: Style.font.caption
-            onActivated: root.searchArtist(barArtist.artist)
-          }
-
-          Text {
-            Layout.alignment: Qt.AlignVCenter
-            textFormat: Text.PlainText
-            text: {
-              if (!root.hasTrack || root.onAir() || !(root.duration > 0)) return ""
-              var artist = String(root.trackValue("artist", ""))
-              return (artist !== "" ? " · " : "")
-                + I18n.clock(root.displayPosition) + " / " + I18n.clock(root.duration)
-            }
-            color: root.dim
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-          }
+        Text {
+          id: barTime
+          Layout.fillWidth: true
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          visible: root.hasTrack && !root.onAir() && root.duration > 0
+          text: I18n.clock(root.displayPosition) + " / " + I18n.clock(root.duration)
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.body
         }
       }
 
-      GlyphButton {
-        iconText: "󰒟"
-        tint: root.shuffled ? Color.accent : root.textColor
-        tooltipText: root.shuffled ? root.t("Перемешивание включено") : root.t("Перемешать")
-        onClicked: root.toggleShuffle()
+      // The transport shares the row with the title rather than taking a band of its own:
+      // previous, the round play button, next — the three glyphs every player has. Shuffle
+      // and repeat are not here: they decide what plays next rather than what plays now, so
+      // they belong with the sound at the other end of the seek line, the row of what is not
+      // the track itself. The boxes are the compact player's, a size up — 40 for the glyphs
+      // around a 52-pixel circle where the bar card draws 30 around a 40-pixel one — because
+      // this band is a fifth of a 620-pixel card tall, and the compact sizes read as a strip
+      // of specks in the middle of it.
+      RowLayout {
+        id: barTransport
+        Layout.alignment: Qt.AlignVCenter
+        spacing: Style.space(2)
+
+        GlyphButton {
+          id: barPrevious
+          Layout.alignment: Qt.AlignVCenter
+          Layout.preferredWidth: Style.space(40)
+          Layout.preferredHeight: Style.space(40)
+          iconText: "󰒮"
+          tint: root.textColor
+          enabled: root.queue.length > 0
+          opacity: enabled ? 1.0 : 0.4
+          glyphSize: Math.round(Style.font.iconLarge * 1.25)
+          onClicked: root.skipPrevious()
+        }
+
+        PlayCircle {
+          id: barPlay
+          Layout.preferredWidth: Style.space(52)
+          Layout.preferredHeight: Style.space(52)
+          Layout.alignment: Qt.AlignVCenter
+          iconSize: Math.round(Style.font.iconLarge * 1.2)
+        }
+
+        GlyphButton {
+          id: barNext
+          Layout.alignment: Qt.AlignVCenter
+          Layout.preferredWidth: Style.space(40)
+          Layout.preferredHeight: Style.space(40)
+          iconText: "󰒭"
+          tint: root.textColor
+          enabled: root.queue.length > 0
+          opacity: enabled ? 1.0 : 0.4
+          glyphSize: Math.round(Style.font.iconLarge * 1.25)
+          onClicked: root.skipNext()
+        }
       }
 
-      GlyphButton {
-        iconText: root.repeatGlyph
-        tint: root.repeatMode === "off" ? root.textColor : Color.accent
-        tooltipText: root.repeatMode === "off" ? root.t("Повтор выключен")
-          : (root.repeatMode === "one" ? root.t("Повторять трек") : root.t("Повторять очередь"))
-        onClicked: root.cycleRepeat()
-      }
-
-      GlyphButton {
-        iconText: "󰒮"
-        tint: root.textColor
-        enabled: root.queue.length > 0
-        opacity: enabled ? 1.0 : 0.4
-        onClicked: root.skipPrevious()
-      }
-
-      GlyphButton {
-        iconText: root.playing ? "󰏤" : "󰐊"
-        tint: root.textColor
-        enabled: root.hasTrack || root.queue.length > 0
-        opacity: !enabled ? 0.4 : (root.loading ? 0.5 : 1.0)
-        onClicked: root.togglePause()
-      }
-
-      GlyphButton {
-        iconText: "󰒭"
-        tint: root.textColor
-        enabled: root.queue.length > 0
-        opacity: enabled ? 1.0 : 0.4
-        onClicked: root.skipNext()
-      }
-
-      // The speaker opens the volume over the button: the slider arrives where the hand
-      // already is, and the card underneath does not move.
-      GlyphButton {
-        id: volumeButton
-        iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
-        tint: root.displayVolume <= 0 ? Color.accent : root.textColor
-        tooltipText: root.t("Громкость")
-        onClicked: volumePopover.opened ? volumePopover.close() : volumePopover.open()
-      }
-
-      VolumePopover {
-        id: volumePopover
-        anchorItem: volumeButton
-      }
-
-      // The heart sits at the right end, after everything that controls the sound:
-      // it is not a transport control, it is a statement about the track. Lucide's
-      // heart is an outline until the track is in «Моя музыка», then it is filled —
-      // the same glyph the bar uses, so the two say the same thing the same way.
+      // The heart sits at the far end of what is playing, past the transport and a step
+      // clear of it: it is not a transport control, it is a statement about the track,
+      // and a row of buttons that runs into it reads as one long strip. Lucide's heart is
+      // an outline until the track is in «Моя музыка», then it is filled — the same glyph
+      // the bar uses, so the two say the same thing the same way, at the compact player's
+      // 22 pixels.
       Item {
-        Layout.preferredWidth: Style.space(26)
+        id: barHeart
+        Layout.preferredWidth: Style.space(24)
         Layout.preferredHeight: Style.space(24)
+        Layout.leftMargin: Style.space(8)
         Layout.alignment: Qt.AlignVCenter
         visible: !root.onAir() && root.hasTrack
 
@@ -5371,6 +5444,7 @@ Panel {
           anchors.fill: parent
           barItem: root.bar
           loading: root.loading
+          iconSize: Math.round(Style.font.iconLarge * 1.05)
           name: "heart"
           fillOnHover: true
           filled: root.liked
@@ -5380,8 +5454,78 @@ Panel {
           onClicked: root.toggleLike()
         }
       }
+    }
+
+    // The seek line with the sound at its right end, and the two controls that decide what
+    // plays next at its left: shuffle and repeat are not part of the transport — they answer
+    // «what comes after this track» — and the line they sit beside is the one that says where
+    // this track is going. The two sliders share what the four buttons leave as four to one —
+    // «a quarter of the line» — so the volume is a fifth of that band and the line the other
+    // four fifths. The share is taken from the row's own width rather than from the line's
+    // measured one: a width that answers a width is a layout chasing itself.
+    RowLayout {
+      id: barSeekRow
+      Layout.fillWidth: true
+      spacing: Style.space(8)
+
+      readonly property real fixed: barShuffle.width + barRepeat.width + barSpeaker.width
+        + 4 * barSeekRow.spacing
+      readonly property real band: Math.max(0, barSeekRow.width - barSeekRow.fixed)
+      readonly property real soundWidth: Math.round(barSeekRow.band / 5)
+
+      GlyphButton {
+        id: barShuffle
+        Layout.alignment: Qt.AlignVCenter
+        iconText: "󰒟"
+        tint: root.shuffled ? Color.accent : root.textColor
+        glyphSize: Math.round(Style.font.iconLarge * 0.95)
+        tooltipText: root.shuffled ? root.t("Перемешивание включено") : root.t("Перемешать")
+        onClicked: root.toggleShuffle()
+      }
+
+      GlyphButton {
+        id: barRepeat
+        Layout.alignment: Qt.AlignVCenter
+        iconText: root.repeatGlyph
+        tint: root.repeatMode === "off" ? root.textColor : Color.accent
+        glyphSize: Math.round(Style.font.iconLarge * 0.95)
+        tooltipText: root.repeatMode === "off" ? root.t("Повтор выключен")
+          : (root.repeatMode === "one" ? root.t("Повторять трек") : root.t("Повторять очередь"))
+        onClicked: root.cycleRepeat()
+      }
+
       PanelSlider {
-        Layout.preferredWidth: Style.space(84)
+        Layout.fillWidth: true
+        Layout.alignment: Qt.AlignVCenter
+        visible: root.hasTrack && !root.onAir() && root.duration > 0
+        minimum: 0
+        maximum: Math.max(1, root.duration)
+        value: root.displayPosition
+        bar: root.bar
+        onMoved: function(value) { root.seekLive(value) }
+        onReleased: function(value) { root.seekFinal(value) }
+      }
+
+      // With no length to seek in there is nothing to the left of the speaker, so the
+      // sound keeps the right end instead of sliding to the left edge of the card.
+      Item {
+        Layout.fillWidth: true
+        visible: !(root.hasTrack && !root.onAir() && root.duration > 0)
+      }
+
+      // The speaker mutes: the slider beside it already sets the value, so a popover
+      // holding a second copy of that slider would be one control drawn twice.
+      GlyphButton {
+        id: barSpeaker
+        Layout.alignment: Qt.AlignVCenter
+        iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
+        tint: root.displayVolume <= 0 ? Color.accent : root.textColor
+        glyphSize: Math.round(Style.font.iconLarge * 0.95)
+        onClicked: root.toggleMute()
+      }
+
+      PanelSlider {
+        Layout.preferredWidth: barSeekRow.soundWidth
         Layout.alignment: Qt.AlignVCenter
         minimum: 0
         maximum: 100
@@ -5390,20 +5534,31 @@ Panel {
         bar: root.bar
         onMoved: function(value) { root.setVolume(value, true) }
         onReleased: function(value) { root.setVolume(value, false) }
+        // The same secondary action the shell's own mixers carry: right-click silences.
+        onRightClicked: root.toggleMute()
       }
-
     }
 
-    // The seek line: the one control that wants the whole width.
-    PanelSlider {
-      Layout.fillWidth: true
-      visible: root.hasTrack && !root.onAir() && root.duration > 0
-      minimum: 0
-      maximum: Math.max(1, root.duration)
-      value: root.displayPosition
-      bar: root.bar
-      onMoved: function(value) { root.seekLive(value) }
-      onReleased: function(value) { root.seekFinal(value) }
+    // The geometry this band ends up with, once per popup, the way the player column
+    // reports its own: a complaint about the row that now carries the transport is
+    // answered with the numbers the row was laid out with, not with a screenshot.
+    property bool _reported: false
+    onHeightChanged: {
+      // Only the shape in use reports: both players are instantiated, and the one that is
+      // not showing is laid out to nothing — its numbers would answer nothing.
+      if (!root.isExtended()) return
+      if (playerBar._reported || playerBar.width <= 0 || playerBar.height <= 0) return
+      playerBar._reported = true
+      console.log("[vk-music] player band", JSON.stringify({
+        band: [playerBar.width, playerBar.height],
+        cover: [barCover.width, barCover.height],
+        metaRow: barMetaRow.height,
+        transport: [barTransport.width, barTransport.height],
+        heartGap: barHeart.x - (barTransport.x + barTransport.width),
+        play: [barPlay.width, barPlay.height],
+        glyphs: [barPlay.iconSize, barPrevious.glyphSize, barSpeaker.glyphSize],
+        type: [barTitle.font.pixelSize, barArtist.fontSize, barTime.font.pixelSize]
+      }))
     }
   }
 
@@ -5458,11 +5613,11 @@ Panel {
             : (root.hasTrack ? root.trackValue("title") : root.t("Ничего не играет"))
           color: root.textColor
           font.family: Style.font.family
-          font.pixelSize: Math.round(Style.font.heading * 1.1)
+          font.pixelSize: Style.font.heading
           font.bold: true
         }
 
-        ArtistLink {
+        ArtistLinks {
           id: artistText
           Layout.fillWidth: true
           artist: root.onAir() ? "" : String(root.trackValue("artist", ""))
@@ -5470,9 +5625,8 @@ Panel {
           // The artist is not a second headline and not a colour of its own: the
           // reference draws the three lines below the title in one weight and one
           // colour, and it is the bold title that separates them.
-          color: root.textColor
-          font.pixelSize: Math.round(Style.font.subtitle * 1.1)
-          onActivated: root.searchArtist(artistText.artist)
+          ink: root.textColor
+          fontSize: Style.font.subtitle
         }
 
         Text {
@@ -5486,7 +5640,7 @@ Panel {
           text: root.captionLine()
           color: root.textColor
           font.family: Style.font.family
-          font.pixelSize: Math.round(Style.font.subtitle * 1.05)
+          font.pixelSize: Style.font.body
         }
       }
 
@@ -5502,7 +5656,7 @@ Panel {
           anchors.fill: parent
           barItem: root.bar
           loading: root.loading
-          iconSize: Math.round(Style.font.iconLarge * 1.2)
+          iconSize: Math.round(Style.font.iconLarge * 1.05)
           name: "heart"
           fillOnHover: true
           filled: root.liked
@@ -5530,33 +5684,17 @@ Panel {
         tint: root.textColor
         enabled: root.queue.length > 0
         opacity: enabled ? 1.0 : 0.4
-        glyphSize: Math.round(Style.font.iconLarge * 1.1)
-        tooltipText: root.t("Предыдущий трек")
+        glyphSize: Math.round(Style.font.iconLarge * 0.95)
         onClicked: root.skipPrevious()
       }
 
-      // The one round control in the panel: the accent ring is where the eye looks
-      // first, and a circle says «this is the play button» without a word. The box is
-      // square because a circle drawn from a glyph's own width is an ellipse.
-      Item {
-        Layout.preferredWidth: Style.space(45)
-        Layout.preferredHeight: Style.space(45)
+      // The one round control in the panel: the accent ring is where the eye looks first,
+      // and a circle says «this is the play button» without a word.
+      PlayCircle {
+        id: playButton
+        Layout.preferredWidth: Style.space(40)
+        Layout.preferredHeight: Style.space(40)
         Layout.alignment: Qt.AlignVCenter
-
-        Button {
-          id: playButton
-          anchors.fill: parent
-          iconText: root.playing ? "󰏤" : "󰐊"
-          foreground: Color.accent
-          background: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.16)
-          radius: width / 2
-          bordered: true
-          iconSize: Math.round(Style.font.iconLarge * 1.05)
-          enabled: root.hasTrack || root.queue.length > 0
-          opacity: !enabled ? 0.4 : (root.loading ? 0.5 : 1.0)
-          tooltipText: root.playing ? root.t("Пауза") : root.t("Играть")
-          onClicked: root.togglePause()
-        }
       }
 
       GlyphButton {
@@ -5564,20 +5702,29 @@ Panel {
         tint: root.textColor
         enabled: root.queue.length > 0
         opacity: enabled ? 1.0 : 0.4
-        glyphSize: Math.round(Style.font.iconLarge * 1.1)
-        tooltipText: root.t("Следующий трек")
+        glyphSize: Math.round(Style.font.iconLarge * 0.95)
         onClicked: root.skipNext()
       }
 
       // The seek line and its two times: under the line, where they describe it,
       // with the elapsed time at the start and what is left of the track at the end.
       ColumnLayout {
+        id: seekColumn
         Layout.fillWidth: true
         Layout.leftMargin: Style.space(16)
         Layout.rightMargin: Style.space(6)
         Layout.alignment: Qt.AlignVCenter
         spacing: 0
         visible: root.hasTrack && !root.onAir() && root.duration > 0
+
+        // The times hang under the line, so this block is taller than the buttons beside
+        // it — and a block centred as a whole puts the line itself too high, on the one
+        // row where the line has to be level with them. A spacer as tall as the times,
+        // above the line, is what puts the line's own centre on the block's: the air the
+        // times add below it is paid back above it.
+        Item {
+          Layout.preferredHeight: seekTimes.height
+        }
 
         PanelSlider {
           Layout.fillWidth: true
@@ -5598,6 +5745,7 @@ Panel {
         }
 
         RowLayout {
+          id: seekTimes
           Layout.fillWidth: true
           Layout.topMargin: -Style.space(2)
           spacing: Style.space(4)
@@ -5609,7 +5757,7 @@ Panel {
             text: I18n.clock(root.displayPosition)
             color: root.textColor
             font.family: Style.font.family
-            font.pixelSize: Math.round(Style.font.body * 1.25)
+            font.pixelSize: Style.font.body
           }
 
           Item { Layout.fillWidth: true }
@@ -5621,7 +5769,7 @@ Panel {
             text: I18n.clock(root.duration)
             color: root.textColor
             font.family: Style.font.family
-            font.pixelSize: Math.round(Style.font.body * 1.25)
+            font.pixelSize: Style.font.body
           }
         }
       }
@@ -5632,8 +5780,7 @@ Panel {
         id: speakerButton
         iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
         tint: root.displayVolume <= 0 ? Color.accent : root.textColor
-        glyphSize: Math.round(Style.font.iconLarge * 1.25)
-        tooltipText: root.t("Громкость")
+        glyphSize: Math.round(Style.font.iconLarge * 0.95)
         onClicked: volumePopover.opened ? volumePopover.close() : volumePopover.open()
       }
 
@@ -5646,7 +5793,7 @@ Panel {
       GlyphButton {
         iconText: "󰇙"
         tint: root.playerControlsOpen ? Color.accent : root.textColor
-        glyphSize: Math.round(Style.font.iconLarge * 1.25)
+        glyphSize: Math.round(Style.font.iconLarge * 0.95)
         tooltipText: root.playerControlsOpen
           ? root.t("Свернуть управление")
           : root.t("Перемешать, повтор и громкость")
@@ -5663,7 +5810,7 @@ Panel {
       GlyphButton {
         iconText: "󰒟"
         tint: root.shuffled ? Color.accent : root.textColor
-        glyphSize: Math.round(Style.font.iconLarge * 1.1)
+        glyphSize: Math.round(Style.font.iconLarge * 0.95)
         tooltipText: root.shuffled ? root.t("Перемешивание включено") : root.t("Перемешать")
         onClicked: root.toggleShuffle()
       }
@@ -5671,7 +5818,7 @@ Panel {
       GlyphButton {
         iconText: root.repeatGlyph
         tint: root.repeatMode === "off" ? root.textColor : Color.accent
-        glyphSize: Math.round(Style.font.iconLarge * 1.1)
+        glyphSize: Math.round(Style.font.iconLarge * 0.95)
         tooltipText: root.repeatMode === "off" ? root.t("Повтор выключен")
           : (root.repeatMode === "one" ? root.t("Повторять трек") : root.t("Повторять очередь"))
         onClicked: root.cycleRepeat()
@@ -5706,6 +5853,7 @@ Panel {
     // instead of a screenshot, and nothing has to be re-measured by hand.
     property bool _reported: false
     onHeightChanged: {
+      if (root.isExtended()) return
       if (playerColumn._reported || playerColumn.width <= 0 || playerColumn.height <= 0) return
       playerColumn._reported = true
       console.log("[vk-music] player", JSON.stringify({
@@ -5716,8 +5864,8 @@ Panel {
         controlsRow: controlsRow.height,
         rowGap: controlsRow.y - (metaRow.y + metaRow.height),
         play: [playButton.width, playButton.height],
-        glyphs: [playButton.iconSize, prevButton.iconSize, speakerButton.iconSize],
-        type: [titleText.font.pixelSize, artistText.font.pixelSize,
+        glyphs: [playButton.iconSize, prevButton.glyphSize, speakerButton.glyphSize],
+        type: [titleText.font.pixelSize, artistText.fontSize,
                captionText.font.pixelSize, elapsedText.font.pixelSize]
       }))
     }
@@ -5954,6 +6102,25 @@ Panel {
     }
   }
 
+  // The play button of both players: the accent ring is where the eye looks first, and a
+  // circle says «this is the play button» without a word. The box is square because a
+  // circle drawn from a glyph's own width is an ellipse, and it is a component because the
+  // two players must not disagree about the one control they both carry.
+  component PlayCircle: Button {
+    id: playCircle
+    implicitWidth: Style.space(40)
+    implicitHeight: Style.space(40)
+    iconText: root.playing ? "󰏤" : "󰐊"
+    foreground: Color.accent
+    background: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.16)
+    radius: width / 2
+    bordered: true
+    iconSize: Math.round(Style.font.iconLarge * 0.95)
+    enabled: root.hasTrack || root.queue.length > 0
+    opacity: !enabled ? 0.4 : (root.loading ? 0.5 : 1.0)
+    onClicked: root.togglePause()
+  }
+
   // The volume, where the hand that wants it already is. The speaker button used to do one
   // thing only — mute — and a volume button that cannot set a volume is a switch with a
   // speaker drawn on it. This is the slider the panel keeps behind the dots, opened over the
@@ -5993,7 +6160,6 @@ Panel {
         iconText: root.displayVolume <= 0 ? "󰝟" : "󰕾"
         tint: root.displayVolume <= 0 ? Color.accent : root.textColor
         glyphSize: Style.font.icon
-        tooltipText: root.displayVolume <= 0 ? root.t("Включить звук") : root.t("Выключить звук")
         onClicked: root.toggleMute()
       }
 

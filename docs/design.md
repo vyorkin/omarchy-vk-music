@@ -371,10 +371,20 @@ list and nothing on screen. `Likes.js` returns a rebuilt list instead, with ever
 that key carrying the new state, and the panel assigns it back to the lists that hold the
 track — replacing the model is what rebuilds the rows.
 
-In the extended player band the heart sits just left of the volume slider: it
-belongs with the things that act on the sound, not after them. The compact player puts it
-at the end of the title block instead, on the first line of what is playing, where the eye
-already is.
+In the extended player the heart sits at the far end of the first row, past the cover, the
+three lines it belongs to and the transport that shares that row, the same place the
+compact player gives it: it is a statement about the track, not a control of the sound,
+and the row it ends is the row that names the track. It keeps a margin of its own so the
+buttons before it do not run into it.
+
+The artist under the title is a link per name. VK sends the names as one string — «Coolio,
+Holy Priest, 1 World» — and a search for that whole line finds nothing that any one of them
+wrote: a search belongs to a name, so every name is a link of its own and only the commas
+between them are just commas. The line does not wrap: it is a caption under the title, and
+a block of text there would push the transport off the row. When the names run out of room
+the last of them gives up its end and the ones before it keep their whole width — every
+name cut short is a line nobody can read at all. The clickable width stops where the drawn
+name does, so the empty room at the end of a short line is not a link either.
 
 The record under the artist is `album.title` from VK's catalog payloads, or the free-form
 `subtitle` the older `audio.get` answers carry. Both are in the track state the daemon
@@ -498,36 +508,68 @@ The popup comes in two shapes, chosen in the settings:
   lays its controls out, and scaled from it. That reference is 415 pixels of content
   wide and this card is 524, so every size in the player is the reference's times 1.26:
   a bare 106-pixel cover — no rim, no inset, square corners, unlike every other cover in
-  the panel — beside three lines, the title bold at 21, the artist at 17 and the record
-  (or the position, when the track has none) at 16, all three in the same ink, since it
+  the panel — beside three lines, the title bold at 19, the artist at 15 and the record
+  (or the position, when the track has none) at 14, all three in the same ink, since it
   is the bold title that separates the first line from the two under it. The block is
   centred against the cover rather than hung from its top edge, and the heart — 22
   pixels — sits at the row's far end on the block's centre line, not the row's.
 
   The lines under it are the reference's too: 29 pixels of air, then one row of
-  controls, the transport with a 53-pixel round play button in the middle, the seek line
+  controls, the transport with a 47-pixel round play button in the middle, the seek line
   between the transport and the two buttons at the right with a dot for a handle, its
   two times under it — elapsed at the start of the line, the track's length at its end,
-  both at 18 — then the speaker and a menu button. Shuffle, repeat and the volume slider
+  both at 14 — then the speaker and a menu button. Shuffle, repeat and the volume slider
   did not fit that row and are not worth losing, so the menu button opens them as one
   more line below. The card is 480 wide rather than 400 for that row: at 400 the times
   and the two buttons crowded the seek line, and the extra 80 pixels are also what lets
   the gallery put three covers across instead of two.
 
-  The three lines came down from 23/18/17 on request — the block read as one size too
-  loud beside a cover that is the same 106 pixels — and the reference's proportions
-  survive it: the title is still the largest and the bold one, the artist still a step
-  above the record.
+  The seek line, the transport and the two buttons at the right are one line, and the
+  times hang under it: a block that held both and was centred as a whole would put the
+  line itself a caption's height too high, on the one row where it has to be level with
+  the buttons beside it. The block therefore carries a spacer as tall as the times above
+  the line — the air they add below it is paid back above it — and the centre the row
+  aligns it by is the line's own centre.
+
+  The three lines came down from 23/18/17, and then from 21/17/16, on request — the block
+  read as one size too loud beside a cover that is the same 106 pixels — and the
+  reference's proportions survive it: the title is still the largest and the bold one,
+  the artist still a step above the record. The transport came down with them: the same
+  request that asked for smaller type asked for smaller buttons, so the play button is 47
+  pixels rather than 53 and every glyph in the row is a step smaller.
 
   The player logs its own geometry once per popup, the way the bar row does: these
   numbers were measured against the reference art, and a later complaint about them
   should be answered from the journal rather than by eye.
-* **Extended** — 620x760: the player is one band across the top — a 56 px cover,
-  the title and the artist with the time, then shuffle, repeat, the transport, mute
-  and the volume slider in the same row, with a thin seek line under it — and
-  everything else, the tabs and the list, gets the full width below. A left column
-  holding the player cost the list half the card for no reason; the band is about
-  90 pixels, and the gallery went from three covers across to four.
+* **Extended** — 620x760: the player is two bands across the top, laid out the way the
+  compact player lays its block out, and at the compact player's sizes — the transport's
+  size being the one thing that is not. The first band is the whole player in one row:
+  the same 106-pixel cover the compact player draws, then the title, the artist and the
+  time under it, then the transport — previous, the round play button, next — and the
+  heart at the row's far end, a step clear of the last glyph. The transport shares the row
+  instead of buying a band of its own: it is what the hand reaches for while the eye is on
+  the title, and a band of plain glyphs spent the height the list can use. It keeps that
+  row's right end, between the words and the heart: the room from the cover to the transport
+  belongs to the title, the artist and the time, and a trio parked in the middle of the card
+  would spend a title's width on air — a name is what the wide card has that the compact one
+  has not. Its own sizes are a step up from the compact player's: 40-pixel glyph boxes
+  around a 52-pixel circle, where the bar card draws 30 around 40, since the compact sizes
+  read as a strip of specks in a band this tall. Shuffle and repeat are not
+  part of it — they answer what comes after this track rather than what plays now — so
+  they sit at the left end of the seek line, on the row that says where the track is
+  going, and the sound keeps its right end. The type is the compact player's type, glyph
+  for glyph and pixel for pixel: the type is what makes the two cards one player in two
+  shapes, and the transport is the one control that answers to the band rather than to
+  the bar. The time is a line of its own under the artist rather than a suffix on it:
+  beside the artist it was the first thing a long name ate, and a number nobody can read is
+  the one thing the seek line cannot say.
+  The second band is the seek line with shuffle and repeat at its left and the sound at its
+  right: the speaker, then the volume slider, whose length is a quarter of the line's — the
+  two sliders divide what the four buttons leave as 4:1. The speaker mutes; a popover
+  holding a second copy of the slider it stands beside would be one control drawn twice.
+  Everything else, the tabs and the list, gets the full width below. A left column holding
+  the player cost the list half the card for no reason; the two bands are about 120 pixels,
+  and the gallery went from three covers across to four.
 
 They are not two popups: they are two arrangements of the same blocks, each block
 a component of its own (`TopRow`, `SignInBlock`, `PlayerColumn`, `SearchFieldRow`,
@@ -535,6 +577,18 @@ a component of its own (`TopRow`, `SignInBlock`, `PlayerColumn`, `SearchFieldRow
 another column; a component can be instantiated in either one. Only the visible
 shape takes keys, so `activeList()`, `activeField()` and `activeBody()` pick the
 one in use.
+
+### The ink that is not speaking
+
+The panel draws text in two strengths, and the second one was wrong in a way only a light
+theme shows: it was `Qt.darker(foreground)`, which dims light ink on a dark card and does
+nothing at all on a light one — the darkest colour there is cannot be darkened, so the
+artist under the title, the record under that, the hints and every placeholder in an empty
+field came out as black as the title they sat under. It is half-strength foreground over
+whatever is behind it now, which is dimmer on both kinds of card. The account's three
+fields had no colour of their own and took the kit's default, which darkens the same way;
+they take the panel's dim now, as the search, the filter and the friends fields already
+did.
 
 The top of both shapes is a bar of cells, one object, not a row of buttons: settings
 in a square cell at the left end, the three views sharing what is left in three equal
@@ -712,6 +766,13 @@ is the shape that does not belong; `GlyphButton` paints the same hover fill and 
 hover border in a circle — a square box, `radius: width / 2`, so the fill cannot become an
 ellipse. Every glyph in the player rows uses it: shuffle, repeat, previous, play, next,
 volume, and the dots that open the rest.
+
+The transport carries no tooltip: previous, play or pause and next are the three glyphs
+every player has, and a word over a shape nobody has ever needed explained is one more
+thing on the card. The speaker is the same case — a speaker is the volume, and the one
+in the seek row mutes beside the slider that sets it. The tooltip stays where the glyph
+is not a word on its own: shuffle and repeat, which say what happens next rather than
+what happens now, the heart, and the dots.
 
 A glyph that says what it is by lighting a box is not always right: under a 14 px outline
 heart a 24 px rectangle is four times the shape it points at, and it reads as a button
