@@ -17,7 +17,7 @@ Nothing here is a guess unless the line says "unverified".
 | Do the methods exist? | Yes, audio and catalog included | With a deliberately bogus token every method answers error 5 `authorization failed` — a missing method would answer error 3. Probed on `api.vk.com` 5.131 and `api.vk.ru` 5.282 |
 | What shape does the modern API take? | `api.vk.ru/method/`, `v=5.282`, POST, auth in query, params in form body | Matches `@toil/vk-audio` (Sept 2026) and works live |
 | Catalog | `catalog.getAudio` → sections `Главная`, `Моя музыка`, `Обзор`, `Радио`, `Обновления`; `catalog.getSection` → 36–100 tracks plus `next_from` for paging; blocks carry 8 playlists (`Для вас`, `Открытия`, `Новинки`, `Плейлист дня 1/2`) | Live calls, section ids are opaque strings and must be used verbatim |
-| Search | `audio.search` (30 results, all HLS) and `audio.getSearchSuggestions` | Live calls |
+| Search | `audio.search` (30 results by default, up to 300 per page with `count`, all HLS) and `audio.getSearchSuggestions` | Live calls |
 | Legacy audio methods | `audio.get`, `audio.getById`, `audio.getPlaylists`, `audio.getLyrics` are reachable; `audio.getCount` is not (error 3) | `audio.get` returned the user's own 100 tracks; `audio.getPlaylists` returned an empty list, so playlists come from the catalog |
 | Stream format | HLS `index.m3u8` on `vkuseraudio.ru`, per-segment `EXT-X-KEY` — `AES-128` for some segments, `METHOD=NONE` for others; the AES key is fetched over plain HTTP (16 bytes) | Live probe of the first bytes and the key URL |
 | Does playback work? | Yes | `ffprobe`: `format=hls`, `codec=mp3`, 44100 Hz stereo, duration matches. `mpv` with the plugin's planned flags: exit code 0 |
@@ -263,6 +263,14 @@ Every keystroke restarts both timers, so a typed query costs a handful of calls
 and never a burst; asking for the same query twice is skipped, and a slow reply
 for an older query is dropped rather than painted over newer results (a sequence
 number per search). Nothing is searched below two characters.
+
+`audio.search` answers 30 items unless `count` asks for more, and VK refuses
+anything above 300. The panel asks for 300, which is the difference between an
+artist's first 30 tracks and everything VK will return. When a full page comes
+back, **Ещё** asks for the next `offset` and appends it, the way a section's
+cursor page appends. The answer's own `count` field is not a total — it grows
+with the requested page and counts matches VK will not return — so the heading
+counts the rows that actually arrived, and a short page ends the list.
 
 When a search finds nothing the suggestions come back under **Ничего не найдено.
 Похожее:** — they are the useful thing left on screen.
@@ -1589,8 +1597,9 @@ sit in a scrollable row, each holding tracks and playlists from
 `catalog.getSection`. Sections are paged by an opaque cursor, so `Ещё` asks for
 the next page with that cursor and *appends* it — the list the user is looking at
 grows rather than being replaced. Search pages by `offset` instead (`audio.search`
-has no cursor and answers 30 items at a time; `next_from` never comes back, but
-`offset` does move).
+has no cursor and answers 30 items by default, 300 at most; `next_from` never
+comes back, but `offset` does move). A search page that came back full puts
+**Ещё** under the results; a short page is the end of the list.
 
 Playing from a browse page uses the same rule as a search result: the widget
 sends the rows of what is on screen (`play tracks … --index N`), so the queue is

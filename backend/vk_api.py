@@ -785,8 +785,11 @@ class VkClient:
             playlists=tuple(playlists),
         )
 
-    def search(self, query: str, *, offset: int | None = None) -> list[Track]:
-        response = self.call("audio.search", q=query, offset=offset)
+    def search(
+        self, query: str, *, offset: int | None = None, count: int | None = None
+    ) -> list[Track]:
+        """`audio.search`: 30 items unless `count` asks for more (VK's maximum is 300)."""
+        response = self.call("audio.search", q=query, offset=offset, count=count)
         return _tracks_from(response)
 
     def search_suggestions(self, query: str) -> list[str]:

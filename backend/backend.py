@@ -173,6 +173,12 @@ PREFETCH_DELAY_S = 4.0
 # convenience, not a log.
 SEARCH_HISTORY_LIMIT = 8
 
+# One search page. VK answers 30 items unless `count` says otherwise and refuses
+# anything above 300, so asking for the maximum is the difference between a
+# search that shows an artist's first 30 tracks and one that shows all of them.
+# A full page is what tells the panel there may be another.
+SEARCH_PAGE_SIZE = 300
+
 # How many people the popup remembers, and how long a friend list is trusted.
 # Both keep the plugin from asking VK the same question twice.
 PEOPLE_HISTORY_LIMIT = 8
@@ -954,8 +960,19 @@ class Player:
                            reason="unknown_section", params={"section": reference})
 
     def search_items(self, query: str, offset: int | None = None) -> dict[str, Any]:
-        tracks = self.api(lambda: self.client.search(query, offset=offset))  # type: ignore[union-attr]
-        return {"query": query, "tracks": [track_to_state(track) for track in tracks]}
+        tracks = self.api(
+            lambda: self.client.search(  # type: ignore[union-attr]
+                query, offset=offset, count=SEARCH_PAGE_SIZE
+            )
+        )
+        return {
+            "query": query,
+            "tracks": [track_to_state(track) for track in tracks],
+            # VK's `count` field is not a result total: it grows with the requested
+            # page and counts matches the search will not return. A full page is the
+            # honest signal that asking for the next one is worth a call.
+            "more": len(tracks) >= SEARCH_PAGE_SIZE,
+        }
 
     def playlist_search(self, query: str, offset: int | None = None) -> dict[str, Any]:
         """Search other people's playlists by name."""

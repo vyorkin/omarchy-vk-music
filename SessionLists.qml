@@ -37,6 +37,9 @@ QtObject {
   property var stations: []
   property var foundPlaylists: []
   property var results: []
+  // A full page came back, so VK may have another one after it. The answer's own
+  // `count` cannot say this: it is not a total.
+  property bool resultsMore: false
   property var suggestions: []
   // The bar's chips: a section list like the rest, and the one the bar cannot afford to
   // lose, which is why it is asked for again the moment the session changes.
@@ -190,6 +193,7 @@ QtObject {
     session.sourcesLoadedAt = 0
     session.sourcesAskedAt = 0
     session.foundPlaylistsTotal = 0
+    session.resultsMore = false
     session.emptySectionTries = 0
     session._flags = ({})
     session._tokens = ({})

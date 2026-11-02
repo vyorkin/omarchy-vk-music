@@ -47,6 +47,8 @@ Panel {
   property alias queue: session.queue
   property alias sources: session.sources
   property alias results: session.results
+  // Whether VK may have another page of search results after the ones on screen.
+  property alias resultsMore: session.resultsMore
   property alias suggestions: session.suggestions
   // typing | searching | results — what the list under the field is showing.
   property string searchState: "typing"
@@ -785,8 +787,10 @@ Panel {
     var text = root.query.trim()
     if (text.length < 2) {
       root.results = []
+      root.resultsMore = false
       root.foundPlaylists = []
       root.searchState = "typing"
+      session.setLoading("searchMore", false)
       return
     }
     // One box, two kinds of answer: a playlist search is the same request to a
@@ -804,16 +808,39 @@ Panel {
     // retried by typing again.
     if (!force && text === root._searchedQuery && root.searchState !== "typing") return
     root._searchedQuery = text
+    // A page still on its way belongs to the query being replaced, and its flag has
+    // to go with it: it would otherwise leave «Ещё» disabled for the new list.
+    session.setLoading("searchMore", false)
     var token = session.begin("search")
     root.searchState = "searching"
     api.request("search", { query: text, remember: true }, function(answer) {
       if (!session.accept(token)) return
       if (answer && answer.ok) {
         root.results = answer.data.tracks || []
+        root.resultsMore = answer.data.more === true
         root.searchState = "results"
       } else {
         root.searchState = "typing"
       }
+    })
+  }
+
+  // «Ещё»: VK answers 300 results per search page (its maximum), and a page that came
+  // back full is the only sign that another one is worth asking for. The rows append
+  // to the list the user is already looking at, as a section page does.
+  function searchMoreTracks() {
+    if (!root.resultsMore || session.loading("searchMore")) return
+    var text = root._searchedQuery
+    var offset = root.results.length
+    // The same guard as the search itself: a new query cancels this answer, and this
+    // answer cancels nothing else, because only one of the two is in flight with a
+    // list on screen.
+    var token = session.begin("search", "searchMore")
+    api.request("search", { query: text, offset: offset }, function(answer) {
+      if (!session.accept(token)) return
+      if (!answer || !answer.ok) return
+      root.results = root.results.concat(answer.data.tracks || [])
+      root.resultsMore = answer.data.more === true
     })
   }
 
@@ -1187,6 +1214,8 @@ Panel {
     root.cursor = -1
     session.cancel("search")
     session.cancel("foundPlaylists")
+    session.setLoading("searchMore", false)
+    root.resultsMore = false
     root.searchMode = mode
     root.cursor = -1
     if (root.query.trim().length >= 2) root.runSearch(true)
@@ -1195,9 +1224,12 @@ Panel {
   function clearSearch() {
     root.query = ""
     root.results = []
+    root.resultsMore = false
     root.suggestions = []
     root.searchState = "typing"
     root._searchedQuery = ""
+    session.cancel("search")
+    session.setLoading("searchMore", false)
   }
 
   // What is on screen, in one answer: `ListShape.plan()` returns the lists the filter left,
@@ -4474,6 +4506,20 @@ Panel {
             onActivated: root.rowAction("results", index)
             onContextRequested: root.openRowMenu(modelData)
           }
+        }
+
+        // VK hands out 300 search results per page. When one came back full this
+        // asks for the next, and appends it rather than replacing the rows on screen.
+        Button {
+          width: listColumn.width
+          leftAlign: true
+          visible: root.searchMode === "tracks" && root.searchState === "results"
+            && root.resultsMore
+          enabled: !session.loading("searchMore")
+          opacity: enabled ? 1.0 : 0.5
+          text: root.t("Ещё")
+          foreground: root.textColor
+          onClicked: root.searchMoreTracks()
         }
       }
 

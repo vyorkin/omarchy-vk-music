@@ -35,6 +35,7 @@ TestCase {
     lists.stations = [{ id: 1, name: "Jazz" }]
     lists.foundPlaylists = [card(4)]
     lists.results = [track("r1")]
+    lists.resultsMore = true
     lists.suggestions = ["kino"]
     lists.sources = [{ id: "all", title: "Моя музыка" }]
     lists.sourcesLoadedAt = 42
@@ -60,6 +61,7 @@ TestCase {
     compare(lists.sourcesLoadedAt, 0)
     compare(lists.sourcesAskedAt, 0)
     compare(lists.foundPlaylistsTotal, 0)
+    compare(lists.resultsMore, false)
     compare(lists.emptySectionTries, 0)
     verify(!lists.anyLoading())
     compare(lists.loading("browse"), false)
