@@ -65,21 +65,31 @@ class SearchPageTest(unittest.TestCase):
         self.assertEqual(len(page["tracks"]), backend.SEARCH_PAGE_SIZE)
         self.assertTrue(page["more"])
 
-    def test_a_short_page_is_the_end_of_the_list(self):
+    def test_any_non_empty_page_may_have_another(self):
+        # VK returned 233 for «Кино» even though 236 exist: a short page is not a
+        # reliable end. Only an empty page is.
         client = FakeSearchClient(5)
         page = StubPlayer(client).search_items("Кино")
 
         self.assertEqual(len(page["tracks"]), 5)
+        self.assertTrue(page["more"])
+
+    def test_an_empty_page_is_the_end_of_the_list(self):
+        client = FakeSearchClient(0)
+        page = StubPlayer(client).search_items("Кино", offset=236)
+
+        self.assertEqual(client.calls[0]["offset"], 236)
+        self.assertEqual(page["tracks"], [])
         self.assertFalse(page["more"])
 
     def test_the_next_page_starts_where_the_list_ends(self):
         client = FakeSearchClient(3)
-        page = StubPlayer(client).search_items("Кино", offset=300)
+        page = StubPlayer(client).search_items("Кино", offset=233)
 
-        self.assertEqual(client.calls[0]["offset"], 300)
+        self.assertEqual(client.calls[0]["offset"], 233)
         self.assertEqual(client.calls[0]["count"], backend.SEARCH_PAGE_SIZE)
         self.assertEqual(len(page["tracks"]), 3)
-        self.assertFalse(page["more"])
+        self.assertTrue(page["more"])
 
 
 class SearchCallTest(unittest.TestCase):

@@ -1301,6 +1301,12 @@ Panel {
     }
     root.cursor = Math.max(0, Math.min(count - 1, next))
     root.revealCursor()
+    // The last row of a search is the other way to the end: the viewport may already
+    // be pinned there, so no `contentY` change would ask for the next page.
+    if (root.cursor >= count - 1) {
+      var list = root.activeList()
+      if (list && typeof list.maybeLoadMore === "function") Qt.callLater(list.maybeLoadMore)
+    }
     // Again once the layout has settled: the list's height is still changing while
     // the panel opens, and a scroll computed against the old height lands short.
     Qt.callLater(root.revealCursor)
@@ -3669,6 +3675,20 @@ Panel {
       return [gallery.plan.columns, gallery.plan.cellRows,
         Math.round(gallery.plan.cellWidth), Math.round(gallery.captionBlock)].join(":")
     }
+    // Infinite scroll for search: when the viewport comes within half a screen of the
+    // end, ask for the next offset page. The «Ещё» button under the list is the same
+    // call, kept for a click that does not need a scroll. Only the active body may
+    // answer: the other one is a full copy of this list with the same aliases.
+    function maybeLoadMore() {
+      if (view !== root.activeList()) return
+      if (root.view !== "search" || root.openPlaylist !== null) return
+      if (root.searchMode !== "tracks" || root.searchState !== "results") return
+      if (!root.resultsMore || session.loading("searchMore")) return
+      var limit = Math.max(0, scroller.contentHeight - scroller.height)
+      if (limit > 0 && limit - scroller.contentY > Math.max(Style.space(48), scroller.height / 2)) return
+      root.searchMoreTracks()
+    }
+
     // The card is a fixed height, and a gallery wants it to end where a row ends. The
     // height is nudged by the leftover, once, from here — a binding from the card's
     // height to the room it gives the list would be a loop, and QML would break it at
@@ -4196,6 +4216,10 @@ Panel {
       contentWidth: width
       contentHeight: listColumn.implicitHeight
       boundsBehavior: Flickable.StopAtBounds
+      // The wheel and the cursor both reach the end through `contentY`; a row appended
+      // while the viewport is still near the end reaches it through `contentHeight`.
+      onContentYChanged: view.maybeLoadMore()
+      onContentHeightChanged: view.maybeLoadMore()
 
       // The wheel scrolls the list, a row a notch. A bare Flickable takes the wheel with a
       // one-or-two-pixel default, which is indistinguishable from a list that does not

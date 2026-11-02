@@ -176,7 +176,6 @@ SEARCH_HISTORY_LIMIT = 8
 # One search page. VK answers 30 items unless `count` says otherwise and refuses
 # anything above 300, so asking for the maximum is the difference between a
 # search that shows an artist's first 30 tracks and one that shows all of them.
-# A full page is what tells the panel there may be another.
 SEARCH_PAGE_SIZE = 300
 
 # How many people the popup remembers, and how long a friend list is trusted.
@@ -969,9 +968,9 @@ class Player:
             "query": query,
             "tracks": [track_to_state(track) for track in tracks],
             # VK's `count` field is not a result total: it grows with the requested
-            # page and counts matches the search will not return. A full page is the
-            # honest signal that asking for the next one is worth a call.
-            "more": len(tracks) >= SEARCH_PAGE_SIZE,
+            # page and counts matches the search will not return. Any non-empty page
+            # may have another after it — the list ends when a page comes back empty.
+            "more": len(tracks) > 0,
         }
 
     def playlist_search(self, query: str, offset: int | None = None) -> dict[str, Any]:

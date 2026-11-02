@@ -266,11 +266,14 @@ number per search). Nothing is searched below two characters.
 
 `audio.search` answers 30 items unless `count` asks for more, and VK refuses
 anything above 300. The panel asks for 300, which is the difference between an
-artist's first 30 tracks and everything VK will return. When a full page comes
-back, **Ещё** asks for the next `offset` and appends it, the way a section's
-cursor page appends. The answer's own `count` field is not a total — it grows
-with the requested page and counts matches VK will not return — so the heading
-counts the rows that actually arrived, and a short page ends the list.
+artist's first 30 tracks and everything VK will return. The next page is asked
+for by `offset` and appended, the way a section's cursor page appends: it is
+fetched automatically when the list comes within half a screen of its end, and
+**Ещё** under the results is the same call for a click. Any non-empty page may
+have another after it; only an empty page ends the list. The answer's own
+`count` field cannot decide that — it grows with the requested page and counts
+matches VK will not return — so the heading counts the rows that actually
+arrived.
 
 When a search finds nothing the suggestions come back under **Ничего не найдено.
 Похожее:** — they are the useful thing left on screen.
@@ -1598,8 +1601,9 @@ sit in a scrollable row, each holding tracks and playlists from
 the next page with that cursor and *appends* it — the list the user is looking at
 grows rather than being replaced. Search pages by `offset` instead (`audio.search`
 has no cursor and answers 30 items by default, 300 at most; `next_from` never
-comes back, but `offset` does move). A search page that came back full puts
-**Ещё** under the results; a short page is the end of the list.
+comes back, but `offset` does move). The search list fetches the next offset
+page on its own when the end comes into view, and **Ещё** under the results does
+the same by click; the list ends only when VK returns an empty page.
 
 Playing from a browse page uses the same rule as a search result: the widget
 sends the rows of what is on screen (`play tracks … --index N`), so the queue is
