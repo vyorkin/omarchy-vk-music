@@ -1307,10 +1307,20 @@ JSON.
 
 The links do stop answering. A playlist's cover comes from VK as a signed URL
 (`sign`, `c_uniq_tag`), and a scan of 83 covers fetched in the same minute as their
-`photo` object found two already dead — `HTTP 424` and `HTTP 404`. The widget keeps a
-section's or a person's payload for as long as it runs, so a gallery reopened hours
-later holds signatures that have expired meanwhile. Nothing in the interface can make
-such a link work again; it can only stop pretending the picture is coming.
+`photo` object found two already dead — `HTTP 424` and `HTTP 404`. The signature is not
+what runs out: the same URL fetched three days later answers `200`, so the answer is the
+CDN's own — a cover deleted since the payload was built, or a stream it reset — and
+nothing in the interface can make such a link work. It can only stop pretending the
+picture is coming.
+
+What it can also do is stop asking. `CoverFetch.js` is where the URL comes from: the
+source itself on the first attempt, the same URL with an `omarchyRetry` nonce once it
+fails — Qt caches a failed image under its URL, so the string has to change for a request
+to reach the network at all — and nothing after the retry fails too. A source that failed
+twice is remembered for the life of the shell in one shared map, so a gallery reopened a
+minute later draws its monogram without a request and without a line in the shell log;
+before that, one dead cover was asked for by every tile that met it, forty times over a
+single boot on this machine.
 
 The tint and the letters both come from the title, in `CoverTint.js`:
 

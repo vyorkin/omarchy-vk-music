@@ -10,17 +10,28 @@
 // cards of every gallery, the account avatars — and it used to be an inline component of
 // the widget. The tint and the monogram come from `CoverTint.js`, which the panel's own
 // two helpers used to wrap.
+//
+// A picture that fails is asked for once more, a beat later, and then remembered as dead
+// in `CoverFetch.js`: VK hands out the URL of a cover it has deleted, and every tile that
+// met it again used to ask the network for the same 404.
 
 import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Ui
 import "CoverTint.js" as CoverTint
+import "CoverFetch.js" as CoverFetch
 
 BorderSurface {
   id: tile
 
   property string source: ""
+  // How many times the picture has been asked for, and whether it is still worth asking:
+  // 0 is the first ask, 1 the retry, and -1 a source that failed twice. A source the
+  // shell already gave up on starts at -1, so a reopened gallery draws its monogram
+  // without a request.
+  property int attempt: 0
+  onSourceChanged: tile.attempt = CoverFetch.known(tile.source) ? -1 : 0
   // Both the monogram and the tint come from this, so it has to be the item's name: the
   // same playlist keeps one colour between opens, and no id has to be hashed.
   property string title: ""
@@ -72,7 +83,7 @@ BorderSurface {
     id: picture
     anchors.fill: parent
     anchors.margins: tile.inset
-    source: tile.source
+    source: CoverFetch.request(tile.source, tile.attempt)
     fillMode: Image.PreserveAspectCrop
     asynchronous: true
     smooth: true
@@ -82,6 +93,27 @@ BorderSurface {
     sourceSize.height: tile.decodeSize > 0 ? Math.ceil(tile.decodeSize * 2) : 0
     opacity: tile.shown ? 1 : 0
     Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutQuad } }
+
+    // The first failure waits a beat and asks again: a reset stream or a CDN that has not
+    // caught up yet answers on the second ask often enough to be worth one request. The
+    // second failure is the source itself, and is remembered for every tile after this one.
+    onStatusChanged: {
+      if (status !== Image.Error || tile.source === "" || tile.attempt < 0) return
+      if (tile.attempt === 0) {
+        retryTimer.restart()
+      } else {
+        retryTimer.stop()
+        CoverFetch.mark(tile.source)
+        tile.attempt = -1
+      }
+    }
+  }
+
+  Timer {
+    id: retryTimer
+    interval: 400
+    repeat: false
+    onTriggered: tile.attempt = 1
   }
 
   Text {
