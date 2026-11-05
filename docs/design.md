@@ -1054,6 +1054,19 @@ A delayed load also means the section's SLUG is still the old one for those 600 
   frames in seventy with the poll marked, none in seventy without it. The marker belongs
   to the commands the reader gave; the poll is the widget breathing, and `call` takes a
   `quiet` flag for it.
+* A poll answers with a whole document, and a document equal to the last one is not a
+  change. `history`, `people` and `preferences` come back as new objects on every answer,
+  the panel plans every list from two of them, and a new plan is a new model for every
+  list on screen — so a poll that repeated itself still invalidated the plan of all of
+  them, once a second while a track played and four times a second while one was being
+  fetched, on both bars of a two-monitor desk. `StatusShape.adopt` hands the panel the
+  status it already had when nothing changed, and otherwise a document whose unchanged
+  fields are the objects the old one held: QML notifies nobody below a binding that
+  re-evaluates to the same object, so an idle poll wakes nothing at all. In the live shell
+  the old assignment measured 1–5 ms per poll with the panel open on a two-hundred-row
+  list; what the fold removes is the case where nothing had changed and the whole plan was
+  built and thrown away anyway, and `tests/qml/tst_status_shape.qml` pins both halves: a
+  hundred equal polls build no rows, and the one field that changed is the only new one.
 * A caption in a plain `Row` is not aligned with buttons: a Row places every child
   at its top, and a `PanelSectionHeader` is a `Text` whose own height is smaller
   than a button's, so the caption floats above the row's centre line. The three

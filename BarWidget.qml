@@ -21,6 +21,7 @@ import "GalleryFit.js" as GalleryFit
 import "GalleryWalk.js" as GalleryWalk
 import "ListShape.js" as ListShape
 import "BarShares.js" as BarShares
+import "StatusShape.js" as StatusShape
 
 Panel {
   id: root
@@ -677,7 +678,14 @@ Panel {
     // Quiet: the poll is the widget breathing, not a command the reader gave it.
     api.request("status", { quiet: true }, function(answer) {
       if (!answer || !answer.ok) return
-      root.status = answer.data
+      // The poll hands back a whole document each time, and a document that repeats the
+      // last one is not a change: the panel plans the visible list from `history` and
+      // `people`, so a new array identity rebuilds every row on screen — once a poll,
+      // under a pointer that then waits for the rows it was over to exist again.
+      // `StatusShape.adopt` keeps the fields the poll repeated and returns the status the
+      // panel already has when the whole answer is the same one.
+      var adopted = StatusShape.adopt(root.status, answer.data)
+      if (adopted !== root.status) root.status = adopted
       root.reportedPosition = Number(answer.data.position || 0)
       root.reportedAt = Date.now()
       if (root.seekTarget >= 0 && Math.abs(root.reportedPosition - root.seekTarget) < 2) {
