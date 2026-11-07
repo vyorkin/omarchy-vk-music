@@ -213,6 +213,10 @@ def track_to_state(track: Track) -> dict[str, Any]:
         "access_key": track.access_key,
         "has_lyrics": track.has_lyrics,
         "is_liked": track.is_liked,
+        # When the track was liked into my music, in VK's seconds. «Моя музыка» is
+        # ordered by it, and the panel hands lists back as they arrived, so it has to
+        # survive the trip both ways (`track_from_state`) like every other field.
+        "date": track.date or 0,
     }
 
 
@@ -283,6 +287,7 @@ def track_from_state(data: Mapping[str, Any]) -> Track:
         album=str(data.get("album", "") or ""),
         has_lyrics=bool(data.get("has_lyrics")),
         is_liked=bool(data.get("is_liked")),
+        date=int(data.get("date", 0) or 0) or None,
     )
 
 
@@ -932,11 +937,21 @@ class Player:
     def section_items(self, section_id: str, offset: str | None = None) -> dict[str, Any]:
         resolved = self._resolve_section_id(section_id)
         blocks = self.api(lambda: self.client.section(resolved, start_from=offset))  # type: ignore[union-attr]
+        tracks = list(blocks.audios)
+        # «Моя музыка» is ordered by when a track was liked, newest first: VK keeps the
+        # like time in `date` but hands the section back in its own layout (a page of
+        # 21.10.2026 standing above a page of 07.11.2026 was seen live), so the order
+        # the panel and the CLI play is sorted here. The pages themselves are cut by
+        # date — a page's oldest track is newer than the next page's newest — so
+        # sorting each page in place also sorts the concatenation the panel builds.
+        # Every other section keeps VK's own order: its sequence is the editorial one.
+        if section_id in ("", "all") or blocks.url.endswith("section=all"):
+            tracks.sort(key=lambda track: track.date or 0, reverse=True)
         return {
             "id": resolved,
             "title": blocks.title,
             "next": blocks.next_offset,
-            "tracks": [track_to_state(track) for track in blocks.audios],
+            "tracks": [track_to_state(track) for track in tracks],
             "playlists": [playlist.to_dict() for playlist in blocks.playlists],
         }
 

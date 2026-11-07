@@ -16,8 +16,9 @@ so the media keys and any MPRIS client work without extra setup.
   and a like button. Every piece can be turned off, and the row remembers what you chose.
 - **The queue** — the tracks you started, in order. Rows can be jumped to, removed, and a
   right click puts a track next in line or at the end.
-- **Your music and the catalogue** — «Моя музыка», the sections VK offers, and any
-  playlist: cover gallery or compact rows, whichever you prefer.
+- **Your music and the catalogue** — «Моя музыка» ordered by when a track was liked,
+  newest first; the sections VK offers, and any playlist: cover gallery or compact rows,
+  whichever you prefer.
 - **Other people's playlists** — friends, anyone by link, and a playlist search.
 - **Saved playlists** — a heart on every playlist VK lets you save, a right click for
   «В мою музыку» / «Ссылку» / «В браузере», and «Избранное», a page of the lists you kept.

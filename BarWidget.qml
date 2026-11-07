@@ -638,6 +638,7 @@ Panel {
       if (!answer || !answer.ok || !answer.data) return
       root.markLiked(key, answer.data.liked === true)
       if (answer.data.status) root.status = answer.data.status
+      root.refreshMyMusic()
     })
   }
 
@@ -654,6 +655,7 @@ Panel {
       // the player's heart and the row of the very same track are one fact, so the
       // row flips with it instead of waiting for the list to be fetched again.
       root.markLiked(key, answer.data.liked === true)
+      root.refreshMyMusic()
     })
   }
 
@@ -1947,6 +1949,26 @@ Panel {
     root.tracks = page.tracks || []
     root.playlists = page.playlists || []
     root.browseNext = String(page.next || "")
+  }
+
+  // «Моя музыка» is ordered by when a track was liked, newest first, and a like changes
+  // that list twice: the track belongs at the top of it, and an unlike takes it out of it.
+  // A repainted heart cannot show either, so the section is asked again in place — the rows
+  // that arrive are VK's own, including the copy a like is stored under. Asked even while
+  // another tab is open: coming back to a section that is already loaded fetches nothing,
+  // so a like made from the queue would otherwise leave the stale order on that page. A
+  // switch to another page cancels the answer like any other fetch.
+  function refreshMyMusic() {
+    if (root.browseSlug !== "all" || root.openPlaylist !== null) return
+    var token = session.begin("browse")
+    api.request("section", { id: "all" }, function(answer) {
+      if (!session.accept(token)) return
+      if (!answer || !answer.ok) return
+      root.adoptSection(answer.data)
+      // The list just got shorter (an unlike) or was reordered under the cursor: a
+      // cursor past the end would point at no row and swallow the next key.
+      if (root.cursor >= root.tracks.length) root.cursor = root.tracks.length - 1
+    })
   }
 
   // «Ещё»: the sections are paged by a cursor, the tracks are appended to the
