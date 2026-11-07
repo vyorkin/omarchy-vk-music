@@ -125,6 +125,11 @@ PREFERENCE_SCHEMA: dict[str, dict[str, Any]] = {
     # Drawn as a glyph in the popup's own bar, not as a labelled row in the settings.
     "playlistView": {"kind": "choice", "default": "list", "options": ["list", "grid"],
                      "shown": False},
+    # Whether the compact player's second line — shuffle, repeat and the volume — is open.
+    # The dots set it, and it outlives the popup the way a bar option does: the card does
+    # not put a row away behind this one on every close, and a reopened card is the card
+    # that was closed. Drawn as the dots' own tint, not as a labelled row in the settings.
+    "playerControlsOpen": {"kind": "switch", "default": False, "shown": False},
     # "off" or "all": a desktop notification when the track changes on its own.
     "notifications": {"kind": "choice", "default": "off", "options": ["off", "all"]},
     # Which popup to open: "compact" (the small one) or "extended".

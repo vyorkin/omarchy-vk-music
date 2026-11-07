@@ -117,9 +117,10 @@ Panel {
   }
 
   // Shuffle, repeat and the volume slider live behind the player's menu button, so
-  // whether they are showing is a state of the panel. It closes with the panel: a
-  // row that is open under a card that was just reopened is a surprise.
-  property bool playerControlsOpen: false
+  // whether they are showing is a state of the panel. It is a preference like the bar
+  // options: the dots write it and the card reads it back, so a reopened card is the
+  // card that was closed rather than one that folds the row away behind the reader.
+  readonly property bool playerControlsOpen: root.prefs.playerControlsOpen === true
 
   onViewChanged: {
     root.cursor = -1
@@ -2644,7 +2645,8 @@ Panel {
     // A password must not outlive the popup that asked for it.
     root.accountPassword = ""
     root.accountFieldFocus = 0
-    root.playerControlsOpen = false
+    // The player's menu row is not put away here: its state is a preference, and a card
+    // that remembered nothing would fold it away under the reader on every close.
     // Neither does a sheet left open over a card that is closed again.
     root.hintsOpen = false
   }
@@ -6392,7 +6394,7 @@ Panel {
         tooltipText: root.playerControlsOpen
           ? root.t("Свернуть управление")
           : root.t("Перемешать, повтор и громкость")
-        onClicked: root.playerControlsOpen = !root.playerControlsOpen
+        onClicked: root.setPreference("playerControlsOpen", !root.playerControlsOpen)
       }
     }
 

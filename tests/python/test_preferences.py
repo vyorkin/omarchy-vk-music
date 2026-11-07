@@ -97,6 +97,18 @@ class Answer(unittest.TestCase):
             {"command": "preferences", "set": {"marqueeSpeed": 120}})
         self.assertEqual(payload["data"]["values"]["marqueeSpeed"], 120)
 
+    # The dots on the compact player write this one, and the promise is that a card opened
+    # again is the card that was closed — including after the shell was restarted, which
+    # makes the state file the only thing that can remember it.
+    def test_a_written_preference_survives_a_restart(self):
+        self.backend.handle(
+            {"command": "preferences", "set": {"playerControlsOpen": True}})
+        restarted = backend.Backend()
+        self.assertIs(restarted.player.preferences["playerControlsOpen"], True)
+        # The rest of this module reads the same state file, and a switch left on here
+        # would be a value the next test did not choose.
+        backend.STATE_FILE.unlink(missing_ok=True)
+
 
 class Labels(unittest.TestCase):
     """The panel shows a setting by the key `setting:<key>`, so each key needs a label."""

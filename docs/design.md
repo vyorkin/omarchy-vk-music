@@ -534,7 +534,11 @@ The popup comes in two shapes, chosen in the settings:
   two times under it — elapsed at the start of the line, the track's length at its end,
   both at 14 — then the speaker and a menu button. Shuffle, repeat and the volume slider
   did not fit that row and are not worth losing, so the menu button opens them as one
-  more line below. The card is 480 wide rather than 400 for that row: at 400 the times
+  more line below. Whether that line is open is remembered — a preference, like the
+  switches that say what the bar shows — so the card that is opened again is the card
+  that was closed, and the row does not fold itself away under a hand that just asked
+  for it. The dots take the accent while it is open, which is the whole of the state on
+  screen. The card is 480 wide rather than 400 for that row: at 400 the times
   and the two buttons crowded the seek line, and the extra 80 pixels are also what lets
   the gallery put three covers across instead of two.
 
