@@ -1018,11 +1018,27 @@ Panel {
   // away the queue you are listening to.
   property var pendingTrack: null
   property int pendingIndex: -1
+  // Where the pointer asked for a menu, in the key catcher's own coordinates: the card
+  // lands beside the point, and the point itself is past the title. A menu that spans the
+  // panel instead is a second band of the list rather than a thing laid over it.
+  property real pendingMenuX: 0
+  property real pendingMenuY: 0
 
-  function openRowMenu(track, queueIndex) {
+  // A row deep in a list counts its own pixels, and the card is placed in the panel's.
+  // The row hands itself in — a component cannot reach the ids of this file — and the
+  // mapping happens here, where `keys` is a name.
+  function menuPoint(item, x, y) {
+    if (!item) return { x: 0, y: 0 }
+    var point = item.mapToItem(keys, Number(x || 0), Number(y || 0))
+    return { x: point.x, y: point.y }
+  }
+
+  function openRowMenu(track, queueIndex, x, y) {
     if (!track || !track.key) return
     root.pendingTrack = track
     root.pendingIndex = queueIndex === undefined ? -1 : Number(queueIndex)
+    root.pendingMenuX = Number(x || 0)
+    root.pendingMenuY = Number(y || 0)
   }
 
   function closeRowMenu() {
@@ -1030,21 +1046,95 @@ Panel {
     root.pendingIndex = -1
   }
 
+  // The two things a track row can do without opening it: the row under the pointer is
+  // either somewhere in the queue or somewhere a list is offering.
+  function trackMenuRows() {
+    var at = root.pendingIndex >= 0
+    return [
+      {
+        icon: at ? "play" : "list-plus",
+        label: at ? root.t("Играть сейчас") : root.t("В очередь"),
+        action: function() {
+          if (at) root.jumpPending()
+          else root.queuePendingTrack(false)
+        }
+      },
+      {
+        icon: at ? "trash-2" : "skip-forward",
+        label: at ? root.t("Убрать") : root.t("Следующим"),
+        action: function() {
+          if (at) root.removePending()
+          else root.queuePendingTrack(true)
+        }
+      }
+    ]
+  }
+
   // A playlist's own menu, for the hand that wants «скопировать ссылку» rather than a
-  // click that opens the list. It rides the same bar as the track menu, over the bottom
-  // of the card, so it appears where the menu a right-click on a track opens does.
+  // click that opens the list. It is the track menu's card with other rows in it, and it
+  // opens where the pointer asked for it.
   property var pendingPlaylist: null
   // What the status line says for a moment after a link is copied: a copy leaves no other
   // trace on screen, and a menu that closes with nothing to show reads as a miss.
   property string copiedHint: ""
 
-  function openPlaylistMenu(playlist) {
+  function openPlaylistMenu(playlist, x, y) {
     if (!playlist) return
     root.pendingPlaylist = playlist
+    root.pendingMenuX = Number(x || 0)
+    root.pendingMenuY = Number(y || 0)
   }
 
   function closePlaylistMenu() {
     root.pendingPlaylist = null
+  }
+
+  // What a playlist has that is not a way into it: whether it is in my music, the link to
+  // share, and the page on VK. The save row is lit and picked when the list is already
+  // saved, and the answer to the save comes back through `pendingPlaylist`, which rebuilds
+  // this list — the row flips under the pointer that clicked it.
+  function playlistMenuRows() {
+    var playlist = root.pendingPlaylist
+    if (!playlist) return []
+    var rows = []
+    // Only a list VK lets me save gets the row; on a generated one it would be a click that
+    // cannot work, which is worse than no click.
+    if (playlist.can_follow === true || playlist.is_following === true) {
+      rows.push({
+        icon: "heart",
+        label: playlist.is_following === true ? root.t("Из моей музыки") : root.t("В мою музыку"),
+        highlighted: playlist.is_following === true,
+        action: function() { root.togglePlaylistFollow(playlist) }
+      })
+    }
+    rows.push({
+      icon: "copy",
+      label: root.t("Скопировать ссылку"),
+      action: function() {
+        root.copyPlaylistLink(playlist)
+        root.closePlaylistMenu()
+      }
+    })
+    rows.push({
+      icon: "external-link",
+      label: root.t("Открыть в браузере"),
+      action: function() {
+        root.openPlaylistInBrowser(playlist)
+        root.closePlaylistMenu()
+      }
+    })
+    return rows
+  }
+
+  // The line under a playlist's name in its menu: how much is in it, which is what decides
+  // whether opening it is worth the click.
+  function playlistMenuDetail() {
+    var playlist = root.pendingPlaylist
+    if (!playlist) return ""
+    var count = Number(playlist.count || 0)
+    if (!(count > 0)) return ""
+    return count + " " + I18n.plural(root.language, count,
+      root.t("трек"), root.t("трека"), root.t("треков"))
   }
 
   // Saving a playlist to my music is VK's follow: the list comes back under my own ids as
@@ -3015,8 +3105,9 @@ Panel {
     property bool selected: false
     signal activated()
     // A right-click asks for the menu instead of opening the list: the link and the save
-    // are things to do *with* the card, not ways into it.
-    signal contextRequested()
+    // are things to do *with* the card, not ways into it. The card hands itself along with
+    // the point, because a component is not allowed to map into the panel's own items.
+    signal contextRequested(Item source, real x, real y)
 
     // VK says which of these a playlist may have: a generated list («Для вас») cannot be
     // saved and its cover has no room for a heart that would refuse the click.
@@ -3129,7 +3220,7 @@ Panel {
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
       onClicked: function(mouse) {
-        if (mouse.button === Qt.RightButton) card.contextRequested()
+        if (mouse.button === Qt.RightButton) card.contextRequested(card, mouse.x, mouse.y)
         else card.activated()
       }
     }
@@ -3390,7 +3481,7 @@ Panel {
     property int position: 0
     property bool selected: false
     signal activated()
-    signal contextRequested()
+    signal contextRequested(Item source, real x, real y)
 
     width: parent ? parent.width : 0
     height: Style.space(48)
@@ -3556,7 +3647,7 @@ Panel {
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
       onClicked: function(mouse) {
-        if (mouse.button === Qt.RightButton) trackRow.contextRequested()
+        if (mouse.button === Qt.RightButton) trackRow.contextRequested(trackRow, mouse.x, mouse.y)
         else trackRow.activated()
       }
     }
@@ -3685,6 +3776,7 @@ Panel {
           }
 
           BarGlyph {
+            id: dotsGlyph
             width: Style.space(22)
             height: width
             barItem: root.bar
@@ -3693,7 +3785,10 @@ Panel {
             fillOnHover: true
             iconColor: root.dim
             tooltip: root.t("Ещё")
-            onClicked: root.openPlaylistMenu(modelData)
+            onClicked: {
+              var point = root.menuPoint(dotsGlyph, dotsGlyph.width / 2, dotsGlyph.height)
+              root.openPlaylistMenu(modelData, point.x, point.y)
+            }
           }
         }
 
@@ -3704,8 +3799,10 @@ Panel {
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
           onClicked: function(mouse) {
-            if (mouse.button === Qt.RightButton) root.openPlaylistMenu(modelData)
-            else rows.picked(index)
+            if (mouse.button === Qt.RightButton) {
+              var point = root.menuPoint(rowArea, mouse.x, mouse.y)
+              root.openPlaylistMenu(modelData, point.x, point.y)
+            } else rows.picked(index)
           }
         }
       }
@@ -3772,143 +3869,153 @@ Panel {
         cellWidth: grid.cellWidth
         selected: index === root.cursor
         onActivated: grid.picked(index)
-        onContextRequested: root.openPlaylistMenu(modelData)
+        onContextRequested: function(source, x, y) {
+          var point = root.menuPoint(source, x, y)
+          root.openPlaylistMenu(modelData, point.x, point.y)
+        }
       }
     }
   }
 
-  // What a right-click on a playlist card, or the dots on its row, offers: the two things
-  // a playlist has that are not a way into it. Same bar, same corner, same key.
-  component PlaylistMenu: BorderSurface {
-    id: playlistMenu
-    anchors.left: parent.left
-    anchors.right: parent.right
-    anchors.bottom: parent.bottom
-    anchors.margins: Style.space(10)
-    radius: Style.space(6)
-    color: Color.popups.background
-    borderSpec: Border.controlSpec("selected", Color.foreground, Color.accent, Color.urgent)
-    padding: Style.spacing.controlGap
-    implicitHeight: playlistMenuRow.implicitHeight
-      + playlistMenu.contentTopInset + playlistMenu.contentBottomInset
-    visible: root.pendingPlaylist !== null
+  // One row of a menu: the shape, the words, and the whole row as the target. A row that
+  // has to be hit on its words is the thing people miss, so the pointer lights the row and
+  // the shape follows it — the glyph draws no box of its own.
+  component MenuRow: Item {
+    id: menuRow
+    // Lucide's name, as the rest of the panel asks for its shapes.
+    property string name: ""
+    property string label: ""
+    // Lit: the state this row would put the thing into, drawn in the accent — a heart that
+    // is already full for a playlist that is already saved.
+    property bool highlighted: false
+    signal picked()
 
-    RowLayout {
-      id: playlistMenuRow
-      x: playlistMenu.contentLeftInset
-      y: playlistMenu.contentTopInset
-      width: playlistMenu.width
-        - playlistMenu.contentLeftInset - playlistMenu.contentRightInset
-      spacing: Style.space(6)
+    implicitHeight: Style.space(30)
 
-      Text {
-        Layout.fillWidth: true
-        textFormat: Text.PlainText
-        elide: Text.ElideRight
-        color: root.textColor
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
-        text: root.pendingPlaylist ? String(root.pendingPlaylist.title || "") : ""
-      }
+    Rectangle {
+      anchors.fill: parent
+      radius: Style.space(4)
+      color: rowArea.containsMouse ? Color.menu.selectedBackground : "transparent"
+    }
 
-      // Only a list VK lets me save gets the button; on a generated one it would be a
-      // click that cannot work, which is worse than no click.
-      Button {
-        visible: root.pendingPlaylist !== null
-          && (root.pendingPlaylist.can_follow === true
-            || root.pendingPlaylist.is_following === true)
-        text: root.pendingPlaylist !== null && root.pendingPlaylist.is_following === true
-          ? root.t("Из моей музыки")
-          : root.t("В мою музыку")
-        foreground: root.textColor
-        tooltipText: root.pendingPlaylist !== null && root.pendingPlaylist.is_following === true
-          ? root.t("Убрать из моей музыки")
-          : root.t("Добавить в мою музыку")
-        onClicked: root.togglePlaylistFollow(root.pendingPlaylist)
-      }
+    BarGlyph {
+      anchors.left: parent.left
+      anchors.leftMargin: Style.space(6)
+      anchors.verticalCenter: parent.verticalCenter
+      width: Style.space(16)
+      height: width
+      name: menuRow.name
+      filled: menuRow.highlighted
+      iconSize: Style.space(15)
+      iconColor: (rowArea.containsMouse || menuRow.highlighted) ? Color.menu.selectedText : Color.menu.text
+    }
 
-      Button {
-        text: root.t("Ссылку")
-        foreground: root.textColor
-        tooltipText: root.t("Скопировать ссылку на плейлист")
-        onClicked: root.copyPlaylistLink(root.pendingPlaylist)
-      }
+    Text {
+      anchors.left: parent.left
+      anchors.leftMargin: Style.space(30)
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(8)
+      anchors.verticalCenter: parent.verticalCenter
+      textFormat: Text.PlainText
+      elide: Text.ElideRight
+      color: rowArea.containsMouse ? Color.menu.selectedText : Color.menu.text
+      font.family: Style.font.family
+      font.pixelSize: Style.font.bodySmall
+      text: menuRow.label
+    }
 
-      Button {
-        text: root.t("В браузере")
-        foreground: root.textColor
-        tooltipText: root.t("Открыть плейлист на сайте VK")
-        onClicked: root.openPlaylistInBrowser(root.pendingPlaylist)
-      }
-
-      Button {
-        iconText: "󰅖"
-        foreground: root.textColor
-        tooltipText: root.t("Отмена")
-        onClicked: root.closePlaylistMenu()
-      }
+    MouseArea {
+      id: rowArea
+      anchors.fill: parent
+      z: 2
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: menuRow.picked()
     }
   }
 
-  // What a right-click on a track row offers. It floats over the panel, anchored
-  // to the bottom of the key catcher, so nothing moves when it appears.
-  component RowMenu: BorderSurface {
-    id: rowMenu
-    anchors.left: parent.left
-    anchors.right: parent.right
-    anchors.bottom: parent.bottom
-    anchors.margins: Style.space(10)
-    radius: Style.space(6)
-    color: Color.popups.background
-    borderSpec: Border.controlSpec("selected", Color.foreground, Color.accent, Color.urgent)
-    padding: Style.spacing.controlGap
-    implicitHeight: menuRow.implicitHeight + rowMenu.contentTopInset + rowMenu.contentBottomInset
-    visible: root.pendingTrack !== null
+  // A menu laid over the card where the pointer asked for it. The rows are handed in, so
+  // the track menu and the playlist menu are the same card with different lists in it.
+  component ContextMenu: Item {
+    id: menu
+    property var rows: []
+    property string title: ""
+    property string detail: ""
+    // The point the menu belongs to, in the key catcher's coordinates.
+    property real anchorX: 0
+    property real anchorY: 0
+    signal dismissed()
 
-    RowLayout {
-      id: menuRow
-      x: rowMenu.contentLeftInset
-      y: rowMenu.contentTopInset
-      width: rowMenu.width - rowMenu.contentLeftInset - rowMenu.contentRightInset
-      spacing: Style.space(6)
+    // The card and the panel are the same colour: without something between them the menu
+    // reads as one more band of the list rather than as a thing laid over it.
+    Rectangle {
+      anchors.fill: parent
+      color: Color.menu.scrim
+    }
 
-      Text {
-        Layout.fillWidth: true
-        textFormat: Text.PlainText
-        elide: Text.ElideRight
-        color: root.textColor
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
-        text: root.pendingTrack
-          ? (root.pendingTrack.artist + " — " + root.pendingTrack.title)
-          : ""
-      }
+    MouseArea {
+      anchors.fill: parent
+      onClicked: menu.dismissed()
+    }
 
-      Button {
-        text: root.pendingIndex >= 0 ? root.t("Играть сейчас") : root.t("В очередь")
-        foreground: root.textColor
-        tooltipText: root.pendingIndex >= 0
-          ? root.t("Перейти к этому треку")
-          : root.t("Добавить в конец очереди")
-        onClicked: if (root.pendingIndex >= 0) root.jumpPending()
-          else root.queuePendingTrack(false)
-      }
+    BorderSurface {
+      id: menuCard
+      radius: Style.space(6)
+      color: Color.menu.background
+      borderSpec: Border.localOrSurfaceSpec("menu", "border",
+        Color.menu.border, Color.menu.border, Math.max(1, Style.space(2)))
+      padding: Style.spacing.controlGap
+      width: Style.space(260)
+      height: menuContent.implicitHeight
+        + menuCard.contentTopInset + menuCard.contentBottomInset
+      // Beside the point rather than under it: a card whose first row sits where the click
+      // landed is a click that picks that row. Kept inside the panel by its own size.
+      x: Math.round(Math.max(Style.space(8),
+        Math.min(menu.anchorX + Style.space(4), menu.width - menuCard.width - Style.space(8))))
+      y: Math.round(Math.max(Style.space(8),
+        Math.min(menu.anchorY + Style.space(4), menu.height - menuCard.height - Style.space(8))))
 
-      Button {
-        text: root.pendingIndex >= 0 ? root.t("Убрать") : root.t("Следующим")
-        foreground: root.textColor
-        tooltipText: root.pendingIndex >= 0
-          ? root.t("Убрать из очереди")
-          : root.t("Поставить сразу после текущего трека")
-        onClicked: if (root.pendingIndex >= 0) root.removePending()
-          else root.queuePendingTrack(true)
-      }
+      ColumnLayout {
+        id: menuContent
+        x: menuCard.contentLeftInset
+        y: menuCard.contentTopInset
+        width: menuCard.width - menuCard.contentLeftInset - menuCard.contentRightInset
+        spacing: 0
 
-      Button {
-        iconText: "󰅖"
-        foreground: root.textColor
-        tooltipText: root.t("Отмена")
-        onClicked: root.closeRowMenu()
+        Text {
+          Layout.fillWidth: true
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          color: Color.menu.text
+          font.family: Style.font.family
+          font.pixelSize: Style.font.body
+          text: menu.title
+        }
+
+        Text {
+          Layout.fillWidth: true
+          Layout.topMargin: Style.space(2)
+          Layout.bottomMargin: Style.space(6)
+          visible: text !== ""
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          color: Color.menu.text
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          text: menu.detail
+        }
+
+        Repeater {
+          model: menu.rows
+          delegate: MenuRow {
+            Layout.fillWidth: true
+            name: modelData && modelData.icon ? String(modelData.icon) : ""
+            label: modelData && modelData.label ? String(modelData.label) : ""
+            highlighted: modelData && modelData.highlighted === true
+            onPicked: if (modelData && typeof modelData.action === "function") modelData.action()
+          }
+        }
       }
     }
   }
@@ -4607,7 +4714,10 @@ Panel {
             position: root.indexOfItem(root.queue, modelData) + 1
             selected: index === root.cursor
             onActivated: root.rowAction("queue", index)
-            onContextRequested: root.openRowMenu(modelData, root.indexOfItem(root.queue, modelData))
+            onContextRequested: function(source, x, y) {
+              var point = root.menuPoint(source, x, y)
+              root.openRowMenu(modelData, root.indexOfItem(root.queue, modelData), point.x, point.y)
+            }
           }
         }
 
@@ -4756,7 +4866,10 @@ Panel {
             track: modelData
             selected: (root.browseCursorOffset() + index) === root.cursor
             onActivated: root.rowAction("tracks", index)
-            onContextRequested: root.openRowMenu(modelData)
+            onContextRequested: function(source, x, y) {
+              var point = root.menuPoint(source, x, y)
+              root.openRowMenu(modelData, -1, point.x, point.y)
+            }
           }
         }
 
@@ -4790,7 +4903,10 @@ Panel {
             position: index + 1
             selected: index === root.cursor
             onActivated: root.rowAction("playlistTracks", index)
-            onContextRequested: root.openRowMenu(modelData)
+            onContextRequested: function(source, x, y) {
+              var point = root.menuPoint(source, x, y)
+              root.openRowMenu(modelData, -1, point.x, point.y)
+            }
           }
         }
 
@@ -4865,7 +4981,10 @@ Panel {
             track: modelData
             selected: index === root.cursor
             onActivated: root.rowAction("results", index)
-            onContextRequested: root.openRowMenu(modelData)
+            onContextRequested: function(source, x, y) {
+              var point = root.menuPoint(source, x, y)
+              root.openRowMenu(modelData, -1, point.x, point.y)
+            }
           }
         }
 
@@ -5405,13 +5524,17 @@ Panel {
           Layout.preferredHeight: root.topBarHeight
 
           BarGlyph {
+            id: headerMenuGlyph
             anchors.fill: parent
             barItem: root.bar
             loading: false
             name: "ellipsis"
             fillOnHover: true
             tooltip: root.t("Ещё")
-            onClicked: root.openPlaylistMenu(root.openPlaylist)
+            onClicked: {
+              var point = root.menuPoint(headerMenuGlyph, headerMenuGlyph.width / 2, headerMenuGlyph.height)
+              root.openPlaylistMenu(root.openPlaylist, point.x, point.y)
+            }
           }
         }
 
@@ -6989,8 +7112,26 @@ Panel {
       }
 
       // Last inside the key catcher, so they float over whichever body is showing.
-      RowMenu { }
-      PlaylistMenu { }
+      ContextMenu {
+        anchors.fill: parent
+        visible: root.pendingTrack !== null
+        rows: visible ? root.trackMenuRows() : []
+        title: root.pendingTrack ? String(root.pendingTrack.title || "") : ""
+        detail: root.pendingTrack ? String(root.pendingTrack.artist || "") : ""
+        anchorX: root.pendingMenuX
+        anchorY: root.pendingMenuY
+        onDismissed: root.closeRowMenu()
+      }
+      ContextMenu {
+        anchors.fill: parent
+        visible: root.pendingPlaylist !== null
+        rows: visible ? root.playlistMenuRows() : []
+        title: root.pendingPlaylist ? String(root.pendingPlaylist.title || "") : ""
+        detail: root.playlistMenuDetail()
+        anchorX: root.pendingMenuX
+        anchorY: root.pendingMenuY
+        onDismissed: root.closePlaylistMenu()
+      }
       HintsPanel { }
     }
   }

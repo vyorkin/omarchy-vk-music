@@ -1196,9 +1196,13 @@ Three places draw the same fact:
   generated blocks are not, and a heart that refuses its own click is worse than no
   heart.
 * **The row** — the same heart at the right end, beside a «⋯» that opens the menu.
-* **The menu** — «В мою музыку» / «Из моей музыки», «Ссылку», «В браузере». It
-  rides the same bar and the same corner as the track menu, so a right click reads
-  the same wherever it lands: on a card, on a row, or on the «⋯» of an opened list.
+* **The menu** — «В мою музыку» / «Из моей музыки», «Скопировать ссылку»,
+  «Открыть в браузере». One card serves it and the track menu, so a right click
+  reads the same wherever it lands: on a card, on a row, or on the «⋯» of an opened
+  list. It opens beside the point that asked for it, clamped inside the panel, over a
+  scrim: a panel-wide bar at the bottom was a second band of the list, and the card is
+  the same colour as the panel it covers. Rows carry Lucide shapes and the whole row is
+  the target; the save row's heart is full when the list is already saved.
 
 The link is VK's own share address,
 `https://vk.com/music/playlist/<owner_id>_<playlist_id>_<access_key>`, built by the
