@@ -24,6 +24,16 @@ TestCase {
     return { id: id, title: "Playlist " + id }
   }
 
+  function playlistRef(key, listId) {
+    return {
+      key: key,
+      title: "Playlist " + listId,
+      owner_id: 1,
+      playlist_id: listId,
+      is_following: false
+    }
+  }
+
   function loaded() {
     var lists = createTemporaryObject(sessionComponent, null)
     lists.queue = [track("q1"), track("q2")]
@@ -104,6 +114,25 @@ TestCase {
     lists.like("k", false)
     compare(lists.queue[0].is_liked, false)
     compare(lists.tracks[0].is_liked, false)
+  }
+
+  // A save is the same one fact for playlists: the card of a section, the copy on
+  // «Избранное» and a search result for the same list are one heart. Found by what a
+  // playlist carries (`playlist_id`), so a person's page and a query stay untouched.
+  function test_a_follow_repaints_every_list_that_holds_the_playlist() {
+    var lists = loaded()
+    lists.playlists = [playlistRef("1_10", 10)]
+    lists.foundPlaylists = [playlistRef("1_10", 10)]
+    lists.personPlaylists = [playlistRef("2_20", 20)]
+    lists.follow("1_10", true, 9, 10)
+    compare(lists.playlists[0].is_following, true)
+    compare(lists.playlists[0].copy_owner_id, 9)
+    compare(lists.playlists[0].copy_playlist_id, 10)
+    compare(lists.foundPlaylists[0].is_following, true)
+    // Untouched: a list of a different kind, or of another playlist.
+    compare(lists.personPlaylists[0].is_following, false)
+    compare(lists.queue[0].is_following, undefined)
+    compare(lists.stations[0].is_following, undefined)
   }
 
   // One answer per fetch: a slow reply for a page the user has left must paint nothing, and

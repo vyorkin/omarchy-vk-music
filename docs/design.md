@@ -18,7 +18,9 @@ Nothing here is a guess unless the line says "unverified".
 | What shape does the modern API take? | `api.vk.ru/method/`, `v=5.282`, POST, auth in query, params in form body | Matches `@toil/vk-audio` (Sept 2026) and works live |
 | Catalog | `catalog.getAudio` → sections `Главная`, `Моя музыка`, `Обзор`, `Радио`, `Обновления`; `catalog.getSection` → 36–100 tracks plus `next_from` for paging; blocks carry 8 playlists (`Для вас`, `Открытия`, `Новинки`, `Плейлист дня 1/2`) | Live calls, section ids are opaque strings and must be used verbatim |
 | Search | `audio.search` (30 results by default, up to 300 per page with `count`, all HLS) and `audio.getSearchSuggestions` | Live calls |
-| Legacy audio methods | `audio.get`, `audio.getById`, `audio.getPlaylists`, `audio.getLyrics` are reachable; `audio.getCount` is not (error 3) | `audio.get` returned the user's own 100 tracks; `audio.getPlaylists` returned an empty list, so playlists come from the catalog |
+| Legacy audio methods | `audio.get`, `audio.getById`, `audio.getPlaylists`, `audio.getLyrics` are reachable; `audio.getCount` is not (error 3) | `audio.get` returned the user's own 100 tracks; `audio.getPlaylists` is empty until something is saved to my music, then it lists the saved copies (see *Saved playlists*) |
+| Saving a playlist | `audio.followPlaylist(owner_id, playlist_id, access_key)` → `1`, and the list appears in `audio.getPlaylists(owner_id=me)` as a copy under my ids (`original_owner_id`, `original_playlist_id`) | Live, 2026-11-07 |
+| Removing a saved playlist | No `audio.unfollowPlaylist` (error 3). `audio.deletePlaylist(owner_id=me, playlist_id=copy)` removes the copy and drops the original's follower count by one; pointed at the original it deletes a playlist that is not mine (error 15) | Live, 2026-11-07 |
 | Stream format | HLS `index.m3u8` on `vkuseraudio.ru`, per-segment `EXT-X-KEY` — `AES-128` for some segments, `METHOD=NONE` for others; the AES key is fetched over plain HTTP (16 bytes) | Live probe of the first bytes and the key URL |
 | Does playback work? | Yes | `ffprobe`: `format=hls`, `codec=mp3`, 44100 Hz stereo, duration matches. `mpv` with the plugin's planned flags: exit code 0 |
 | Lyrics | `audio.getLyrics` takes the composite `audio_id=<owner_id>_<audio_id>` and returns `{"lyrics":{"language":"en","text":[line,…]},"credits":"","md5":"…"}` | Live call. **No timestamps** — synchronized lyrics need LRCLIB |
@@ -37,8 +39,9 @@ Nothing here is a guess unless the line says "unverified".
 
 - No synchronized lyrics, no artist or album pages, no catalog browsing beyond
   the sections the API hands over.
-- No playlist editing (`audio.add` / `audio.delete` exist but only for the
-  user's own tracks).
+- No playlist editing of *contents* (`audio.addToPlaylist` / `audio.reorderPlaylist`
+  are not used). Saving a whole playlist to my music, and taking it back out, is
+  **in** scope: see *Saved playlists* below.
 - No global Hyprland keybindings: MPRIS covers the media keys.
 - No publishing. The plugin stays a local checkout.
 
@@ -1167,6 +1170,58 @@ them) as the stand-in for the bookmarks VK will not hand over. A pasted link is
 parsed for a profile (`vk.com/id213706100`, `@durov`, `durov`, `213706100`) or a
 playlist link, from which the owner is taken.
 
+## Saved playlists: a heart, and a copy under my own ids
+
+VK has no «bookmark a playlist» verb, and the audio API will not hand out `fave`
+methods. What it has is `audio.followPlaylist(owner_id, playlist_id, access_key)`:
+the playlist is added to «Моя музыка» as a **copy under my own ids**, and the copy
+carries `original_owner_id` / `original_playlist_id` so it can be told apart from a
+playlist I made. The copy is what appears in `audio.getPlaylists(owner_id=me)` —
+before anything is saved, that call is empty even for an account with 89 queued
+tracks, which is why the old section of this document said playlists come only from
+the catalog.
+
+There is no unfollow method: `audio.unfollowPlaylist` answers «Unknown method
+passed». Removal is `audio.deletePlaylist(owner_id=me, playlist_id=copy)` — pointed
+at the copy it removes the list and drops the original's follower count by one;
+pointed at the original it deletes a playlist that is not mine, which VK refuses
+with error 15. So the daemon keeps both facts: the **key** of a playlist is the
+original's (`owner_id_playlist_id`), and the ids of the copy ride beside it.
+
+Three places draw the same fact:
+
+* **The card** — a heart on the cover, at the top right, above the card's own
+  MouseArea so a press on it does not open the playlist. It is drawn only when VK
+  says the list may be followed (`permissions.follow`); `Для вас` and the other
+  generated blocks are not, and a heart that refuses its own click is worse than no
+  heart.
+* **The row** — the same heart at the right end, beside a «⋯» that opens the menu.
+* **The menu** — «В мою музыку» / «Из моей музыки», «Ссылку», «В браузере». It
+  rides the same bar and the same corner as the track menu, so a right click reads
+  the same wherever it lands: on a card, on a row, or on the «⋯» of an opened list.
+
+The link is VK's own share address,
+`https://vk.com/music/playlist/<owner_id>_<playlist_id>_<access_key>`, built by the
+service from the original's ids — the copy's link would point at a playlist of mine
+that the recipient cannot open. It is copied through `Quickshell.clipboardText` and
+confirmed in the status line («Ссылка скопирована», three seconds), because a menu
+that closes with nothing to show reads as a miss.
+
+Saving is optimistic on screen and corrected by the answer: a heart that fills a
+second late reads as a heart that did not hear the click, so the lists are marked at
+once and the reply — with the authoritative `is_following` and the copy's ids —
+replaces the guess. A refusal puts them back. One fact, many lists: the card of the
+section, the same list in a search result and the copy on «Избранное» answer to the
+original's key, so `Follows.mark` rebuilds every list holding it (the same trap as
+`Likes.mark`: a delegate is handed a copy of its element, so an in-place edit paints
+nothing).
+
+«Избранное» is a page of the browse view with a chip of its own beside «Люди», and
+for the same reason: it is a way in, not a catalog section, and the «Разделы»
+settings must not be able to hide it. Its source is `cmd_my_playlists`
+(`audio.getPlaylists(owner_id=me)`), its heading counts the saved lists, and it
+refreshes itself after every save or removal.
+
 ## Opening a playlist is not playing it
 
 A click on a playlist used to replace the queue with its tracks, which meant the
@@ -1680,7 +1735,10 @@ automatically.
    done: the web and password paths both work from the panel, a sign-in clears a
    halt, and the settings page stores, switches and removes several accounts.
 5. ~~**Polish** — likes, settings page, search-as-you-type.~~ done
-6. **Later** — lyrics via LRCLIB, playlist editing.
+6. ~~**Saved playlists** — a heart, a link, and «Избранное».~~ done: the link is
+   VK's own share address, copied through the shell clipboard, and the saved lists
+   are a page of the browse view.
+7. **Later** — lyrics via LRCLIB, and editing the *contents* of a playlist.
 
 ## What is built and verified
 
@@ -1697,6 +1755,8 @@ automatically.
 | Pacing and halting | in place; no halt has been triggered in normal use |
 | Bar widget and queue popup | loads clean in the shell; polling confirmed |
 | Likes and unlikes | `audio.add` / `audio.delete` round trip verified against the account |
+| Saving a playlist | `audio.followPlaylist` round trip verified live: the copy appears in `audio.getPlaylists(me)` and is gone once it is removed |
+| A playlist's link and its menu | the link is VK's own share address; the menu opens on a card, on a row and on an opened list |
 | Settings in the popup | cache, prefetch, restore, and what the bar row shows |
 | Search as you type | suggestions at 250 ms, results at 700 ms or on `Enter`; stale replies dropped |
 | Playing a search result | queues the keys of the results on screen, one `audio.getById`, no second search |

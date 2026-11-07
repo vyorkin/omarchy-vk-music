@@ -19,6 +19,8 @@ so the media keys and any MPRIS client work without extra setup.
 - **Your music and the catalogue** — «Моя музыка», the sections VK offers, and any
   playlist: cover gallery or compact rows, whichever you prefer.
 - **Other people's playlists** — friends, anyone by link, and a playlist search.
+- **Saved playlists** — a heart on every playlist VK lets you save, a right click for
+  «В мою музыку» / «Ссылку» / «В браузере», and «Избранное», a page of the lists you kept.
 - **Radio** — the stations VK links to, played straight from their own streams.
 - **Likes** — a heart on every row and in the player. On VK a like IS «Моя музыка», so the
   two can never disagree.
@@ -127,6 +129,10 @@ omarchy-vk-music auth status
 omarchy-vk-music accounts
 omarchy-vk-music account switch 213706100
 omarchy-vk-music account remove 213706100
+omarchy-vk-music playlists джаз                 # search playlists
+omarchy-vk-music follow -137360741 84612405 KEY # save one to my music
+omarchy-vk-music favorites                      # the saved lists
+omarchy-vk-music unfollow -137360741 84612405 KEY
 ```
 
 Every command prints one line of JSON. `--pretty` formats it.

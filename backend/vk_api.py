@@ -206,6 +206,8 @@ DESCRIPTIONS = {
     "no_keys": "no track keys given",
     "nothing_for_keys": "VK returned nothing for those keys",
     "track_key_required": "track key is required",
+    "playlist_key_required": "playlist ids are required",
+    "playlist_not_followed": "the playlist is not in my music",
 }
 
 
@@ -319,14 +321,32 @@ class Playlist:
     plays: int = 0
     followers: int = 0
     main_color: str = ""
+    # A followed playlist arrives from `audio.getPlaylists(me)` as a copy: my own ids,
+    # and `original` holding the ids it was copied from. Nothing the panel opens or
+    # plays may use the copy's — VK serves the tracks under the original — which is why
+    # `to_dict` answers with those and keeps the copy's only for unfollowing.
+    original: Mapping[str, Any] = field(default_factory=dict, repr=False)
+    # `{"play", "share", "follow", "edit", "delete", "save_as_copy", ...}`, as VK sends
+    # it. A cell that only VK can honour is drawn only when VK said yes.
+    permissions: Mapping[str, Any] = field(default_factory=dict, repr=False)
+    is_following: bool = False
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
     def from_item(cls, item: Mapping[str, Any]) -> "Playlist":
         owner_id = int(item.get("owner_id", 0))
         playlist_id = int(item.get("id", 0) or item.get("playlist_id", 0))
+        original = item.get("original")
+        permissions = item.get("permissions")
+        source_owner = int((original or {}).get("owner_id") or owner_id) if isinstance(
+            original, Mapping) else owner_id
+        source_list = int((original or {}).get("playlist_id") or playlist_id) if isinstance(
+            original, Mapping) else playlist_id
         return cls(
-            key=f"{owner_id}_{playlist_id}",
+            # The key names the playlist, not the copy of it: a playlist followed from
+            # the search and the same one opened from "my music" must answer to one key,
+            # or the panel paints one and leaves the other an outline.
+            key=f"{source_owner}_{source_list}",
             owner_id=owner_id,
             playlist_id=playlist_id,
             title=str(item.get("title", "")),
@@ -338,14 +358,50 @@ class Playlist:
             plays=int(item.get("plays", 0) or 0),
             followers=int(item.get("followers", 0) or 0),
             main_color=str(item.get("main_color") or ""),
+            original=original if isinstance(original, Mapping) else {},
+            permissions=permissions if isinstance(permissions, Mapping) else {},
+            is_following=bool(item.get("is_following")),
             raw=item,
         )
 
+    # The ids VK serves the playlist under: the originals, or this playlist's own when it
+    # is not a copy of somebody else's.
+    @property
+    def source_owner_id(self) -> int:
+        return int(self.original.get("owner_id") or self.owner_id)
+
+    @property
+    def source_playlist_id(self) -> int:
+        return int(self.original.get("playlist_id") or self.playlist_id)
+
+    @property
+    def source_access_key(self) -> str:
+        return str(self.original.get("access_key") or self.access_key)
+
+    # Where the copy sits in my music, for the one call that removes it. None when this
+    # is not a copy.
+    @property
+    def copy_ids(self) -> tuple[int, int] | None:
+        return (self.owner_id, self.playlist_id) if self.original else None
+
+    # What VK's own share button hands out, and the one address that opens the playlist
+    # whether or not the reader is signed in. Verified 2026-11-07: the two-part form
+    # redirects to the mobile playlist page, and the three-part one with the access key
+    # is accepted as well — the key is carried so a list that needs it opens too.
+    @property
+    def link(self) -> str:
+        address = f"https://vk.com/music/playlist/{self.source_owner_id}_{self.source_playlist_id}"
+        return f"{address}_{self.source_access_key}" if self.source_access_key else address
+
     def to_dict(self) -> dict[str, Any]:
+        copy = self.copy_ids
         return {
             "key": self.key,
-            "owner_id": self.owner_id,
-            "playlist_id": self.playlist_id,
+            "owner_id": self.source_owner_id,
+            "playlist_id": self.source_playlist_id,
+            # Zero unless this list is a followed copy.
+            "copy_owner_id": copy[0] if copy else 0,
+            "copy_playlist_id": copy[1] if copy else 0,
             "title": self.title,
             "count": self.count,
             "cover": self.cover,
@@ -353,8 +409,12 @@ class Playlist:
             "plays": self.plays,
             "followers": self.followers,
             # The widget plays a playlist by handing this back, so it has to travel.
-            "access_key": self.access_key,
-            "has_access_key": bool(self.access_key),
+            "access_key": self.source_access_key,
+            "has_access_key": bool(self.source_access_key),
+            "is_following": self.is_following,
+            "can_follow": bool(self.permissions.get("follow")),
+            "can_share": bool(self.permissions.get("share")),
+            "link": self.link,
         }
 
 
@@ -851,6 +911,57 @@ class VkClient:
             "audio.getPlaylists", owner_id=owner_id, count=count, offset=offset
         )
         return _playlists_from(response)
+
+    def my_playlists(self, owner_id: int, *, count: int = 100) -> list[Playlist]:
+        """«Моя музыка» → плейлисты: my own lists *and* the ones I follow.
+
+        Verified live 2026-11-07: a followed list turns up here as a copy under my own
+        ids, with the original in its `original` block, and `is_following` true. This is
+        the only place VK lists follows — `catalog.getAudio`'s section has no playlists
+        block — so it is what the panel's «Избранное» asks for.
+
+        `owner_id` has no default on VK's side: omitting it is error 100, so the account
+        has to be named.
+        """
+        return self.audio_playlists(owner_id, count=count)
+
+    def follow_playlist(self, owner_id: int, playlist_id: int, *, access_key: str = "") -> None:
+        """`audio.followPlaylist`: keep somebody else's playlist in «Моя музыка».
+
+        Verified live 2026-11-07: the answer is the *copy* — `{"playlist_id", "owner_id"}`
+        with my own id — and the original's `is_following` flips to true.
+        """
+        self.call(
+            "audio.followPlaylist",
+            owner_id=owner_id,
+            playlist_id=playlist_id,
+            access_key=access_key or None,
+        )
+
+    def delete_playlist(self, owner_id: int, playlist_id: int) -> None:
+        """`audio.deletePlaylist`: delete one of my own playlists — how a follow is undone.
+
+        Verified live: pointed at the copy from `my_playlists`, it removes the list from
+        my music and drops the original's follower count by one; pointed at the original
+        of somebody else's list it answers access denied, so the caller passes the copy's
+        ids.
+        """
+        self.call("audio.deletePlaylist", owner_id=owner_id, playlist_id=playlist_id)
+
+    def playlist_by_id(
+        self, owner_id: int, playlist_id: int, *, access_key: str = ""
+    ) -> Playlist | None:
+        """One playlist with its current state, for repainting after a follow.
+
+        Verified live: the answer is the playlist object itself, not an `items` wrapper.
+        """
+        response = self.call(
+            "audio.getPlaylistById",
+            owner_id=owner_id,
+            playlist_id=playlist_id,
+            access_key=access_key or None,
+        )
+        return Playlist.from_item(response) if isinstance(response, Mapping) else None
 
     def search_playlists(
         self, query: str, *, count: int = 30, offset: int = 0

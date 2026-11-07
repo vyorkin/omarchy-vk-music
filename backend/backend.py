@@ -926,7 +926,7 @@ class Player:
             "sections": [asdict(section) for section in sections],
             "default": default,
             "recent": [track_to_state(track) for track in audios],
-            "playlists": [asdict(playlist) for playlist in playlists],
+            "playlists": [playlist.to_dict() for playlist in playlists],
         }
 
     def section_items(self, section_id: str, offset: str | None = None) -> dict[str, Any]:
@@ -937,7 +937,7 @@ class Player:
             "title": blocks.title,
             "next": blocks.next_offset,
             "tracks": [track_to_state(track) for track in blocks.audios],
-            "playlists": [asdict(playlist) for playlist in blocks.playlists],
+            "playlists": [playlist.to_dict() for playlist in blocks.playlists],
         }
 
     def _resolve_section_id(self, reference: str) -> str:
@@ -1020,6 +1020,78 @@ class Player:
         self.remember_person(person)
         return {
             "person": person.to_dict(),
+            "playlists": [playlist.to_dict() for playlist in playlists],
+        }
+
+    def my_playlists(self) -> dict[str, Any]:
+        """«Избранное»: the playlists saved to my music, my own and followed alike.
+
+        VK keeps both in one call — `audio.getPlaylists` on my own id — and nothing in
+        `catalog.getAudio` has a playlists block, so this is the only list of follows
+        there is. Verified live 2026-11-07.
+        """
+        me = int(self.account_id() or 0)
+        return {
+            "playlists": [
+                playlist.to_dict()
+                for playlist in self.api(lambda: self.client.my_playlists(me))  # type: ignore[union-attr]
+            ]
+        }
+
+    def set_playlist_following(
+        self, owner_id: int, playlist_id: int, access_key: str = "", following: bool = True
+    ) -> dict[str, Any]:
+        """Save somebody else's playlist to my music, or take it back out.
+
+        VK has no unfollow method: a follow is a *copy* of the playlist under my own ids,
+        and removing it is `audio.deletePlaylist` on that copy — the same call aimed at
+        the original answers access denied. Verified live 2026-11-07. So the copy is
+        looked up in my playlists by the original it names, never guessed from what the
+        panel holds: the panel's answer may be a search result that was never followed.
+
+        The answer carries the refreshed playlist and the refreshed list, so one click
+        repaints the card and the «Избранное» page without a second round trip.
+        """
+        owner_id = int(owner_id)
+        playlist_id = int(playlist_id)
+        me = int(self.account_id() or 0)
+        if following:
+            self.api(  # type: ignore[union-attr]
+                lambda: self.client.follow_playlist(  # type: ignore[union-attr]
+                    owner_id, playlist_id, access_key=str(access_key)
+                )
+            )
+        else:
+            copy = None
+            for playlist in self.api(lambda: self.client.my_playlists(me)):  # type: ignore[union-attr]
+                original = playlist.original
+                if (
+                    int(original.get("owner_id") or 0) == owner_id
+                    and int(original.get("playlist_id") or 0) == playlist_id
+                ):
+                    copy = playlist
+                    break
+            if copy is None:
+                raise VkApiError(
+                    0, "playlist is not in my music", method="audio.deletePlaylist",
+                    reason="playlist_not_followed",
+                )
+            self.api(lambda: self.client.delete_playlist(copy.owner_id, copy.playlist_id))  # type: ignore[union-attr]
+        fresh: Playlist | None = None
+        try:
+            fresh = self.api(  # type: ignore[union-attr]
+                lambda: self.client.playlist_by_id(  # type: ignore[union-attr]
+                    owner_id, playlist_id, access_key=str(access_key)
+                )
+            )
+        except VkApiError as exc:
+            # A generated catalog list has no id VK will answer for; the panel then keeps
+            # the state the button implies rather than losing it to a second failure.
+            log(f"could not re-read the playlist: {safe_error_text(exc)}")
+        playlists = self.api(lambda: self.client.my_playlists(me))  # type: ignore[union-attr]
+        return {
+            "following": bool(fresh.is_following) if fresh else bool(following),
+            "playlist": fresh.to_dict() if fresh else None,
             "playlists": [playlist.to_dict() for playlist in playlists],
         }
 
@@ -2404,6 +2476,25 @@ class Backend:
 
     def cmd_playlist_search(self, query: str = "", offset: int | None = None) -> dict[str, Any]:
         return self.player.playlist_search(query, offset)
+
+    def cmd_my_playlists(self) -> dict[str, Any]:
+        """«Избранное»: my own playlists and the ones I saved from other people."""
+        return self.player.my_playlists()
+
+    def cmd_playlist_follow(
+        self,
+        ownerId: int = 0,
+        playlistId: int = 0,
+        accessKey: str = "",
+        following: bool = True,
+    ) -> dict[str, Any]:
+        """Save a playlist to my music, or take it back out."""
+        if not int(ownerId) or not int(playlistId):
+            raise VkApiError(0, "playlist ids are required", method="audio.followPlaylist",
+                             reason="playlist_key_required")
+        return self.player.set_playlist_following(
+            int(ownerId), int(playlistId), str(accessKey), following=following is True
+        )
 
     def cmd_friends(self) -> list[dict[str, Any]]:
         """Everyone on the friend list, plus the people opened recently."""

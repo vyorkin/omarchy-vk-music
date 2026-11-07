@@ -149,6 +149,26 @@ case "$command_name" in
   playlists)
     send "$(jq -nc --arg query "$*" '{command:"playlist_search", query:$query}')"
     ;;
+  # My own playlists and the ones I saved from other people — the panel's «Избранное».
+  favorites) send '{"command":"my_playlists"}' ;;
+  # Saving somebody else's playlist to my music is a follow, and undoing it is the one
+  # call VK has for removing a playlist of mine: `follow <owner_id> <playlist_id>
+  # [access_key]` and `unfollow` the same way. VK has no unfollow method — the copy is
+  # looked up on the service side.
+  follow|unfollow)
+    if [ $# -lt 2 ]; then
+      printf 'использование: %s <owner_id> <playlist_id> [access_key]\n' "$command_name" >&2
+      exit 2
+    fi
+    owner="$(number "$1")"; shift
+    list="$(number "$1")"; shift
+    access="${1:-}"
+    following=false
+    [ "$command_name" = "follow" ] && following=true
+    send "$(jq -nc --argjson ownerId "$owner" --argjson playlistId "$list" \
+      --arg accessKey "$access" --argjson following "$following" \
+      '{command:"playlist_follow", ownerId:$ownerId, playlistId:$playlistId, accessKey:$accessKey, following:$following}')"
+    ;;
   friends) send '{"command":"friends"}' ;;
   playlist)
     if [ $# -lt 2 ]; then

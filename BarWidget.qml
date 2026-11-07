@@ -20,6 +20,7 @@ import "i18n.js" as I18n
 import "GalleryFit.js" as GalleryFit
 import "GalleryWalk.js" as GalleryWalk
 import "ListShape.js" as ListShape
+import "Follows.js" as Follows
 import "BarShares.js" as BarShares
 import "StatusShape.js" as StatusShape
 
@@ -367,6 +368,7 @@ Panel {
     if (api.errorText !== "") return api.errorText
     if (root.halted !== "") return root.haltText
     if (root.notice !== "") return root.notice
+    if (root.copiedHint !== "") return root.copiedHint
     if (!root.signedIn) return root.t("нет входа")
     // Buffering is not text: the ring around the cover says it, in place, and
     // without a word that would appear and vanish three times a second.
@@ -452,7 +454,8 @@ Panel {
     running: root.opened && root.signedIn && (root.sources.length === 0
       || (root.view === "browse" && root.tracks.length === 0
           && root.playlists.length === 0 && !session.loading("browse")
-          && root.browseSlug !== "" && root.openPlaylist === null))
+          && root.browseSlug !== "" && root.browseSlug !== "favorites"
+          && root.openPlaylist === null))
     onTriggered: {
       root.loadSources()
       root.reloadEmptySection()
@@ -465,6 +468,15 @@ Panel {
     interval: 5000
     repeat: false
     onTriggered: root._watching = false
+  }
+
+  // A copied link is confirmed in the status line and then forgotten: the line is the one
+  // place in the card that can say something without moving anything.
+  Timer {
+    id: copiedHintTimer
+    interval: 2500
+    repeat: false
+    onTriggered: root.copiedHint = ""
   }
 
   Component.onCompleted: {
@@ -1018,6 +1030,106 @@ Panel {
     root.pendingIndex = -1
   }
 
+  // A playlist's own menu, for the hand that wants «скопировать ссылку» rather than a
+  // click that opens the list. It rides the same bar as the track menu, over the bottom
+  // of the card, so it appears where the menu a right-click on a track opens does.
+  property var pendingPlaylist: null
+  // What the status line says for a moment after a link is copied: a copy leaves no other
+  // trace on screen, and a menu that closes with nothing to show reads as a miss.
+  property string copiedHint: ""
+
+  function openPlaylistMenu(playlist) {
+    if (!playlist) return
+    root.pendingPlaylist = playlist
+  }
+
+  function closePlaylistMenu() {
+    root.pendingPlaylist = null
+  }
+
+  // Saving a playlist to my music is VK's follow: the list comes back under my own ids as
+  // a copy of the original, and the card that was an outline fills in. Unfollowing is the
+  // same call with the copy removed, found by the service — the panel's answer may be a
+  // search result that was never followed, so it cannot name the copy itself.
+  //
+  // Nothing on screen waits for the round trip: a heart that fills a second late reads as
+  // a heart that did not hear the click. The answer is what corrects it.
+  function setPlaylistFollowing(playlist, following) {
+    if (!playlist) return
+    var key = String(playlist.key || "")
+    if (key === "") return
+    session.follow(key, following === true,
+      Number(playlist.copy_owner_id || 0), Number(playlist.copy_playlist_id || 0))
+    if (root.openPlaylist !== null && String(root.openPlaylist.key || "") === key) {
+      root.openPlaylist = Follows.mark([root.openPlaylist], key, following === true,
+        Number(playlist.copy_owner_id || 0), Number(playlist.copy_playlist_id || 0))[0]
+    }
+    // The menu shows the state it is about to change: a button that still reads «В мою
+    // музыку» after the heart filled is a second click that undoes the first.
+    if (root.pendingPlaylist !== null && String(root.pendingPlaylist.key || "") === key) {
+      root.pendingPlaylist = Follows.mark([root.pendingPlaylist], key, following === true,
+        Number(playlist.copy_owner_id || 0), Number(playlist.copy_playlist_id || 0))[0]
+    }
+    api.request("playlist_follow", {
+      ownerId: Number(playlist.owner_id || 0),
+      playlistId: Number(playlist.playlist_id || 0),
+      accessKey: String(playlist.access_key || ""),
+      following: following === true
+    }, function(answer) {
+      // A refusal is the daemon's to explain, in `api.errorText`; the lists go back to what
+      // was actually saved rather than staying on the optimistic guess.
+      if (!answer || !answer.ok) {
+        var saved = following !== true
+        session.follow(key, saved, Number(playlist.copy_owner_id || 0),
+          Number(playlist.copy_playlist_id || 0))
+        return
+      }
+      var page = answer.data || {}
+      var fresh = page.playlist || null
+      var now = page.following === true
+      session.follow(key, now,
+        fresh ? Number(fresh.copy_owner_id || 0) : 0,
+        fresh ? Number(fresh.copy_playlist_id || 0) : 0)
+      if (fresh) {
+        if (root.openPlaylist !== null && String(root.openPlaylist.key || "") === key) {
+          root.openPlaylist = fresh
+        }
+        if (root.pendingPlaylist !== null && String(root.pendingPlaylist.key || "") === key) {
+          root.pendingPlaylist = fresh
+        }
+      }
+      // «Избранное» is the list of saved copies, so a save and a removal both change what
+      // belongs on it: the page on screen is answered with the authoritative list.
+      if (root.browseSlug === "favorites" && root.openPlaylist === null) {
+        root.playlists = page.playlists || []
+      }
+    })
+  }
+
+  function togglePlaylistFollow(playlist) {
+    if (!playlist) return
+    root.setPlaylistFollowing(playlist, playlist.is_following !== true)
+  }
+
+  // The address VK's own share button hands out, built by the service from the ids the
+  // playlist is served under. Copied rather than opened: the panel has no room for a
+  // browser, and the link is usually going into a chat.
+  function copyPlaylistLink(playlist) {
+    var link = playlist ? String(playlist.link || "") : ""
+    if (link === "") return
+    Quickshell.clipboardText = link
+    root.closePlaylistMenu()
+    root.copiedHint = root.t("Ссылка скопирована")
+    copiedHintTimer.restart()
+  }
+
+  function openPlaylistInBrowser(playlist) {
+    var link = playlist ? String(playlist.link || "") : ""
+    if (link === "") return
+    Qt.openUrlExternally(link)
+    root.closePlaylistMenu()
+  }
+
   // A queue row can be played now or dropped; anything else can be queued.
   function jumpPending() {
     var index = root.pendingIndex
@@ -1155,6 +1267,7 @@ Panel {
       // looking at is exactly the traffic this exists to avoid.
       if (slug === "" || root.view !== "browse") return
       if (slug === "friends") root.browseFriends()
+      else if (slug === "favorites") root.browseFavorites()
       else root.browseSource(slug)
     }
   }
@@ -1201,7 +1314,7 @@ Panel {
       root.cursor = -1
       root.focusList()
     }
-    var slugs = ["friends"]
+    var slugs = ["friends", "favorites"]
     var shown = root.visibleSections()
     for (var i = 0; i < shown.length; i++) slugs.push(root.sourceSlug(shown[i]))
     // Count from what is scheduled, not from what is loaded: the load is delayed by
@@ -1262,7 +1375,7 @@ Panel {
     state.extended = root.isExtended()
     state.columns = root.galleryColumns
     state.gridView = root.gridView
-    state.browseLoading = session.loading("browse")
+    state.browseLoading = session.loading("browse") || session.loading("favorites")
     state.filter = root.filter
     // The recent queries and the recent people arrive with the status rather than from a
     // fetch, so they are not the store's to keep.
@@ -1633,7 +1746,7 @@ Panel {
         : stations + " " + I18n.plural(root.language, stations, root.t("станция"), root.t("станции"), root.t("станций")))
     }
     var title = root.browseTitle !== "" ? root.browseTitle : (root.sectionTitle(root.browseSlug) || root.t("Раздел"))
-    if (session.loading("browse")) return title + root.t(" · загрузка…")
+    if (session.loading("browse") || session.loading("favorites")) return title + root.t(" · загрузка…")
     var tracks = root.tracks.length
     var lists = root.playlists.length
     if (tracks === 0 && lists === 0) return title + root.t(" · пусто")
@@ -1654,7 +1767,9 @@ Panel {
   function reloadEmptySection() {
     if (root.view !== "browse") return
     var slug = root.browseSlug
-    if (slug === "" || slug === "friends" || slug === "person" || slug === "playlist") return
+    // «Избранное» is empty for as long as nothing is saved, and asking again cannot change
+    // that: a saved list arrives with its own fetch, not with a section page.
+    if (slug === "" || slug === "favorites" || slug === "friends" || slug === "person" || slug === "playlist") return
     if (root.tracks.length > 0 || root.playlists.length > 0) return
     if (session.emptySectionTries >= 3) return
     session.emptySectionTries = session.emptySectionTries + 1
@@ -1669,7 +1784,8 @@ Panel {
       all: "Моя музыка",
       explore: "Обзор",
       radiostations: "Радио",
-      updates: "Обновления"
+      updates: "Обновления",
+      favorites: "Избранное"
     }
     var key = known[slug]
     return key ? root.t(key) : ""
@@ -1708,6 +1824,13 @@ Panel {
     // One guard for the page: a section, a person and an opened playlist answer into
     // different lists but cancel one another, because the user has moved on to another page.
     var token = session.begin("browse")
+    if (slug === "favorites") {
+      // Not a section, and not answered into `adoptSection`: the saved playlists come from
+      // their own call, under a guard of their own.
+      session.accept(token)
+      root.loadFavorites()
+      return
+    }
     if (slug === "radiostations") {
       if (root.stations.length > 0) {
         session.accept(token)
@@ -1812,6 +1935,11 @@ Panel {
     })
   }
 
+  // A playlist open in the list keeps its heart on the bar too: the list may have been
+  // opened from a search result whose card is no longer on screen.
+  readonly property bool openPlaylistFollowable: root.openPlaylist !== null
+    && (root.openPlaylist.can_follow === true || root.openPlaylist.is_following === true)
+
   function closePlaylistView() {
     root.focusList()
     root.cursor = -1
@@ -1841,6 +1969,35 @@ Panel {
     api.request("friends", {}, function(answer) {
       if (!session.accept(token)) return
       root.friends = (answer && answer.ok && answer.data) ? answer.data : []
+    })
+  }
+
+  // «Избранное»: the playlists saved to my music. It is a page of the browse view, but its
+  // source is not a catalog section — VK keeps the saved lists in `audio.getPlaylists` on my
+  // own id, and nothing in the catalog has a playlists block — so it fetches its own list
+  // and has its own chip beside «Люди».
+  function browseFavorites() {
+    root.clearFilterQuiet()
+    root.cursor = -1
+    root.focusList()
+    root.clearBrowseLoading()
+    root.person = null
+    root.personPlaylists = []
+    root.browseSlug = "favorites"
+    root.browseTitle = root.t("Избранное")
+    root.tracks = []
+    root.playlists = []
+    root.browseNext = ""
+    root.loadFavorites()
+  }
+
+  function loadFavorites() {
+    var token = session.begin("favorites")
+    api.request("my_playlists", {}, function(answer) {
+      if (!session.accept(token)) return
+      if (!answer || !answer.ok) return
+      var page = answer.data || {}
+      root.playlists = page.playlists || []
     })
   }
 
@@ -2857,6 +3014,14 @@ Panel {
     property real cellWidth: 100
     property bool selected: false
     signal activated()
+    // A right-click asks for the menu instead of opening the list: the link and the save
+    // are things to do *with* the card, not ways into it.
+    signal contextRequested()
+
+    // VK says which of these a playlist may have: a generated list («Для вас») cannot be
+    // saved and its cover has no room for a heart that would refuse the click.
+    readonly property bool followable: card.item !== null
+      && (card.item.can_follow === true || card.item.is_following === true)
 
     width: cellWidth
     // The Column lays itself out; the MouseArea sits beside it, because a
@@ -2929,12 +3094,44 @@ Panel {
       }
     }
 
+    // The heart sits on the cover, not under the caption: the caption is two lines of text
+    // in a card that has no room for a third, and the cover is the part of the card a
+    // pointer reaches for. It is a target of its own, above the card's MouseArea — without
+    // it a press on the heart opens the playlist the heart belongs to.
+    Item {
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.margins: Style.space(2)
+      width: Style.space(22)
+      height: width
+      visible: card.followable
+      z: 1
+
+      BarGlyph {
+        anchors.fill: parent
+        barItem: root.bar
+        loading: false
+        name: "heart"
+        fillOnHover: true
+        filled: card.item !== null && card.item.is_following === true
+        iconColor: card.item !== null && card.item.is_following === true ? Color.accent : root.textColor
+        tooltip: card.item !== null && card.item.is_following === true
+          ? root.t("Убрать из моей музыки")
+          : root.t("В мою музыку")
+        onClicked: root.togglePlaylistFollow(card.item)
+      }
+    }
+
     MouseArea {
       id: cardArea
       anchors.fill: parent
+      acceptedButtons: Qt.LeftButton | Qt.RightButton
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      onClicked: card.activated()
+      onClicked: function(mouse) {
+        if (mouse.button === Qt.RightButton) card.contextRequested()
+        else card.activated()
+      }
     }
   }
 
@@ -3387,6 +3584,9 @@ Panel {
         // The same name the other rows use, so the state can be read rather than
         // inferred from the fill.
         property bool selected: index === root.cursor
+        // VK decides which lists may be saved; the others get no heart to click.
+        readonly property bool followable: modelData !== null
+          && (modelData.can_follow === true || modelData.is_following === true)
 
         width: rows.width
         height: Style.space(44)
@@ -3426,7 +3626,7 @@ Panel {
         Column {
           anchors.left: rowCover.right
           anchors.leftMargin: Style.space(8)
-          anchors.right: parent.right
+          anchors.right: rowTools.left
           anchors.rightMargin: Style.space(6)
           anchors.verticalCenter: parent.verticalCenter
           spacing: Style.space(1)
@@ -3456,12 +3656,57 @@ Panel {
           }
         }
 
+        // Two ways into what a playlist can be *made* rather than opened: the heart saves it
+        // to my music, the dots open the menu with the link and the same save spelled out.
+        // Above the row's MouseArea, which fills the row: without the stacking order a press
+        // here would open the playlist instead.
+        Row {
+          id: rowTools
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(6)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(2)
+          z: 1
+
+          BarGlyph {
+            width: Style.space(22)
+            height: width
+            barItem: root.bar
+            loading: false
+            name: "heart"
+            fillOnHover: true
+            visible: row.followable
+            filled: modelData !== null && modelData.is_following === true
+            iconColor: modelData !== null && modelData.is_following === true ? Color.accent : root.dim
+            tooltip: modelData !== null && modelData.is_following === true
+              ? root.t("Убрать из моей музыки")
+              : root.t("В мою музыку")
+            onClicked: root.togglePlaylistFollow(modelData)
+          }
+
+          BarGlyph {
+            width: Style.space(22)
+            height: width
+            barItem: root.bar
+            loading: false
+            name: "ellipsis"
+            fillOnHover: true
+            iconColor: root.dim
+            tooltip: root.t("Ещё")
+            onClicked: root.openPlaylistMenu(modelData)
+          }
+        }
+
         MouseArea {
           id: rowArea
           anchors.fill: parent
+          acceptedButtons: Qt.LeftButton | Qt.RightButton
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
-          onClicked: rows.picked(index)
+          onClicked: function(mouse) {
+            if (mouse.button === Qt.RightButton) root.openPlaylistMenu(modelData)
+            else rows.picked(index)
+          }
         }
       }
     }
@@ -3527,6 +3772,80 @@ Panel {
         cellWidth: grid.cellWidth
         selected: index === root.cursor
         onActivated: grid.picked(index)
+        onContextRequested: root.openPlaylistMenu(modelData)
+      }
+    }
+  }
+
+  // What a right-click on a playlist card, or the dots on its row, offers: the two things
+  // a playlist has that are not a way into it. Same bar, same corner, same key.
+  component PlaylistMenu: BorderSurface {
+    id: playlistMenu
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    anchors.margins: Style.space(10)
+    radius: Style.space(6)
+    color: Color.popups.background
+    borderSpec: Border.controlSpec("selected", Color.foreground, Color.accent, Color.urgent)
+    padding: Style.spacing.controlGap
+    implicitHeight: playlistMenuRow.implicitHeight
+      + playlistMenu.contentTopInset + playlistMenu.contentBottomInset
+    visible: root.pendingPlaylist !== null
+
+    RowLayout {
+      id: playlistMenuRow
+      x: playlistMenu.contentLeftInset
+      y: playlistMenu.contentTopInset
+      width: playlistMenu.width
+        - playlistMenu.contentLeftInset - playlistMenu.contentRightInset
+      spacing: Style.space(6)
+
+      Text {
+        Layout.fillWidth: true
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        color: root.textColor
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+        text: root.pendingPlaylist ? String(root.pendingPlaylist.title || "") : ""
+      }
+
+      // Only a list VK lets me save gets the button; on a generated one it would be a
+      // click that cannot work, which is worse than no click.
+      Button {
+        visible: root.pendingPlaylist !== null
+          && (root.pendingPlaylist.can_follow === true
+            || root.pendingPlaylist.is_following === true)
+        text: root.pendingPlaylist !== null && root.pendingPlaylist.is_following === true
+          ? root.t("Из моей музыки")
+          : root.t("В мою музыку")
+        foreground: root.textColor
+        tooltipText: root.pendingPlaylist !== null && root.pendingPlaylist.is_following === true
+          ? root.t("Убрать из моей музыки")
+          : root.t("Добавить в мою музыку")
+        onClicked: root.togglePlaylistFollow(root.pendingPlaylist)
+      }
+
+      Button {
+        text: root.t("Ссылку")
+        foreground: root.textColor
+        tooltipText: root.t("Скопировать ссылку на плейлист")
+        onClicked: root.copyPlaylistLink(root.pendingPlaylist)
+      }
+
+      Button {
+        text: root.t("В браузере")
+        foreground: root.textColor
+        tooltipText: root.t("Открыть плейлист на сайте VK")
+        onClicked: root.openPlaylistInBrowser(root.pendingPlaylist)
+      }
+
+      Button {
+        iconText: "󰅖"
+        foreground: root.textColor
+        tooltipText: root.t("Отмена")
+        onClicked: root.closePlaylistMenu()
       }
     }
   }
@@ -3879,10 +4198,20 @@ Panel {
               onClicked: root.browseFriends()
             }
 
+            // The saved playlists, beside «Люди» and for the same reason: a way in of the
+            // panel's own, not a catalog section that the «Разделы» settings may hide.
+            BarCell {
+              width: sectionChipRow.cellWidth(1)
+              text: root.t("Избранное")
+              selected: root.effectiveBrowse() === "favorites"
+              tooltipText: root.t("Плейлисты, сохранённые в мою музыку")
+              onClicked: root.browseFavorites()
+            }
+
             Repeater {
               model: root.visibleSections()
               delegate: BarCell {
-                width: sectionChipRow.cellWidth(index + 1)
+                width: sectionChipRow.cellWidth(index + 2)
                 text: modelData ? (root.sectionName(root.sourceSlug(modelData)) || String(modelData.title || "")) : ""
                 selected: modelData ? root.sourceSlug(modelData) === root.effectiveBrowse() : false
                 onClicked: if (modelData) {
@@ -5043,6 +5372,47 @@ Panel {
           color: root.statusUrgent ? Color.urgent : root.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
+        }
+
+        // The playlist's own two actions, on the bar where the pointer already is when the
+        // list is open: the heart saves it, the dots offer the link and the same save
+        // spelled out. A bar that is too narrow for all of it lets the heading elide first —
+        // it is the one thing there the reader can guess.
+        Item {
+          visible: root.openPlaylistFollowable
+          Layout.preferredWidth: root.topBarHeight
+          Layout.preferredHeight: root.topBarHeight
+
+          BarGlyph {
+            anchors.fill: parent
+            barItem: root.bar
+            loading: false
+            name: "heart"
+            fillOnHover: true
+            filled: root.openPlaylist !== null && root.openPlaylist.is_following === true
+            iconColor: root.openPlaylist !== null && root.openPlaylist.is_following === true
+              ? Color.accent : root.textColor
+            tooltip: root.openPlaylist !== null && root.openPlaylist.is_following === true
+              ? root.t("Убрать из моей музыки")
+              : root.t("В мою музыку")
+            onClicked: root.togglePlaylistFollow(root.openPlaylist)
+          }
+        }
+
+        Item {
+          visible: root.openPlaylist !== null
+          Layout.preferredWidth: root.topBarHeight
+          Layout.preferredHeight: root.topBarHeight
+
+          BarGlyph {
+            anchors.fill: parent
+            barItem: root.bar
+            loading: false
+            name: "ellipsis"
+            fillOnHover: true
+            tooltip: root.t("Ещё")
+            onClicked: root.openPlaylistMenu(root.openPlaylist)
+          }
         }
 
         BarDivider {
@@ -6505,6 +6875,10 @@ Panel {
           root.closeRowMenu()
           return
         }
+        if (root.pendingPlaylist !== null) {
+          root.closePlaylistMenu()
+          return
+        }
         if (root.view === "search" && root.query.length > 0) {
           root.clearSearch()
           root.activeField().forceActiveFocus()
@@ -6616,6 +6990,7 @@ Panel {
 
       // Last inside the key catcher, so they float over whichever body is showing.
       RowMenu { }
+      PlaylistMenu { }
       HintsPanel { }
     }
   }

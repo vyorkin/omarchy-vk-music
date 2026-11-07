@@ -22,6 +22,7 @@
 
 import QtQuick
 import "Likes.js" as Likes
+import "Follows.js" as Follows
 
 QtObject {
   id: session
@@ -183,6 +184,24 @@ QtObject {
     var list = session[name]
     if (!list || list.length === 0) return false
     return list[0] !== null && list[0] !== undefined && list[0].key !== undefined
+  }
+
+  // A playlist is in several lists too — a section page, a person's page, «Избранное» — and
+  // a follow is one fact about all of them, for the same reason a like is: a delegate holds
+  // a copy, so the list has to be rebuilt rather than edited. Found by what a playlist has
+  // (`playlist_id`), never by a hand-written list of names: the next list of playlists would
+  // join it and be left unpainted.
+  function follow(key, following, copyOwner, copyPlaylist) {
+    for (var name in session.lists()) {
+      if (!session.holdsPlaylists(name)) continue
+      session[name] = Follows.mark(session[name], key, following, copyOwner, copyPlaylist)
+    }
+  }
+
+  function holdsPlaylists(name) {
+    var list = session[name]
+    if (!list || list.length === 0) return false
+    return list[0] !== null && list[0] !== undefined && list[0].playlist_id !== undefined
   }
 
   // Nothing of the old session survives: not a list, not a flag, not a counter. A field
