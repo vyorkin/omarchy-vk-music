@@ -1936,6 +1936,11 @@ def parse_person_reference(text: str) -> str:
     if "/" in value:
         value = value.rstrip("/").split("/")[-1]
     value = value.lstrip("@").strip()
+    # A music page: `vk.ru/audios2733436` is the address VK's own «Follow» button
+    # hands out, and `2733436` is the owner id inside it. Without this the whole
+    # `audios2733436` went to `users.get` as a screen name, which answers nobody.
+    if value.startswith("audios") and value[6:].isdigit():
+        return value[6:]
     if value.startswith("id") and value[2:].isdigit():
         return value[2:]
     return value
