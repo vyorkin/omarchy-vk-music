@@ -1056,7 +1056,7 @@ class Player:
         Two calls, both verified live 2026-11-11: `catalog.getAudioArtist` resolves the
         id or url to the artist's section, and `catalog.getSection` on it answers the
         popular thirty in `audios` and the releases (and guest appearances) in
-        `playlists` with `type: "album"`. The artist card itself — name, banner, bio,
+        `playlists` with `type: "album"`. The artist card itself — name, photo, bio,
         follow state — is at the top level of the section answer, not inside it.
         """
         artist_id = str(id or "").strip()
