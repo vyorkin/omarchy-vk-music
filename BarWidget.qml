@@ -4474,7 +4474,8 @@ Panel {
           // Where the cell lands, not which tab is showing it: a playlist opened from the
           // search comes back to the search even when it is the browse tab under it.
           tooltipText: root.browseSlug === "artist"
-            ? (root.artistBackView === "search" ? root.t("К поиску") : root.t("К разделу"))
+            ? (root.artistBackView === "search" ? root.t("К поиску")
+              : (root.artistBackView === "browse" ? root.t("К разделу") : root.t("Назад")))
             : (root.openPlaylist !== null && root.playlistBackView === "search"
               ? root.t("К поиску")
               : (root.openPlaylist !== null
