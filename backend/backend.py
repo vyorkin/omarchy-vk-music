@@ -31,6 +31,7 @@ from audio_cache import AudioCache, CacheError, cleanup_stray_temp
 from vk_api import (
     WEB_APP_ID,
     WEB_USER_AGENT,
+    Artist,
     Person,
     Playlist,
     Track,
@@ -188,6 +189,14 @@ SEARCH_PAGE_SIZE = 300
 PEOPLE_HISTORY_LIMIT = 8
 FRIENDS_TTL = 600.0
 
+# How many artists one page of `audio.searchArtists` asks for. The answer's `count` is
+# the number of items returned, not a total, so a full page is the only sign another
+# one exists; fifty is VK's own page for this call and keeps a rare match honest.
+ARTIST_SEARCH_PAGE_SIZE = 50
+# `audio.getAudiosByArtist` answers its whole list in one call for most artists (200
+# tracks for King Crimson), and VK refuses more than 300 at a time.
+ARTIST_TRACK_PAGE_SIZE = 300
+
 # Errors that mean "stop and tell the user". The value is a reason code: the panel
 # translates it, and `describe` turns it into the phrase the journal prints.
 HALT_REASONS = {
@@ -218,6 +227,14 @@ def track_to_state(track: Track) -> dict[str, Any]:
         "access_key": track.access_key,
         "has_lyrics": track.has_lyrics,
         "is_liked": track.is_liked,
+        # The artist under the title is a link to that artist's page, so the ids travel
+        # with the names: a legacy `audio.get` payload has only the name, and the panel
+        # falls back to searching for it.
+        "artists": [
+            {"id": str(item.get("id") or ""), "name": str(item.get("name") or "")}
+            for item in track.artists
+            if isinstance(item, Mapping) and (item.get("id") or item.get("name"))
+        ],
         # When the track was liked into my music, in VK's seconds. «Моя музыка» is
         # ordered by it, and the panel hands lists back as they arrived, so it has to
         # survive the trip both ways (`track_from_state`) like every other field.
@@ -292,6 +309,13 @@ def track_from_state(data: Mapping[str, Any]) -> Track:
         album=str(data.get("album", "") or ""),
         has_lyrics=bool(data.get("has_lyrics")),
         is_liked=bool(data.get("is_liked")),
+        # The ids of the artist links, as the status handed them out. A queue built from
+        # rows writes them back here; a list from before this field has none.
+        artists=tuple(
+            {"id": str(item.get("id") or ""), "name": str(item.get("name") or "")}
+            for item in data.get("artists") or []
+            if isinstance(item, Mapping)
+        ),
         date=int(data.get("date", 0) or 0) or None,
     )
 
@@ -1004,6 +1028,89 @@ class Player:
             "query": query,
             "playlists": [playlist.to_dict() for playlist in playlists],
             "total": total,
+        }
+
+    def artist_search(self, query: str, offset: int | None = None) -> dict[str, Any]:
+        """Search artists by name.
+
+        The answer's `count` is not a total (see `VkClient.search_artists`), so a full
+        page is the only sign that another one may follow — the same rule search uses.
+        """
+        text = str(query).strip()
+        if not text:
+            return {"query": "", "artists": [], "more": False}
+        artists = self.api(
+            lambda: self.client.search_artists(  # type: ignore[union-attr]
+                text, offset=offset or 0, count=ARTIST_SEARCH_PAGE_SIZE
+            )
+        )
+        return {
+            "query": query,
+            "artists": [artist.to_dict() for artist in artists],
+            "more": len(artists) >= ARTIST_SEARCH_PAGE_SIZE,
+        }
+
+    def artist(self, id: str = "", url: str = "") -> dict[str, Any]:
+        """One artist's page: the card, popular tracks and the records.
+
+        Two calls, both verified live 2026-11-11: `catalog.getAudioArtist` resolves the
+        id or url to the artist's section, and `catalog.getSection` on it answers the
+        popular thirty in `audios` and the releases (and guest appearances) in
+        `playlists` with `type: "album"`. The artist card itself — name, banner, bio,
+        follow state — is at the top level of the section answer, not inside it.
+        """
+        artist_id = str(id or "").strip()
+        artist_url = str(url or "").strip()
+        if not artist_id and not artist_url:
+            raise VkApiError(0, "artist id or url is required",
+                             method="catalog.getAudioArtist",
+                             reason="artist_key_required")
+        section = self.api(
+            lambda: self.client.artist_section(  # type: ignore[union-attr]
+                artist_id=artist_id, url=artist_url
+            )
+        )
+        blocks = self.api(
+            lambda: self.client.section(section.id)  # type: ignore[union-attr]
+        )
+        card = next((item for item in blocks.artists if item.id), None)
+        if card is None:
+            card = Artist(
+                id=artist_id or _artist_id_from_url(blocks.url),
+                name=blocks.title or section.title,
+                photo="",
+            )
+        return {
+            "artist": card.to_dict(),
+            "section": blocks.id,
+            "url": blocks.url or section.url,
+            "tracks": [track_to_state(track) for track in blocks.audios],
+            "playlists": [playlist.to_dict() for playlist in blocks.playlists],
+        }
+
+    def artist_tracks(self, artistId: str = "", offset: int = 0) -> dict[str, Any]:
+        """Every track of an artist, one page at a time.
+
+        `audio.getAudiosByArtist` returns its total in `count`, so the panel can say
+        whether «Ещё» has anything behind it without an empty round trip.
+        """
+        artist_id = str(artistId or "").strip()
+        if not artist_id:
+            raise VkApiError(0, "artist id is required",
+                             method="audio.getAudiosByArtist",
+                             reason="artist_key_required")
+        start = max(0, int(offset or 0))
+        tracks, total = self.api(
+            lambda: self.client.audios_by_artist(  # type: ignore[union-attr]
+                artist_id, offset=start, count=ARTIST_TRACK_PAGE_SIZE
+            )
+        )
+        return {
+            "artist_id": artist_id,
+            "offset": start,
+            "total": total,
+            "tracks": [track_to_state(track) for track in tracks],
+            "more": start + len(tracks) < total,
         }
 
     def friends_list(self) -> list[Person]:
@@ -1859,7 +1966,16 @@ class Player:
                 "volume": self.volume,
                 "title": track.title if track else "",
                 "artist": track.artist if track else "",
-                "artists": [{"name": track.artist}] if track else [],
+                # The ids let a desktop that shows the artist name link it the same way
+                # the panel does; a legacy payload has only the name.
+                "artists": (
+                    [
+                        {"name": str(item.get("name") or ""), "id": str(item.get("id") or "")}
+                        for item in track.artists
+                    ]
+                    if track and track.artists
+                    else ([{"name": track.artist}] if track else [])
+                ),
                 "artUrl": track.thumb if track else "",
                 "trackId": track.key if track else "",
                 "hasQueue": bool(self.queue),
@@ -1910,6 +2026,15 @@ class Player:
                 "cache": self.cache.stats(),
                 "session": session_summary(self.record),
             }
+
+
+def _artist_id_from_url(url: str) -> str:
+    """The id inside `https://vk.ru/artist/<id>`, for a page that arrived by url."""
+    text = str(url or "").split("?")[0].split("#")[0].rstrip("/")
+    marker = "/artist/"
+    if marker in text:
+        return text.split(marker, 1)[1].split("/")[0]
+    return ""
 
 
 def parse_person_reference(text: str) -> str:
@@ -2501,6 +2626,15 @@ class Backend:
 
     def cmd_playlist_search(self, query: str = "", offset: int | None = None) -> dict[str, Any]:
         return self.player.playlist_search(query, offset)
+
+    def cmd_artist_search(self, query: str = "", offset: int | None = None) -> dict[str, Any]:
+        return self.player.artist_search(query, offset)
+
+    def cmd_artist(self, id: str = "", url: str = "") -> dict[str, Any]:
+        return self.player.artist(id=id, url=url)
+
+    def cmd_artist_tracks(self, artistId: str = "", offset: int = 0) -> dict[str, Any]:
+        return self.player.artist_tracks(artistId=artistId, offset=offset)
 
     def cmd_my_playlists(self) -> dict[str, Any]:
         """«Избранное»: my own playlists and the ones I saved from other people."""

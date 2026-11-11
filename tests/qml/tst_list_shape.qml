@@ -199,6 +199,45 @@ TestCase {
     compare(playlists.showsPlaylists, true)
   }
 
+  // The artist search answers in cards, and the switch that turns a wall into rows means
+  // the same thing here as on the playlists page. Staying on «Треки» must not leave a
+  // leftover track list under the artists, which is why the mode itself is part of the plan.
+  function test_an_artist_search_is_a_wall_of_cards() {
+    var artists = [{ id: "1", name: "King Crimson" }, { id: "2", name: "Kino" }]
+    var wall = ListShape.plan({ view: "search", searchMode: "artists",
+      searchState: "results", queryLength: 5, gridView: true, columns: 3,
+      artists: artists, results: tracks(4, "stale") })
+    compare(kinds(wall), "artists")
+    compare(columnsOf(wall), "2")
+    compare(wall.gallery, true)
+    compare(wall.showsPlaylists, true)
+    compare(wall.items.length, 2)
+
+    var rows = ListShape.plan({ view: "search", searchMode: "artists",
+      searchState: "results", queryLength: 5, gridView: false, columns: 3,
+      artists: artists, results: tracks(4, "stale") })
+    compare(kinds(rows), "artists")
+    compare(rows.gallery, false)
+  }
+
+  // An artist's page has the same shape as a section: the records above and the popular
+  // tracks under them. The tracks are the same rows a section draws, so the same cursor
+  // and the same play command work on both.
+  function test_an_artist_page_is_releases_then_tracks() {
+    var planned = ListShape.plan({ view: "browse", browseSlug: "artist", gridView: true,
+      columns: 3, playlists: cards(2), tracks: tracks(30, "a") })
+    compare(kinds(planned), "playlists,tracks")
+    compare(ListShape.offsetOf(planned, "tracks"), 2)
+    compare(planned.gallery, true)
+    compare(planned.showsPlaylists, true)
+
+    var noAlbums = ListShape.plan({ view: "browse", browseSlug: "artist",
+      playlists: [], tracks: tracks(5, "a") })
+    compare(kinds(noAlbums), "tracks")
+    compare(noAlbums.gallery, false)
+    compare(noAlbums.showsPlaylists, false)
+  }
+
   // Nothing to walk is not an error: an empty page, or a view with no list at all.
   function test_an_empty_page_is_an_empty_plan() {
     var empty = ListShape.plan({ view: "browse", browseSlug: "main" })
@@ -225,7 +264,10 @@ TestCase {
       { view: "browse", browseSlug: "friends", friends: cards(2), people: cards(3), gridView: true, columns: 4 },
       { view: "browse", browseSlug: "person", personPlaylists: cards(2), gridView: true, columns: 3 },
       { view: "browse", browseSlug: "radiostations", stations: [{ id: 1, name: "Джаз" }] },
-      { view: "search", searchState: "results", queryLength: 3, results: tracks(3, "r") }
+      { view: "search", searchState: "results", queryLength: 3, results: tracks(3, "r") },
+      { view: "search", searchMode: "artists", searchState: "results", queryLength: 3,
+        gridView: true, columns: 3, artists: cards(2) },
+      { view: "browse", browseSlug: "artist", playlists: cards(2), tracks: tracks(3, "a") }
     ]
     for (var i = 0; i < states.length; i++) {
       var planned = ListShape.plan(states[i])
@@ -306,6 +348,8 @@ TestCase {
         lists: "stations" },
       { state: { view: "search", searchMode: "playlists", searchState: "results",
         queryLength: 3, foundPlaylists: cards(2) }, lists: "foundPlaylists" },
+      { state: { view: "search", searchMode: "artists", searchState: "results",
+        queryLength: 3, artists: cards(2) }, lists: "artists" },
       { state: { view: "search", searchState: "results", queryLength: 3, results: tracks(2) },
         lists: "results" },
       { state: { view: "search", searchState: "typing", queryLength: 1, history: ["kino"] },
@@ -373,6 +417,16 @@ TestCase {
     var people = ListShape.plan({ view: "browse", browseSlug: "friends", friends: cards(2) })
     compare(ListShape.actionAt(people, "friends", 0).kind, "openPerson")
     compare(String(ListShape.actionAt(people, "friends", 0).item.id), "0")
+
+    // An artist card carries the artist, so the page is opened by id rather than by
+    // searching the painted name again.
+    var artists = ListShape.plan({ view: "search", searchMode: "artists",
+      searchState: "results", queryLength: 3,
+      artists: [{ id: "170", name: "King Crimson" }] })
+    var card = artists.lists.artists[0]
+    compare(ListShape.actionAt(artists, "artists", 0).kind, "openArtist")
+    compare(ListShape.actionAt(artists, "artists", 0).item, card)
+    compare(String(ListShape.actionAt(artists, "artists", 0).item.id), "170")
 
     var radio = ListShape.plan({ view: "browse", browseSlug: "radiostations",
       stations: [{ id: 4, name: "Jazz" }] })

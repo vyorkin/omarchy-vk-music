@@ -203,6 +203,33 @@ case "$command_name" in
     send "$(jq -nc --arg query "$query" --argjson remember "$remember" \
       '{command:"search", query:$query, remember:$remember}')"
     ;;
+  # Artist search and the artist page: `artists <имя>` is the search, `artist <id |
+  # ссылка>` opens one, and `artist-tracks <id> [offset]` pages through everything the
+  # artist has (the page itself shows the popular thirty).
+  artists)
+    send "$(jq -nc --arg query "$*" '{command:"artist_search", query:$query}')"
+    ;;
+  artist)
+    ref="${1:-}"
+    if [ -z "$ref" ]; then
+      printf 'использование: artist <id | https://vk.ru/artist/...>\n' >&2
+      exit 2
+    fi
+    case "$ref" in
+      *artist/*) send "$(jq -nc --arg url "$ref" '{command:"artist", url:$url}')" ;;
+      *) send "$(jq -nc --arg id "$ref" '{command:"artist", id:$id}')" ;;
+    esac
+    ;;
+  artist-tracks)
+    id="${1:-}"
+    if [ -z "$id" ]; then
+      printf 'использование: artist-tracks <id> [offset]\n' >&2
+      exit 2
+    fi
+    offset="$(number "${2:-0}")"
+    send "$(jq -nc --arg artistId "$id" --argjson offset "$offset" \
+      '{command:"artist_tracks", artistId:$artistId, offset:$offset}')"
+    ;;
   section)
     id="${1:-all}"
     if [ $# -gt 1 ]; then

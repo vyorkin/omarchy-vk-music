@@ -25,7 +25,9 @@ so the media keys and any MPRIS client work without extra setup.
 - **Radio** — the stations VK links to, played straight from their own streams.
 - **Likes** — a heart on every row and in the player. On VK a like IS «Моя музыка», so the
   two can never disagree.
-- **Search** — suggestions as you type, results after a pause, tracks or playlists.
+- **Search** — suggestions as you type, results after a pause, tracks, playlists or
+  artists; an artist's page has the popular thirty, every record, and «Все треки» for
+  the whole list.
 - **Keyboard** — `hjkl` or arrows to move, `Enter` to play, `/` to filter the open list,
   `m` to switch gallery and list, `[`/`]` for the tabs, `⇧H`/`⇧L` for the sections.
 - **Eight languages** — English (default), German, Spanish, French, Japanese, Chinese,

@@ -37,8 +37,10 @@ Nothing here is a guess unless the line says "unverified".
 
 ## Non-goals for v1
 
-- No synchronized lyrics, no artist or album pages, no catalog browsing beyond
-  the sections the API hands over.
+- No synchronized lyrics, no catalog browsing beyond the sections the API hands
+  over. Artist search and an artist's page are in scope (see *Artist search and
+  the artist page* below): they were a v1 non-goal, and left the app with no way
+  to reach a performer except by searching their name and hoping.
 - No playlist editing of *contents* (`audio.addToPlaylist` / `audio.reorderPlaylist`
   are not used). Saving a whole playlist to my music, and taking it back out, is
   **in** scope: see *Saved playlists* below.
@@ -286,6 +288,43 @@ Tapping a result queues *those* results: the widget sends the list it is showing
 rather than the query, so the queue is exactly the list the user was looking at
 rather than whatever the same query returns a few seconds later, and no second
 answer is asked for at all.
+
+## Artist search and the artist page
+
+The search box has a third answer beside tracks and playlists. `audio.searchArtists`
+returns artist cards — id, name, photo — and, like `audio.search`, its `count` is the
+page it returned rather than a total, so a full page is the only sign that **Ещё** has
+something behind it. The page size is `ARTIST_SEARCH_PAGE_SIZE` (50), and a short page
+ends the list.
+
+A card is opened by id (`catalog.getAudioArtist` resolves it to the artist's catalog
+section, then `catalog.getSection` fills it). The section answer carries:
+
+* the artist card at its top level (`P.b.artists`), not inside `section` — so the page
+  header and the online/offline state do not depend on the section's title;
+* the popular thirty tracks in `audios` (`catalog.getSection`'s block type is `audio`);
+* the releases — and guest appearances — in `playlists`, each with `type: "album"`.
+
+`audio.getAudiosByArtist` is the whole list, one page of `ARTIST_TRACK_PAGE_SIZE` (300)
+at a time; VK reports its total in `count`, and `more` is `offset + len(page) < total`,
+so **Ещё** never makes an empty round trip. «Все треки» swaps the popular thirty for the
+whole list.
+
+The artist page reuses the browse page wholesale: `browseSlug = "artist"`, the albums in
+`playlists` (the existing gallery/rows switch applies) and the tracks in `tracks` (the
+existing `playBrowseTrack` and `openPlaylist` rows). Three pieces are new:
+
+* `root.artist` (the card) and the back state `artistBackView`/`artistBackSlug`, so a
+  page opened from the search returns to the search with its results, one opened from a
+  section re-asks that section (its cursor moved), and one opened from the player returns
+  to the tab it was opened from.
+* The artist link under the player (and in the bar) opens the page by id when the track
+  carries `main_artists`; a legacy track with no ids keeps the old behaviour and searches
+  the name among artists. The ids travel in the queue state (`artists` on the track),
+  because a link that forgets its id across a restart would become a search again.
+* `ListShape` gained the `artists` segment for the search plan (`KINDS.artists`,
+  action `openArtist`) and refuses to draw a stale track list under an artist search:
+  the mode is part of the plan, not of the answer.
 
 ## Starting a track, and where its time goes
 

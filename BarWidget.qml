@@ -52,6 +52,20 @@ Panel {
   // Whether VK may have another page of search results after the ones on screen.
   property alias resultsMore: session.resultsMore
   property alias suggestions: session.suggestions
+  // The third kind of search answer, and the artist page it opens.
+  property alias artists: session.artists
+  property alias artistsMore: session.artistsMore
+  property var artist: null
+  // The page starts with the popular thirty the catalog returns. «Все треки» asks for
+  // the artist's whole list, and `artistTracksMore` says whether «Ещё» has a page behind it.
+  property bool artistAllTracks: false
+  property bool artistTracksMore: false
+  property int artistTracksTotal: 0
+  // Where an artist page was opened from: a search keeps its query and results, and a
+  // section is asked for again, because its rows are cheap and its cursor is not worth
+  // carrying across a page.
+  property string artistBackView: ""
+  property string artistBackSlug: ""
   // typing | searching | results — what the list under the field is showing.
   property string searchState: "typing"
   // Guards against a slow reply for an older query overwriting newer results.
@@ -157,6 +171,13 @@ Panel {
       var found = root.foundPlaylists.length
       if (found === 0) return root.t("Плейлисты не найдены")
       return root.t("Найдено ") + found + " " + I18n.plural(root.language, found, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов"))
+    }
+    if (root.searchMode === "artists") {
+      if (root.searchState === "searching") return root.t("Ищу…")
+      if (root.searchState !== "results") return ""
+      var people = root.artists.length
+      if (people === 0) return root.t("Исполнители не найдены")
+      return root.t("Найдено ") + people + " " + I18n.plural(root.language, people, root.t("исполнитель"), root.t("исполнителя"), root.t("исполнителей"))
     }
     if (root.searchState === "searching") return root.t("Ищу…")
     if (!root.resultsShowing) return root.t("Подсказки")
@@ -812,17 +833,27 @@ Panel {
       root.results = []
       root.resultsMore = false
       root.foundPlaylists = []
+      root.artists = []
+      root.artistsMore = false
       root.searchState = "typing"
       session.setLoading("searchMore", false)
       return
     }
-    // One box, two kinds of answer: a playlist search is the same request to a
-    // different VK method, so everything else about searching stays the same.
+    // One box, three kinds of answer: a playlist search and an artist search are the
+    // same request to different VK methods, so everything else about searching stays
+    // the same.
     if (root.searchMode === "playlists") {
       if (!force && text === root._searchedQuery && root.foundPlaylists.length > 0) return
       root._searchedQuery = text
       root.searchState = "results"
       root.loadPlaylistSearch()
+      return
+    }
+    if (root.searchMode === "artists") {
+      if (!force && text === root._searchedQuery && root.searchState === "results") return
+      root._searchedQuery = text
+      root.searchState = "searching"
+      root.loadArtistSearch()
       return
     }
     // Typing a letter and deleting it again should not cost a second search, and
@@ -864,6 +895,42 @@ Panel {
       if (!answer || !answer.ok) return
       root.results = root.results.concat(answer.data.tracks || [])
       root.resultsMore = answer.data.more === true
+    })
+  }
+
+  // The artist search. `audio.searchArtists` answers with no total — its `count` is the
+  // page it just returned — so, like the track search, a full page is the only sign that
+  // «Ещё» is worth asking for.
+  function loadArtistSearch() {
+    var text = root.query.trim()
+    if (text.length < 2) {
+      root.artists = []
+      root.artistsMore = false
+      return
+    }
+    var token = session.begin("artists")
+    api.request("artist_search", { query: text }, function(answer) {
+      if (!session.accept(token)) return
+      if (answer && answer.ok && answer.data) {
+        root.artists = answer.data.artists || []
+        root.artistsMore = answer.data.more === true
+      } else {
+        root.artists = []
+        root.artistsMore = false
+      }
+      root.searchState = "results"
+    })
+  }
+
+  function searchMoreArtists() {
+    if (!root.artistsMore || session.loading("artistsMore")) return
+    var text = root._searchedQuery
+    var token = session.begin("artists", "artistsMore")
+    api.request("artist_search", { query: text, offset: root.artists.length }, function(answer) {
+      if (!session.accept(token)) return
+      if (!answer || !answer.ok) return
+      root.artists = root.artists.concat(answer.data.artists || [])
+      root.artistsMore = answer.data.more === true
     })
   }
 
@@ -919,7 +986,7 @@ Panel {
   // back to that search, with the query still in the field.
   property string playlistBackView: ""
   property alias foundPlaylists: session.foundPlaylists
-  // «Треки» or «Плейлисты»: one search box, two kinds of answer.
+  // «Треки», «Плейлисты» or «Исполнители»: one search box, three kinds of answer.
   property string searchMode: "tracks"
   // Which page of the settings is open. Three pages instead of one column with rules
   // between its groups: the rules were the only thing telling a reader where one group
@@ -1262,11 +1329,13 @@ Panel {
     if (text === "") return
     // A filter narrows the list in front of you, and a search brings its own.
     root.clearFilterQuiet()
-    // An artist is searched in tracks: left on «Плейлисты», the tab would open on a list of
-    // playlists that mention the name rather than on the artist's own songs.
-    if (root.searchMode !== "tracks") {
+    // An artist is searched among artists: left on «Плейлисты», the tab would open on a
+    // list of playlists that mention the name, and on «Треки» on the songs of everyone who
+    // shares it. The card it lands on is one click from the artist's albums.
+    if (root.searchMode !== "artists") {
       session.cancel("foundPlaylists")
-      root.searchMode = "tracks"
+      session.cancel("search")
+      root.searchMode = "artists"
     }
     root.query = text
     root.enterSearch()
@@ -1428,9 +1497,14 @@ Panel {
     root.cursor = -1
     session.cancel("search")
     session.cancel("foundPlaylists")
+    session.cancel("artists")
     session.setLoading("searchMore", false)
     root.resultsMore = false
+    root.artistsMore = false
     root.searchMode = mode
+    // The query is the same text but the answer is a different kind of thing: the next
+    // run must not be skipped as «already searched».
+    root._searchedQuery = ""
     root.cursor = -1
     if (root.query.trim().length >= 2) root.runSearch(true)
   }
@@ -1440,9 +1514,12 @@ Panel {
     root.results = []
     root.resultsMore = false
     root.suggestions = []
+    root.artists = []
+    root.artistsMore = false
     root.searchState = "typing"
     root._searchedQuery = ""
     session.cancel("search")
+    session.cancel("artists")
     session.setLoading("searchMore", false)
   }
 
@@ -1548,6 +1625,7 @@ Panel {
     }
     if (slot.scope === "search") {
       if (slot.kind === "playlists") return root.gridView ? list.searchGrid : list.searchPlaylistRows
+      if (slot.kind === "artists") return root.gridView ? list.searchArtistGrid : list.searchArtistRows
       if (slot.kind === "results") return list.resultRepeater
       if (slot.kind === "history") return list.historyRepeater
       return list.suggestionRepeater
@@ -1655,6 +1733,9 @@ Panel {
     playSearch: function(action) { root.playSearchResult(action.index) },
     openPlaylist: function(action) { root.openPlaylistView(action.item) },
     openPerson: function(action) { root.openPerson(String(action.item.id)) },
+    openArtist: function(action) {
+      root.openArtist(String(action.item.id), String(action.item.name || ""))
+    },
     playStation: function(action) { root.playStation(action.item) },
     query: function(action) { root.searchSuggestion(action.text) }
   })
@@ -1826,6 +1907,19 @@ Panel {
       return String(root.person.name || root.t("Человек"))
         + (mine === 0 ? root.t(" · пусто") : " · " + mine + " " + I18n.plural(root.language, mine, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов")))
     }
+    if (root.browseSlug === "artist") {
+      if (session.loading("artist")) return root.t("Открываю…")
+      if (!root.artist) return root.t("Исполнитель не найден")
+      var name = String(root.artist.name || root.t("Исполнитель"))
+      var records = root.playlists.length
+      if (root.artistAllTracks) {
+        return name + " · " + I18n.summary(root.language, root.tracks,
+          root.t("трек"), root.t("трека"), root.t("треков"))
+      }
+      return name + (records === 0 ? root.t(" · пусто") : " · " + records + " "
+        + I18n.plural(root.language, records,
+          root.t("альбом"), root.t("альбома"), root.t("альбомов")))
+    }
     if (root.browseSlug === "friends") {
       if (session.loading("friends")) return root.t("Друзья · загрузка…")
       var count = root.friends.length
@@ -1862,7 +1956,8 @@ Panel {
     var slug = root.browseSlug
     // «Избранное» is empty for as long as nothing is saved, and asking again cannot change
     // that: a saved list arrives with its own fetch, not with a section page.
-    if (slug === "" || slug === "favorites" || slug === "friends" || slug === "person" || slug === "playlist") return
+    if (slug === "" || slug === "favorites" || slug === "friends" || slug === "person"
+        || slug === "playlist" || slug === "artist") return
     if (root.tracks.length > 0 || root.playlists.length > 0) return
     if (session.emptySectionTries >= 3) return
     session.emptySectionTries = session.emptySectionTries + 1
@@ -1992,7 +2087,14 @@ Panel {
   }
 
   function playBrowseTrack(index) {
-    // The section page is the list; the queue becomes that page, in its own order.
+    // The section page is the list; the queue becomes that page, in its own order. An
+    // artist page is the same list with a different place behind it, so a playlist of the
+    // popular tracks still knows where it came from.
+    if (root.browseSlug === "artist" && root.artist) {
+      root.playList(root.tracks, index, "artist", String(root.artist.id || ""),
+        root.browseTitle !== "" ? root.browseTitle : root.t("Исполнитель"))
+      return
+    }
     root.playList(root.tracks, index, "section", root.browseSlug,
       root.browseTitle !== "" ? root.browseTitle : root.t("Обзор"))
   }
@@ -2180,6 +2282,116 @@ Panel {
     root.browseTitle = root.t("Друзья")
     root.loadFriends()
     root.focusList()
+  }
+
+  // One artist's page: the card, the popular thirty and the records. `id` comes from a
+  // search card or from the artist links under the player; a name alone (a legacy track
+  // with no artist ids) falls back to the search, which is what the links did before.
+  function openArtist(id, name) {
+    var artistId = String(id === undefined || id === null ? "" : id).trim()
+    if (artistId === "") {
+      root.searchArtist(name)
+      return
+    }
+    root.clearFilterQuiet()
+    root.cursor = -1
+    root.artistBackView = root.view
+    root.artistBackSlug = root.view === "browse" ? root.browseSlug : ""
+    root.artist = null
+    root.artistAllTracks = false
+    root.artistTracksMore = false
+    root.artistTracksTotal = 0
+    root.playlists = []
+    root.tracks = []
+    root.browseNext = ""
+    root.browseSlug = "artist"
+    root.browseTitle = name === undefined || String(name) === ""
+      ? root.t("Исполнитель") : String(name)
+    root.view = "browse"
+    var token = session.begin("browse", "artist")
+    api.request("artist", { id: artistId }, function(answer) {
+      if (!session.accept(token)) return
+      if (answer && answer.ok && answer.data) {
+        root.artist = answer.data.artist || null
+        root.playlists = answer.data.playlists || []
+        root.tracks = answer.data.tracks || []
+        root.browseTitle = root.artist
+          ? String(root.artist.name || root.t("Исполнитель"))
+          : root.t("Исполнитель не найден")
+      } else {
+        root.artist = null
+        root.browseTitle = root.t("Исполнитель не найден")
+      }
+    })
+    root.focusList()
+  }
+
+  // «Все треки»: the page opens on the popular thirty, and the whole list is one more
+  // request. A second press asks for the next page while `artistTracksMore` says there is
+  // one — `total` is what `audio.getAudiosByArtist` reports, so the button knows without
+  // an empty round trip.
+  function loadArtistTracks(more) {
+    if (!root.artist || String(root.artist.id || "") === "") return
+    if (session.loading("artistTracks")) return
+    var offset = more ? root.tracks.length : 0
+    var token = session.begin("browse", "artistTracks")
+    api.request("artist_tracks", { artistId: String(root.artist.id), offset: offset },
+      function(answer) {
+        if (!session.accept(token)) return
+        if (!answer || !answer.ok || !answer.data) return
+        var page = answer.data.tracks || []
+        root.tracks = more ? root.tracks.concat(page) : page
+        root.artistTracksTotal = Number(answer.data.total || 0)
+        root.artistTracksMore = answer.data.more === true
+        root.artistAllTracks = true
+      })
+  }
+
+  function closeArtist() {
+    root.cursor = -1
+    var backView = root.artistBackView
+    var backSlug = root.artistBackSlug
+    root.artist = null
+    root.artistAllTracks = false
+    root.artistTracksMore = false
+    root.artistTracksTotal = 0
+    root.artistBackView = ""
+    root.artistBackSlug = ""
+    root.playlists = []
+    root.tracks = []
+    root.browseNext = ""
+    // A search is still in the field with its results, so the cheapest way back is the
+    // tab it was in. A section is asked for again: the rows are cheap, and carrying its
+    // cursor across the artist page would put it on a row that moved.
+    if (backView === "search") {
+      root.browseSlug = backSlug !== "" && backSlug !== "artist" ? backSlug : "friends"
+      root.browseTitle = ""
+      root.view = "search"
+      root.focusList()
+      return
+    }
+    // Opened from the queue or another tab: that tab is still whole, and nothing about it
+    // was touched by the artist page, so the step back is a switch, not a load.
+    if (backView !== "browse") {
+      if (backView !== "") root.view = backView
+      if (root.browseSlug === "artist") {
+        root.browseSlug = "friends"
+        root.browseTitle = root.t("Друзья")
+        root.loadFriends()
+      }
+      root.focusList()
+      return
+    }
+    if (backSlug === "favorites") {
+      root.scheduleBrowse("favorites")
+    } else if (backSlug !== "" && backSlug !== "artist" && backSlug !== "friends") {
+      root.scheduleBrowse(backSlug)
+    } else {
+      root.browseSlug = "friends"
+      root.browseTitle = root.t("Друзья")
+      root.loadFriends()
+      root.focusList()
+    }
   }
 
   function loadPlaylistSearch() {
@@ -4251,7 +4463,8 @@ Panel {
         // left the search with no field and no way out of it — which reads as a search
         // that has lost its own field rather than as a playlist that is open.
         readonly property bool backShown: (root.view === "browse"
-          && (root.openPlaylist !== null || root.browseSlug === "person"))
+          && (root.openPlaylist !== null || root.browseSlug === "person"
+            || root.browseSlug === "artist"))
           || (root.view === "search" && root.openPlaylist !== null)
 
         BarCell {
@@ -4260,14 +4473,20 @@ Panel {
           text: root.t("Назад")
           // Where the cell lands, not which tab is showing it: a playlist opened from the
           // search comes back to the search even when it is the browse tab under it.
-          tooltipText: root.openPlaylist !== null && root.playlistBackView === "search"
-            ? root.t("К поиску")
-            : (root.openPlaylist !== null
-              ? root.t("К плейлистам")
-              : root.t("К списку людей"))
+          tooltipText: root.browseSlug === "artist"
+            ? (root.artistBackView === "search" ? root.t("К поиску") : root.t("К разделу"))
+            : (root.openPlaylist !== null && root.playlistBackView === "search"
+              ? root.t("К поиску")
+              : (root.openPlaylist !== null
+                ? root.t("К плейлистам")
+                : root.t("К списку людей")))
           onClicked: {
             if (root.openPlaylist !== null) {
               root.closePlaylistView()
+              return
+            }
+            if (root.browseSlug === "artist") {
+              root.closeArtist()
               return
             }
             root.closePerson()
@@ -4288,7 +4507,7 @@ Panel {
           // the other end — a row of section names with its tail missing reads as a
           // broken bar, not as a way in.
           visible: root.view === "browse" && root.openPlaylist === null
-            && root.browseSlug !== "person"
+            && root.browseSlug !== "person" && root.browseSlug !== "artist"
           Layout.fillWidth: true
           Layout.preferredHeight: sectionChipRow.height
           contentWidth: sectionChipRow.width
@@ -4400,9 +4619,9 @@ Panel {
           Layout.preferredHeight: 1
         }
 
-        // What a search can answer with: two equal halves of what the tools leave, because
-        // a switch of two equal halves reads as a choice between two things, where two cells
-        // hugging their labels read as two buttons.
+        // What a search can answer with: equal thirds of what the tools leave, because
+        // a switch of equal cells reads as a choice between things, where cells hugging
+        // their labels read as buttons.
         BarCell {
           visible: root.view === "search"
           Layout.fillWidth: true
@@ -4424,6 +4643,18 @@ Panel {
           selected: root.searchMode === "playlists"
           tooltipText: root.t("Искать плейлисты других людей")
           onClicked: root.setSearchMode("playlists")
+        }
+
+        BarCell {
+          visible: root.view === "search"
+          Layout.fillWidth: true
+          Layout.preferredWidth: 0
+          Layout.minimumWidth: 0
+          Layout.preferredHeight: root.barCellHeight
+          text: root.t("Исполнители")
+          selected: root.searchMode === "artists"
+          tooltipText: root.t("Искать исполнителей и открывать их альбомы")
+          onClicked: root.setSearchMode("artists")
         }
 
         // The three pages of the settings, as cells of the same bar that chooses a section:
@@ -4763,6 +4994,59 @@ Panel {
         spacing: Style.space(4)
         visible: root.view === "browse" && root.openPlaylist === null
 
+        // One artist's page. The card is the artist VK returned for the id, so the page
+        // says the same thing for a click from the search and one from the player. VK's
+        // artist picture is a square, so the band is one: the same picture would be a
+        // crop twice as wide as it is tall, and the face would go with it.
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+          visible: root.browseSlug === "artist" && root.artist !== null
+
+          CoverTile {
+            width: Style.space(96)
+            height: width
+            radius: width / 2
+            inset: 0
+            mark: "󰀄"
+            decodeSize: width
+            source: String(root.artist ? (root.artist.photo || "") : "")
+            title: String(root.artist ? (root.artist.name || "") : "")
+          }
+
+          // «Все треки» is one click away from the popular thirty and carries no count,
+          // because the page has not asked for the total and a made-up number is worse
+          // than none. Once the whole list is up, «Ещё» pages through the rest; `total`
+          // from `audio.getAudiosByArtist` is what says there is a rest.
+          Button {
+            width: parent.width
+            leftAlign: true
+            visible: !root.artistAllTracks && root.tracks.length > 0
+            enabled: !session.loading("artistTracks")
+            opacity: enabled ? 1.0 : 0.5
+            text: root.t("Все треки")
+            foreground: root.textColor
+            onClicked: root.loadArtistTracks(true)
+          }
+
+          Button {
+            width: parent.width
+            leftAlign: true
+            visible: root.artistAllTracks && root.artistTracksMore
+            enabled: !session.loading("artistTracks")
+            opacity: enabled ? 1.0 : 0.5
+            text: root.t("Ещё")
+            foreground: root.textColor
+            onClicked: root.loadArtistTracks(false)
+          }
+        }
+
+        PanelSectionHeader {
+          text: root.t("Альбомы")
+          foreground: root.dim
+          visible: root.browseSlug === "artist" && root.playlists.length > 0
+        }
+
         // The sections are out of the scroll (see above): the list starts with what the
         // section holds, so the gallery's first row is the list's first row.
         PlaylistGrid {
@@ -4883,6 +5167,14 @@ Panel {
           }
         }
 
+        PanelSectionHeader {
+          text: root.browseSlug === "artist" && root.artistAllTracks
+            ? root.t("Все треки")
+            : root.t("Популярные треки")
+          foreground: root.dim
+          visible: root.browseSlug === "artist" && root.tracks.length > 0
+        }
+
         Repeater {
           id: browseTrackRepeater
           model: root.browseSlug === "radiostations" ? [] : root.listPlan().lists.tracks
@@ -4986,6 +5278,39 @@ Panel {
           id: searchPlaylistRows
           items: (root.searchMode === "playlists" && !root.gridView) ? root.listPlan().lists.foundPlaylists : []
           onPicked: function(index) { root.rowAction("foundPlaylists", index) }
+        }
+
+        // The artist search answers in faces: the same cards as the friends page, for the
+        // same reason - choosing an artist is picking a portrait.
+        PeopleGrid {
+          id: searchArtistGrid
+          items: (root.searchMode === "artists" && root.gridView)
+            ? root.listPlan().lists.artists : []
+          visible: items.length > 0
+          onPicked: function(index) { root.rowAction("artists", index) }
+        }
+
+        Repeater {
+          id: searchArtistRows
+          model: (root.searchMode === "artists" && !root.gridView)
+            ? root.listPlan().lists.artists : []
+          delegate: PersonRow {
+            item: modelData
+            selected: index === root.cursor
+            onActivated: root.rowAction("artists", index)
+          }
+        }
+
+        Button {
+          width: listColumn.width
+          leftAlign: true
+          visible: root.searchMode === "artists" && root.searchState === "results"
+            && root.artistsMore
+          enabled: !session.loading("artistsMore")
+          opacity: enabled ? 1.0 : 0.5
+          text: root.t("Ещё")
+          foreground: root.textColor
+          onClicked: root.searchMoreArtists()
         }
 
         Repeater {
@@ -5754,6 +6079,9 @@ Panel {
   // link: no underline, no hand, and nothing to search for.
   component ArtistLinks: RowLayout {
     id: artistLinks
+    // The ids behind the names, when the track carries them: they are what opens the
+    // artist's page instead of searching for its name.
+    property var artists: []
     property string artist: ""
     property string otherwise: ""
     property color ink: root.dim
@@ -5773,6 +6101,21 @@ Panel {
       return out
     }
     readonly property bool linked: artistLinks.segments.length > 0
+
+    // A name is matched to its id by the same text the row drew. A legacy answer that
+    // carries no ids, or a name VK spelled differently, finds nothing and searches.
+    function idFor(name) {
+      var wanted = String(name || "").trim().toLowerCase()
+      var list = artistLinks.artists || []
+      for (var i = 0; i < list.length; i++) {
+        var item = list[i]
+        if (!item) continue
+        if (String(item.name || "").trim().toLowerCase() === wanted && String(item.id || "") !== "") {
+          return String(item.id)
+        }
+      }
+      return ""
+    }
 
     spacing: 0
     visible: artistLinks.linked || artistLinks.otherwise !== ""
@@ -5818,7 +6161,11 @@ Panel {
           enabled: segment.isLink
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
-          onClicked: root.searchArtist(modelData.name)
+          onClicked: {
+            var id = artistLinks.idFor(modelData.name)
+            if (id !== "") root.openArtist(id, modelData.name)
+            else root.searchArtist(modelData.name)
+          }
         }
 
         PanelToolTip {
@@ -5955,6 +6302,7 @@ Panel {
           Layout.fillWidth: true
           Layout.alignment: Qt.AlignVCenter
           artist: root.onAir() ? "" : (root.hasTrack ? String(root.trackValue("artist", "")) : "")
+          artists: root.onAir() ? [] : (root.track ? root.track.artists || [] : [])
           otherwise: root.onAir() ? root.t("Радио · в эфире") : ""
           ink: root.dim
           fontSize: Style.font.subtitle
@@ -6216,6 +6564,7 @@ Panel {
           id: artistText
           Layout.fillWidth: true
           artist: root.onAir() ? "" : String(root.trackValue("artist", ""))
+          artists: root.onAir() ? [] : (root.track ? root.track.artists || [] : [])
           otherwise: root.onAir() ? root.t("Радио · в эфире") : ""
           // The artist is not a second headline and not a colour of its own: the
           // reference draws the three lines below the title in one weight and one

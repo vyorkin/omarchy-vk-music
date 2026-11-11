@@ -38,6 +38,10 @@ QtObject {
   property var stations: []
   property var foundPlaylists: []
   property var results: []
+  // The artist search is a third kind of answer to the same box, and its page rule is
+  // the same: a full page is the only sign another exists.
+  property var artists: []
+  property bool artistsMore: false
   // A full page came back, so VK may have another one after it. The answer's own
   // `count` cannot say this: it is not a total.
   property bool resultsMore: false
@@ -71,6 +75,7 @@ QtObject {
       stations: session.stations,
       foundPlaylists: session.foundPlaylists,
       results: session.results,
+      artists: session.artists,
       suggestions: session.suggestions
     }
   }
@@ -183,6 +188,7 @@ QtObject {
       stations: session.stations,
       foundPlaylists: session.foundPlaylists,
       results: session.results,
+      artists: session.artists,
       suggestions: session.suggestions,
       sources: session.sources
     }
@@ -221,6 +227,7 @@ QtObject {
     session.sourcesAskedAt = 0
     session.foundPlaylistsTotal = 0
     session.resultsMore = false
+    session.artistsMore = false
     session.emptySectionTries = 0
     session._flags = ({})
     session._tokens = ({})

@@ -180,6 +180,23 @@ def parse_argv(argv: list[str]) -> dict:
         return {"command": "radio"}
     if head == "playlists":
         return {"command": "playlist_search", "query": " ".join(words)}
+    if head == "artists":
+        return {"command": "artist_search", "query": " ".join(words)}
+    if head == "artist":
+        if not words:
+            raise SystemExit("использование: artist <id | ссылка>")
+        reference = words[0]
+        if "/artist/" in reference:
+            return {"command": "artist", "url": reference}
+        return {"command": "artist", "id": reference}
+    if head == "artist-tracks":
+        if not words:
+            raise SystemExit("использование: artist-tracks <id> [offset]")
+        return {
+            "command": "artist_tracks",
+            "artistId": words[0],
+            "offset": int(words[1]) if len(words) > 1 else 0,
+        }
     if head == "friends":
         return {"command": "friends"}
     if head == "playlist":

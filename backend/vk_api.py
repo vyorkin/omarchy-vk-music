@@ -208,6 +208,8 @@ DESCRIPTIONS = {
     "track_key_required": "track key is required",
     "playlist_key_required": "playlist ids are required",
     "playlist_not_followed": "the playlist is not in my music",
+    "artist_key_required": "artist id or url is required",
+    "artist_not_found": "artist not found",
 }
 
 
@@ -321,6 +323,12 @@ class Playlist:
     plays: int = 0
     followers: int = 0
     main_color: str = ""
+    # An artist page answers with its releases, which are playlists of `type: "album"`:
+    # `kind` is how the panel tells a record from a list, `year` is what the card puts
+    # under the title, and `subtitle` ("Live", "Single") says what kind of record it is.
+    kind: str = ""
+    year: int = 0
+    subtitle: str = ""
     # A followed playlist arrives from `audio.getPlaylists(me)` as a copy: my own ids,
     # and `original` holding the ids it was copied from. Nothing the panel opens or
     # plays may use the copy's — VK serves the tracks under the original — which is why
@@ -358,6 +366,9 @@ class Playlist:
             plays=int(item.get("plays", 0) or 0),
             followers=int(item.get("followers", 0) or 0),
             main_color=str(item.get("main_color") or ""),
+            kind=str(item.get("type") or ""),
+            year=int(item.get("year", 0) or 0),
+            subtitle=str(item.get("subtitle") or ""),
             original=original if isinstance(original, Mapping) else {},
             permissions=permissions if isinstance(permissions, Mapping) else {},
             is_following=bool(item.get("is_following")),
@@ -408,6 +419,9 @@ class Playlist:
             "cover_small": self.cover_small,
             "plays": self.plays,
             "followers": self.followers,
+            "kind": self.kind,
+            "year": self.year,
+            "subtitle": self.subtitle,
             # The widget plays a playlist by handing this back, so it has to travel.
             "access_key": self.source_access_key,
             "has_access_key": bool(self.source_access_key),
@@ -444,6 +458,48 @@ class Person:
 
     def to_dict(self) -> dict[str, Any]:
         return {"id": self.id, "name": self.name, "photo": self.photo}
+
+
+@dataclass(frozen=True)
+class Artist:
+    """A music artist, as `audio.searchArtists` and the catalog name them.
+
+    `id` is a string on purpose: VK's artist ids are 19-digit numbers, and neither
+    `catalog.getAudioArtist` nor a track's `main_artists` ever hands them out as ints.
+    `photo` is the largest picture the payload carries: a search card answers with a
+    270x270 square, the catalog's artist banner with a wide one, and the area picks the
+    picture that survives both a round avatar and a header.
+    """
+
+    id: str
+    name: str
+    photo: str = ""
+    domain: str = ""
+    bio: str = ""
+    is_followed: bool = False
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_item(cls, item: Mapping[str, Any]) -> "Artist":
+        return cls(
+            id=str(item.get("id", "")),
+            name=str(item.get("name") or item.get("title") or ""),
+            photo=_artist_photo(item),
+            domain=str(item.get("domain") or ""),
+            bio=str(item.get("bio") or ""),
+            is_followed=bool(item.get("is_followed")),
+            raw=item,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "photo": self.photo,
+            "domain": self.domain,
+            "bio": self.bio,
+            "is_followed": self.is_followed,
+        }
 
 
 @dataclass(frozen=True)
@@ -499,6 +555,11 @@ class SectionBlocks:
     url: str
     audios: tuple[Track, ...]
     playlists: tuple[Playlist, ...]
+    # An artist's section carries the artist card itself (bio, banner, follow state) at
+    # the top level, not inside `section`; other sections may carry a banner artist too.
+    artists: tuple[Artist, ...] = ()
+    # «Вам могут понравиться»: similar artists, in the catalog's link shape.
+    links: tuple[Mapping[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -507,6 +568,7 @@ class SectionBlocks:
             "has_next": bool(self.next_offset),
             "audios": len(self.audios),
             "playlists": len(self.playlists),
+            "artists": len(self.artists),
         }
 
 
@@ -548,6 +610,37 @@ def _extract_thumb(item: Mapping[str, Any]) -> str:
 
 def _person_photo(item: Mapping[str, Any]) -> str:
     """A user's picture: unlike a playlist's, the sizes sit on the item itself."""
+    for size in ("photo_200", "photo_100", "photo_max", "photo_50"):
+        value = item.get(size)
+        if value:
+            return str(value)
+    return ""
+
+
+def _artist_photo(item: Mapping[str, Any]) -> str:
+    """An artist's picture: a list of `{url, width, height}`, not named sizes.
+
+    Search answers with a 270x200 and a 270x270 copy, the catalog's artist banner
+    with 795x200 and 1590x400. Picking by area takes the square on a search card and
+    the wide banner on the page, which is the one each of them can use.
+    """
+    photos = item.get("photo")
+    if isinstance(photos, list):
+        best = ""
+        best_area = 0
+        for photo in photos:
+            if not isinstance(photo, Mapping):
+                continue
+            url = str(photo.get("url") or "")
+            if not url:
+                continue
+            width = _optional_int(photo.get("width")) or 0
+            height = _optional_int(photo.get("height")) or 0
+            area = width * height
+            if area > best_area:
+                best, best_area = url, area
+        if best:
+            return best
     for size in ("photo_200", "photo_100", "photo_max", "photo_50"):
         value = item.get(size)
         if value:
@@ -836,6 +929,14 @@ class VkClient:
             for item in response.get("playlists") or []
             if isinstance(item, Mapping)
         ]
+        artists = [
+            Artist.from_item(item)
+            for item in response.get("artists") or []
+            if isinstance(item, Mapping)
+        ]
+        links = [
+            item for item in response.get("links") or [] if isinstance(item, Mapping)
+        ]
         return SectionBlocks(
             id=str(section.get("id", section_id)),
             title=str(section.get("title", "")),
@@ -843,7 +944,91 @@ class VkClient:
             url=str(section.get("url", "")),
             audios=tuple(audios),
             playlists=tuple(playlists),
+            artists=tuple(artists),
+            links=tuple(links),
         )
+
+    # -- artists -----------------------------------------------------------
+
+    def artist_section(self, *, artist_id: str = "", url: str = "") -> Section:
+        """`catalog.getAudioArtist`: the artist's own catalog section.
+
+        Verified live 2026-11-11: both `artist_id` and `url` are accepted, and the
+        answer is `{"catalog": {"default_section", "sections"}}`. The section id is
+        then read with the ordinary `catalog.getSection`, which returns the artist's
+        popular tracks in `audios` and its records as `playlists` with
+        `type: "album"`. There is no `catalog.getAudioAlbum`: a record is a playlist.
+        """
+        if not artist_id and not url:
+            raise VkApiError(
+                0,
+                "artist id or url is required",
+                method="catalog.getAudioArtist",
+                reason="artist_key_required",
+            )
+        response = self.call(
+            "catalog.getAudioArtist",
+            artist_id=artist_id or None,
+            url=url or None,
+        )
+        catalog = response.get("catalog") if isinstance(response, Mapping) else None
+        if isinstance(catalog, Mapping):
+            sections = catalog.get("sections") or []
+            for item in sections:
+                if isinstance(item, Mapping) and item.get("id"):
+                    return Section.from_item(item)
+            default = str(catalog.get("default_section") or "")
+            if default:
+                return Section(id=default, title="", url="")
+        raise VkApiError(
+            0,
+            "artist not found",
+            method="catalog.getAudioArtist",
+            reason="artist_not_found",
+            params={"artist": artist_id or url},
+        )
+
+    def search_artists(
+        self, query: str, *, count: int = 50, offset: int = 0
+    ) -> list[Artist]:
+        """`audio.searchArtists`: artists by name, paged by offset.
+
+        Verified live 2026-11-11: the answer's `count` is the number of items it
+        returned, not a total, so a full page is the only sign another may follow
+        (the same rule `audio.search` follows).
+        """
+        response = self.call(
+            "audio.searchArtists", q=query, count=count, offset=offset
+        )
+        return [
+            Artist.from_item(item)
+            for item in _items_of(response)
+            if isinstance(item, Mapping)
+        ]
+
+    def audios_by_artist(
+        self, artist_id: str, *, count: int = 300, offset: int = 0
+    ) -> tuple[list[Track], int]:
+        """`audio.getAudiosByArtist`: every track of an artist, paged.
+
+        Verified live 2026-11-11: unlike the search, `count` here *is* the total
+        (200 for King Crimson) and `items` is the requested page, so
+        `offset + len(page) < count` says whether another page exists.
+        """
+        response = self.call(
+            "audio.getAudiosByArtist",
+            artist_id=artist_id,
+            count=count,
+            offset=offset,
+        )
+        tracks = _tracks_from(response)
+        total = offset + len(tracks)
+        if isinstance(response, Mapping):
+            try:
+                total = int(response.get("count", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+        return tracks, max(total, offset + len(tracks))
 
     def search(
         self, query: str, *, offset: int | None = None, count: int | None = None

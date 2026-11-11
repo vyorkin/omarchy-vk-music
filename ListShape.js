@@ -53,6 +53,7 @@ var KINDS = {
   friends: "friends",
   people: "people",
   stations: "stations",
+  artists: "artists",
   results: "results",
   history: "history",
   suggestions: "suggestions"
@@ -154,6 +155,7 @@ function plan(state) {
     people: array(s.people),
     stations: array(s.stations),
     foundPlaylists: array(s.foundPlaylists),
+    artists: array(s.artists),
     results: array(s.results),
     history: array(s.history),
     suggestions: array(s.suggestions)
@@ -171,6 +173,7 @@ function plan(state) {
     people: filtered(raw.people, filter),
     stations: filtered(raw.stations, filter),
     foundPlaylists: filtered(raw.foundPlaylists, filter),
+    artists: filtered(raw.artists, filter),
     results: [],
     // The recent queries are the list on screen only while the field holds one character or
     // none: past that the search has something to show. Gated here, so the rows and the
@@ -182,7 +185,10 @@ function plan(state) {
   // A search answers in two shapes as well: results once it has run, and — while the query
   // is still one character, or when the search found nothing — what the panel can suggest
   // instead. Filtering those again would ask the list to match a text it came from.
-  var resultsShowing = searchState === "results" && queryLength >= 2
+  // The track results are the list on screen only in the track mode: the other two modes
+  // answer from their own arrays, and a leftover track list must not draw under them.
+  var resultsShowing = searchMode !== "playlists" && searchMode !== "artists"
+    && searchState === "results" && queryLength >= 2
   lists.results = resultsShowing ? filtered(raw.results, filter) : []
   lists.suggestions = queryLength < 2 ? []
     : (resultsShowing
@@ -238,6 +244,12 @@ function plan(state) {
     if (searchMode === "playlists") {
       append(built, "search", "foundPlaylists", KINDS.playlists, lists.foundPlaylists, columns)
       gallery = gridView && lists.foundPlaylists.length > 0
+      showsPlaylists = true
+    } else if (searchMode === "artists") {
+      // An artist card is a square picture and a name, so the same wall-or-rows switch the
+      // playlists use means the same thing here.
+      append(built, "search", "artists", KINDS.artists, lists.artists, columns)
+      gallery = gridView && lists.artists.length > 0
       showsPlaylists = true
     } else if (lists.results.length > 0) {
       append(built, "search", "results", KINDS.results, lists.results, 1)
@@ -309,6 +321,7 @@ var INTENTS = {
   foundPlaylists: "openPlaylist",
   friends: "openPerson",
   people: "openPerson",
+  artists: "openArtist",
   stations: "playStation",
   history: "query",
   suggestions: "query"
@@ -343,7 +356,8 @@ function actionAt(planned, list, drawnIndex) {
     action.text = String(item)
     return action
   }
-  if (intent === "openPlaylist" || intent === "openPerson" || intent === "playStation") return action
+  if (intent === "openPlaylist" || intent === "openPerson"
+      || intent === "openArtist" || intent === "playStation") return action
   // A copy of an object is handed to a delegate, so identity fails while the track is the
   // same one. `indexOf` falls back to the key for exactly that reason; a wrong index plays
   // the wrong song, which is worse than any lookup.
