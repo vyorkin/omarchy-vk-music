@@ -82,7 +82,8 @@ QtObject {
     var name = String(guard)
     var token = { guard: name, flag: flag === undefined ? name : String(flag), stamp: 0 }
     token.stamp = (session._tokens[name] || 0) + 1
-    var tokens = session._tokens
+    var tokens = ({})
+    for (var key in session._tokens) tokens[key] = session._tokens[key]
     tokens[name] = token.stamp
     session._tokens = tokens
     session.setLoading(token.flag, true)
@@ -118,7 +119,8 @@ QtObject {
   // while its request was in flight.
   function cancel(guard) {
     var name = String(guard)
-    var tokens = session._tokens
+    var tokens = ({})
+    for (var key in session._tokens) tokens[key] = session._tokens[key]
     tokens[name] = (tokens[name] || 0) + 1
     session._tokens = tokens
   }
@@ -130,8 +132,14 @@ QtObject {
     session._flags = ({})
   }
 
+  // Every write builds a new map. QML compares the value it is handed with the one a var
+  // property already holds, so mutating this map in place and assigning the same object
+  // back notifies no binding: the word a page shows is the one its binding last evaluated,
+  // and a heading that is nothing but that word — a person's name is read only after it —
+  // stayed on «Открываю…» after the answer had already arrived.
   function setLoading(name, value) {
-    var flags = session._flags
+    var flags = ({})
+    for (var key in session._flags) flags[key] = session._flags[key]
     flags[String(name)] = value === true
     session._flags = flags
   }

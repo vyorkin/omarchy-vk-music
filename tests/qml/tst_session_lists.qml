@@ -179,6 +179,33 @@ TestCase {
     compare(lists.accept(more), false)
   }
 
+  // The heading of a page is a binding on `loading()`, so the flag has to notify it: a map
+  // mutated in place and written back as the same object wakes nothing, and a heading that
+  // is only that word (a person's name is read after it) stays on «Открываю…» after the
+  // answer is in — a page that never loads looks exactly like a request that never finished.
+  function test_the_loading_word_follows_the_flag() {
+    var lists = loaded()
+    var word = createTemporaryObject(wordComponent, null, { lists: lists })
+    compare(word.text, "ready")
+    var token = lists.begin("browse", "person")
+    compare(word.text, "opening")
+    verify(lists.accept(token))
+    compare(word.text, "ready")
+    // And a fetch that ends without an answer lets the word go as well.
+    var failed = lists.begin("browse", "person")
+    compare(word.text, "opening")
+    verify(lists.fail(failed))
+    compare(word.text, "ready")
+  }
+
+  Component {
+    id: wordComponent
+    QtObject {
+      property var lists: null
+      readonly property string text: lists && lists.loading("person") ? "opening" : "ready"
+    }
+  }
+
   function test_stepping_back_cancels_one_page_only() {
     var lists = loaded()
     var queueToken = lists.begin("queue")

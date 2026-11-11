@@ -1089,6 +1089,14 @@ A delayed load also means the section's SLUG is still the old one for those 600 
   the panel forever, most visibly on the settings page, where nothing at all is
   loading. One request token per pane drops stale data; every entry point clears
   the flags of the kinds it is not, and `anyLoading()` names all of them.
+* The flags have to *notify*. `setLoading` first wrote its map in place and
+  assigned the same object back, and QML compares what a `var` property is handed
+  with what it holds, so no binding on `loading()` ever re-evaluated: a person's
+  page — whose whole heading is that word, with the name read only after it — sat
+  on «Открываю…» after the answer had arrived, with the request itself answered in
+  a fifth of a second. Every write to `_flags` and `_tokens` now builds a new map,
+  and `tests/qml/tst_session_lists.qml` binds a word to the flag and checks it
+  follows `begin()`, `accept()` and `fail()`.
 * The queue's own actions («Убрать» and «Очистить») lost their place when the
   player became a band, so they moved to where the queue is: «Очистить» sits in
   the queue's header, and right-clicking a queue row offers «Играть сейчас» and
