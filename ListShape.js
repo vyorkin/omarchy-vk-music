@@ -178,7 +178,10 @@ function plan(state) {
     // The recent queries are the list on screen only while the field holds one character or
     // none: past that the search has something to show. Gated here, so the rows and the
     // cursor read the same array rather than each applying the rule.
-    history: queryLength < 2 ? raw.history : [],
+    // Recent queries and suggestions answer in the track mode's own vocabulary (a query
+    // string, a track), so the artist mode does not draw them: a suggestion that opens a
+    // track is not a suggestion for an artist search.
+    history: queryLength < 2 && searchMode === "tracks" ? raw.history : [],
     suggestions: []
   }
 
@@ -190,7 +193,7 @@ function plan(state) {
   var resultsShowing = searchMode !== "playlists" && searchMode !== "artists"
     && searchState === "results" && queryLength >= 2
   lists.results = resultsShowing ? filtered(raw.results, filter) : []
-  lists.suggestions = queryLength < 2 ? []
+  lists.suggestions = queryLength < 2 || searchMode !== "tracks" ? []
     : (resultsShowing
       ? (raw.results.length === 0 ? raw.suggestions : [])
       : raw.suggestions)

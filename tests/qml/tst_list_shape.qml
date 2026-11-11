@@ -220,6 +220,23 @@ TestCase {
     compare(rows.gallery, false)
   }
 
+  // Both the recent queries and the suggestions belong to the track search: a suggestion
+  // that opens a track is not a suggestion for an artist search, and a mode that showed
+  // them under an artist wall would draw two vocabularies at once.
+  function test_the_artist_search_shows_no_track_vocabulary() {
+    var typing = ListShape.plan({ view: "search", searchMode: "artists",
+      searchState: "typing", queryLength: 1, history: [{ query: "Kino" }],
+      suggestions: [{ title: "Kino" }], artists: cards(2) })
+    compare(typing.lists.history.length, 0)
+    compare(typing.lists.suggestions.length, 0)
+
+    var results = ListShape.plan({ view: "search", searchMode: "artists",
+      searchState: "results", queryLength: 3, artists: cards(2),
+      suggestions: [{ title: "Kino" }] })
+    compare(results.lists.suggestions.length, 0)
+    compare(kinds(results), "artists")
+  }
+
   // An artist's page has the same shape as a section: the records above and the popular
   // tracks under them. The tracks are the same rows a section draws, so the same cursor
   // and the same play command work on both.
