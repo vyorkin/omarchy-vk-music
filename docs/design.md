@@ -321,7 +321,10 @@ existing `playBrowseTrack` and `openPlaylist` rows). Three pieces are new:
 * The artist link under the player (and in the bar) opens the page by id when the track
   carries `main_artists`; a legacy track with no ids keeps the old behaviour and searches
   the name among artists. The ids travel in the queue state (`artists` on the track),
-  because a link that forgets its id across a restart would become a search again.
+  because a link that forgets its id across a restart would become a search again. An
+  opened playlist is closed first, the way it is for a search: its tracks draw over every
+  tab, so without the step the artist page opened behind the very list the link was
+  clicked in and the click answered with nothing at all.
 * `ListShape` gained the `artists` segment for the search plan (`KINDS.artists`,
   action `openArtist`) and refuses to draw a stale track list under an artist search:
   the mode is part of the plan, not of the answer.

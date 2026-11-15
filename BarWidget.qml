@@ -2294,6 +2294,12 @@ Panel {
       return
     }
     root.clearFilterQuiet()
+    // A playlist that was opened draws its tracks in every tab, so the artist page would
+    // open behind the very list the link was clicked in: the click would answer with the
+    // tracks already on screen. The playlist goes first, the way it does for a search, and
+    // the artist page then opens on the tab the playlist left — the page «Назад» walks
+    // back through.
+    if (root.openPlaylist !== null) root.closePlaylistView()
     root.cursor = -1
     root.artistBackView = root.view
     root.artistBackSlug = root.view === "browse" ? root.browseSlug : ""
