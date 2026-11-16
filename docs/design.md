@@ -307,12 +307,25 @@ section, then `catalog.getSection` fills it). The section answer carries:
 
 `audio.getAudiosByArtist` is the whole list, one page of `ARTIST_TRACK_PAGE_SIZE` (300)
 at a time; VK reports its total in `count`, and `more` is `offset + len(page) < total`,
-so **Ещё** never makes an empty round trip. «Все треки» swaps the popular thirty for the
-whole list.
+so **Ещё** never makes an empty round trip. «Все треки» asks for the page after the rows
+already on screen (`offset = tracks.length`) and **Ещё**, under the last row, asks for the
+next one; offset zero would replace the list with its first page and never grow past it.
+
+An artist's page is two tabs, «Альбомы» and «Треки», because its records and its tracks
+are two bands and only one of them is a list at a time. One «Все треки» button was not
+enough: it left the wall of covers above the list it had nothing to do with, so the click
+answered with the same screen it was pressed on and the expansion happened two screens
+below it. The tab is part of the plan (`artistTab` in the state), and the band that is
+off screen is emptied in `lists` rather than only skipped in the segments — the
+delegates, the cursor and the grid/rows switch all read `lists`, and an emptied band is
+the one answer that cannot disagree with itself. Switching tabs clears the cursor, and
+`pageKey` carries the tab, so the scroll starts at the top of the band that just
+arrived. The page opens on «Треки» — a visit to an artist is a visit for listening — and
+lands on the popular thirty, with «Все треки» the first step past them.
 
 The artist page reuses the browse page wholesale: `browseSlug = "artist"`, the albums in
 `playlists` (the existing gallery/rows switch applies) and the tracks in `tracks` (the
-existing `playBrowseTrack` and `openPlaylist` rows). Three pieces are new:
+existing `playBrowseTrack` and `openPlaylist` rows). The pieces that are new:
 
 * `root.artist` (the card) and the back state `artistBackView`/`artistBackSlug`, so a
   page opened from the search returns to the search with its results, one opened from a

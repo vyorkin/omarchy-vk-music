@@ -247,21 +247,38 @@ TestCase {
     compare(kinds(results), "artists")
   }
 
-  // An artist's page has the same shape as a section: the records above and the popular
-  // tracks under them. The tracks are the same rows a section draws, so the same cursor
-  // and the same play command work on both.
-  function test_an_artist_page_is_releases_then_tracks() {
-    var planned = ListShape.plan({ view: "browse", browseSlug: "artist", gridView: true,
-      columns: 3, playlists: cards(2), tracks: tracks(30, "a") })
-    compare(kinds(planned), "playlists,tracks")
-    compare(ListShape.offsetOf(planned, "tracks"), 2)
-    compare(planned.gallery, true)
-    compare(planned.showsPlaylists, true)
+  // An artist's page is two tabs, and only the band of the tab on screen is the list: the
+  // records under «Альбомы», the tracks under «Треки». The band that is off screen is
+  // absent from `lists`, not merely skipped in the segments — the delegates and the cursor
+  // both read `lists`, and an emptied band is the only answer the two cannot disagree on.
+  function test_an_artist_page_draws_the_tab_that_is_on_screen() {
+    var albums = ListShape.plan({ view: "browse", browseSlug: "artist", artistTab: "albums",
+      gridView: true, columns: 3, playlists: cards(2), tracks: tracks(30, "a") })
+    compare(kinds(albums), "playlists")
+    compare(albums.gallery, true)
+    compare(albums.showsPlaylists, true)
+    compare(albums.items.length, 2)
+    compare(albums.lists.tracks.length, 0)
 
+    var trackRows = ListShape.plan({ view: "browse", browseSlug: "artist",
+      artistTab: "tracks", gridView: true, columns: 3,
+      playlists: cards(2), tracks: tracks(30, "a") })
+    compare(kinds(trackRows), "tracks")
+    compare(ListShape.offsetOf(trackRows, "tracks"), 0)
+    compare(trackRows.gallery, false)
+    compare(trackRows.showsPlaylists, false)
+    compare(trackRows.lists.playlists.length, 0)
+    compare(trackRows.items.length, 30)
+
+    // A plan without a tab is the tracks: that is the tab the page opens on.
+    var opened = ListShape.plan({ view: "browse", browseSlug: "artist",
+      playlists: cards(2), tracks: tracks(5, "a") })
+    compare(kinds(opened), "tracks")
+
+    // An artist with no records still draws the albums tab as the empty page it is.
     var noAlbums = ListShape.plan({ view: "browse", browseSlug: "artist",
-      playlists: [], tracks: tracks(5, "a") })
-    compare(kinds(noAlbums), "tracks")
-    compare(noAlbums.gallery, false)
+      artistTab: "albums", playlists: [], tracks: tracks(5, "a") })
+    compare(noAlbums.segments.length, 0)
     compare(noAlbums.showsPlaylists, false)
   }
 
@@ -294,7 +311,10 @@ TestCase {
       { view: "search", searchState: "results", queryLength: 3, results: tracks(3, "r") },
       { view: "search", searchMode: "artists", searchState: "results", queryLength: 3,
         gridView: true, columns: 3, artists: cards(2) },
-      { view: "browse", browseSlug: "artist", playlists: cards(2), tracks: tracks(3, "a") }
+      { view: "browse", browseSlug: "artist", artistTab: "albums",
+        playlists: cards(2), tracks: tracks(3, "a") },
+      { view: "browse", browseSlug: "artist", artistTab: "tracks",
+        playlists: cards(2), tracks: tracks(3, "a") }
     ]
     for (var i = 0; i < states.length; i++) {
       var planned = ListShape.plan(states[i])

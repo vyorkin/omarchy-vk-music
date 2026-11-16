@@ -61,6 +61,11 @@ Panel {
   property bool artistAllTracks: false
   property bool artistTracksMore: false
   property int artistTracksTotal: 0
+  // An artist's page is two bands and one tab: `albums` is the records, `tracks` is the
+  // popular thirty with «Все треки» under it. The tab is part of the plan, not a paint
+  // switch — only the band on screen is the list the cursor walks. The page opens on the
+  // tracks, because a visit to an artist is a visit for listening.
+  property string artistTab: "tracks"
   // Where an artist page was opened from: a search keeps its query and results, and a
   // section is asked for again, because its rows are cheap and its cursor is not worth
   // carrying across a page.
@@ -92,7 +97,11 @@ Panel {
     // binding is the staleness this file has been bitten by before.
     root.openPlaylist ? "playlist" : "",
     root.person ? "person" : "",
-    root.artist ? "artist" : ""
+    root.artist ? "artist" : "",
+    // Which of the artist page's two bands is on screen. A tab is a page as far as the
+    // list is concerned: the scroll offset the other band had belongs to rows that are
+    // no longer there.
+    root.artist ? root.artistTab : ""
   ].join("|")
   property alias tracks: session.tracks
   property alias playlists: session.playlists
@@ -1570,6 +1579,7 @@ Panel {
     state.columns = root.galleryColumns
     state.gridView = root.gridView
     state.browseLoading = session.loading("browse") || session.loading("favorites")
+    state.artistTab = root.artistTab
     state.filter = root.filter
     // The recent queries and the recent people arrive with the status rather than from a
     // fetch, so they are not the store's to keep.
@@ -1944,7 +1954,10 @@ Panel {
       if (!root.artist) return root.t("Исполнитель не найден")
       var name = String(root.artist.name || root.t("Исполнитель"))
       var records = root.playlists.length
-      if (root.artistAllTracks) {
+      // The bar names the tab that is on screen: the popular thirty, then the whole list
+      // once «Все треки» has been asked for; the records count belongs to the other tab.
+      if (root.artistTab === "tracks") {
+        if (root.tracks.length === 0) return name + root.t(" · пусто")
         return name + " · " + I18n.summary(root.language, root.tracks,
           root.t("трек"), root.t("трека"), root.t("треков"))
       }
@@ -2379,6 +2392,7 @@ Panel {
     root.artistAllTracks = false
     root.artistTracksMore = false
     root.artistTracksTotal = 0
+    root.artistTab = "tracks"
     root.playlists = []
     root.tracks = []
     root.browseNext = ""
@@ -2404,21 +2418,31 @@ Panel {
     root.focusList()
   }
 
-  // «Все треки»: the page opens on the popular thirty, and the whole list is one more
-  // request. A second press asks for the next page while `artistTracksMore` says there is
-  // one — `total` is what `audio.getAudiosByArtist` reports, so the button knows without
-  // an empty round trip.
-  function loadArtistTracks(more) {
+  // The artist page's tabs. One band is on screen at a time, and the plan draws only that
+  // one, so the cursor moves off the band that just left rather than onto a row that is
+  // no longer drawn. The scroll follows through `pageKey`, which carries the tab.
+  function setArtistTab(tab) {
+    var next = tab === "albums" ? "albums" : "tracks"
+    if (root.artistTab === next) return
+    root.artistTab = next
+    root.cursor = -1
+  }
+
+  // «Все треки» and the «Ещё» under the list: the track band opens on the popular
+  // thirty, and each press asks for the page after the rows already on screen — offset
+  // zero would replace the whole list with its first page and never grow past it.
+  // `total` is what `audio.getAudiosByArtist` reports, so «Ещё» knows it has something
+  // to fetch without an empty round trip.
+  function loadArtistTracks() {
     if (!root.artist || String(root.artist.id || "") === "") return
     if (session.loading("artistTracks")) return
-    var offset = more ? root.tracks.length : 0
     var token = session.begin("browse", "artistTracks")
-    api.request("artist_tracks", { artistId: String(root.artist.id), offset: offset },
+    api.request("artist_tracks", { artistId: String(root.artist.id), offset: root.tracks.length },
       function(answer) {
         if (!session.accept(token)) return
         if (!answer || !answer.ok || !answer.data) return
         var page = answer.data.tracks || []
-        root.tracks = more ? root.tracks.concat(page) : page
+        root.tracks = root.tracks.concat(page)
         root.artistTracksTotal = Number(answer.data.total || 0)
         root.artistTracksMore = answer.data.more === true
         root.artistAllTracks = true
@@ -2433,6 +2457,7 @@ Panel {
     root.artistAllTracks = false
     root.artistTracksMore = false
     root.artistTracksTotal = 0
+    root.artistTab = "tracks"
     root.artistBackView = ""
     root.artistBackSlug = ""
     root.playlists = []
@@ -5117,37 +5142,51 @@ Panel {
             title: String(root.artist ? (root.artist.name || "") : "")
           }
 
-          // «Все треки» is one click away from the popular thirty and carries no count,
+          // An artist page holds two bands and shows one: the records are a wall of
+          // covers, the tracks are rows. Two equal cells the way a choice is drawn
+          // elsewhere in the panel — as a button, «Все треки» looked like a section that
+          // was already open, and the records stayed between the click and the list.
+          RowLayout {
+            width: parent.width
+            spacing: 0
+
+            BarCell {
+              Layout.fillWidth: true
+              Layout.preferredWidth: 0
+              Layout.minimumWidth: 0
+              Layout.preferredHeight: root.barCellHeight
+              text: root.t("Альбомы")
+              selected: root.artistTab === "albums"
+              tooltipText: root.t("Все альбомы и появления исполнителя")
+              onClicked: root.setArtistTab("albums")
+            }
+
+            BarCell {
+              Layout.fillWidth: true
+              Layout.preferredWidth: 0
+              Layout.minimumWidth: 0
+              Layout.preferredHeight: root.barCellHeight
+              text: root.t("Треки")
+              selected: root.artistTab === "tracks"
+              tooltipText: root.t("Популярные треки и весь список")
+              onClicked: root.setArtistTab("tracks")
+            }
+          }
+
+          // «Все треки» swaps the popular thirty for the whole list and carries no count,
           // because the page has not asked for the total and a made-up number is worse
-          // than none. Once the whole list is up, «Ещё» pages through the rest; `total`
-          // from `audio.getAudiosByArtist` is what says there is a rest.
+          // than none. The rest of the list pages through the «Ещё» under its last row.
           Button {
             width: parent.width
             leftAlign: true
-            visible: !root.artistAllTracks && root.tracks.length > 0
+            visible: root.artistTab === "tracks" && !root.artistAllTracks
+              && root.tracks.length > 0
             enabled: !session.loading("artistTracks")
             opacity: enabled ? 1.0 : 0.5
             text: root.t("Все треки")
             foreground: root.textColor
-            onClicked: root.loadArtistTracks(true)
+            onClicked: root.loadArtistTracks()
           }
-
-          Button {
-            width: parent.width
-            leftAlign: true
-            visible: root.artistAllTracks && root.artistTracksMore
-            enabled: !session.loading("artistTracks")
-            opacity: enabled ? 1.0 : 0.5
-            text: root.t("Ещё")
-            foreground: root.textColor
-            onClicked: root.loadArtistTracks(false)
-          }
-        }
-
-        PanelSectionHeader {
-          text: root.t("Альбомы")
-          foreground: root.dim
-          visible: root.browseSlug === "artist" && root.playlists.length > 0
         }
 
         // A person's page holds two bands — their playlists and then their own audio —
@@ -5285,7 +5324,10 @@ Panel {
               ? root.t("Треки")
               : root.t("Популярные треки")
           foreground: root.dim
-          visible: (root.browseSlug === "artist" || root.browseSlug === "person")
+          // The band's name is the tab's second line: «Популярные треки» until «Все
+          // треки» widens it, and on an artist page only while the tracks tab is up.
+          visible: (root.browseSlug === "person"
+            || (root.browseSlug === "artist" && root.artistTab === "tracks"))
             && root.tracks.length > 0
         }
 
@@ -5309,14 +5351,22 @@ Panel {
           // A section pages by the cursor VK handed back; a person's page pages by the
           // offset of the audio it already holds, and the counts say whether a page is
           // left. A person's playlists arrive whole, so this button never speaks for them.
-          visible: root.browseSlug === "person" ? root.personTracksMore : root.browseNext !== ""
+          // An artist's whole list pages here too: under the last row it belongs to, not
+          // in the header above a band it does not describe.
+          visible: root.browseSlug === "person" ? root.personTracksMore
+            : (root.browseSlug === "artist"
+              ? (root.artistTab === "tracks" && root.artistAllTracks && root.artistTracksMore)
+              : root.browseNext !== "")
           enabled: root.browseSlug === "person"
             ? !session.loading("personTracksMore")
-            : !session.loading("browseMore")
+            : (root.browseSlug === "artist"
+              ? !session.loading("artistTracks")
+              : !session.loading("browseMore"))
           opacity: enabled ? 1.0 : 0.5
           text: root.t("Ещё")
           foreground: root.textColor
-          onClicked: root.browseSlug === "person" ? root.loadPersonTracks() : root.browseMore()
+          onClicked: root.browseSlug === "person" ? root.loadPersonTracks()
+            : (root.browseSlug === "artist" ? root.loadArtistTracks() : root.browseMore())
         }
       }
 

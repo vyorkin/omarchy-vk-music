@@ -136,6 +136,7 @@ function plan(state) {
   var queryLength = Number(s.queryLength) || 0
   var searchState = String(s.searchState || "typing")
   var browseSlug = String(s.browseSlug || "")
+  var artistTab = String(s.artistTab || "tracks")
   var searchMode = String(s.searchMode || "tracks")
   var view = String(s.view || "")
   var openPlaylist = s.openPlaylist === undefined ? null : s.openPlaylist
@@ -226,6 +227,20 @@ function plan(state) {
       gallery = friendsGallery || recentGallery
     } else if (browseSlug === "radiostations") {
       append(built, "radio", "stations", KINDS.stations, lists.stations, 1)
+    } else if (browseSlug === "artist") {
+      // An artist's page shows one of two bands, and the tab decides which. The band that
+      // is not on screen is emptied here rather than hidden in the widget: the delegates,
+      // the cursor and the counts read `lists`, so an empty band is the only answer that
+      // cannot disagree with itself. The raw arrays keep both, so switching tabs needs no
+      // request.
+      if (artistTab === "albums") {
+        lists.tracks = []
+        append(built, "section", "playlists", KINDS.playlists, lists.playlists, columns)
+        gallery = gridView && lists.playlists.length > 0
+      } else {
+        lists.playlists = []
+        append(built, "section", "tracks", KINDS.tracks, lists.tracks, 1)
+      }
     } else {
       // A section is its playlists and then its tracks under them, in one cursor order:
       // the cards above, the rows below.
@@ -238,6 +253,11 @@ function plan(state) {
         // People are drawn as cards or as rows as well, so the switch means the same thing
         // on the friends page and on a person's page as it does for playlists.
         showsPlaylists = true
+      } else if (browseSlug === "artist") {
+        // The switch says how playlists are drawn, and the tracks tab has no playlists:
+        // two cells that flip a wall nobody can see are dead controls, not a choice.
+        showsPlaylists = artistTab === "albums"
+          && (browseLoading || lists.playlists.length > 0)
       } else if (browseSlug !== "all") {
         // «Моя музыка» is the one section that is a hundred tracks and never a playlist, so
         // the switch has nothing to say there and says it without waiting for an answer. A
