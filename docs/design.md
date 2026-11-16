@@ -323,6 +323,12 @@ the one answer that cannot disagree with itself. Switching tabs clears the curso
 arrived. The page opens on «Треки» — a visit to an artist is a visit for listening — and
 lands on the popular thirty, with «Все треки» the first step past them.
 
+The header above the tabs is the artist's picture and name on one line, 56 px square and
+the name with the counts under it. A lone 96 px square at the left edge left two thirds of
+the card empty and named the artist only in the status line below, which is where the
+header's own line comes from. The cover stays square, like every other cover in the panel:
+the picture is the shape.
+
 The artist page reuses the browse page wholesale: `browseSlug = "artist"`, the albums in
 `playlists` (the existing gallery/rows switch applies) and the tracks in `tracks` (the
 existing `playBrowseTrack` and `openPlaylist` rows). The pieces that are new:

@@ -1935,6 +1935,21 @@ Panel {
     })
   }
 
+  // What the artist's page holds, in the line under its name: the records and the tracks
+  // the page knows of. It counts the tracks on screen, so «Все треки» grows it; the bar's
+  // own line names only the band the tab has up, which is why this line says both.
+  readonly property string artistCounts: {
+    if (!root.artist) return ""
+    var records = root.playlists.length
+    var albums = records === 0 ? "" : records + " "
+      + I18n.plural(root.language, records, root.t("альбом"), root.t("альбома"), root.t("альбомов"))
+    var rows = root.tracks.length
+    var tracks = rows === 0 ? "" : rows + " "
+      + I18n.plural(root.language, rows, root.t("трек"), root.t("трека"), root.t("треков"))
+    if (albums !== "" && tracks !== "") return albums + " · " + tracks
+    return albums !== "" ? albums : tracks
+  }
+
   readonly property string browseHeader: {
     if (root.browseSlug === "") return ""
     if (root.browseSlug === "person") {
@@ -5131,15 +5146,55 @@ Panel {
           spacing: Style.space(4)
           visible: root.browseSlug === "artist" && root.artist !== null
 
-          CoverTile {
-            width: Style.space(96)
-            height: width
-            radius: width / 2
-            inset: 0
-            mark: "󰀄"
-            decodeSize: width
-            source: String(root.artist ? (root.artist.photo || "") : "")
-            title: String(root.artist ? (root.artist.name || "") : "")
+          // The picture and the name in one line. A 96 px square alone at the left edge
+          // left two thirds of the card empty and said nothing: the page never named its
+          // own artist outside the status line. 56 px is the header, and the name and the
+          // numbers are what the rest of the line is for.
+          RowLayout {
+            width: parent.width
+            spacing: Style.space(8)
+
+            CoverTile {
+              Layout.preferredWidth: Style.space(56)
+              Layout.preferredHeight: Style.space(56)
+              // Square like every other cover in the panel: the picture is the shape, and a
+              // rounded frame would only be a border the image covers anyway.
+              radius: 0
+              inset: 0
+              mark: "󰀄"
+              decodeSize: Style.space(56)
+              source: String(root.artist ? (root.artist.photo || "") : "")
+              title: String(root.artist ? (root.artist.name || "") : "")
+            }
+
+            Column {
+              Layout.fillWidth: true
+              Layout.alignment: Qt.AlignVCenter
+              spacing: Style.space(2)
+
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                maximumLineCount: 1
+                text: String(root.artist ? (root.artist.name || "") : "")
+                color: root.textColor
+                font.family: Style.font.family
+                font.pixelSize: Style.font.heading
+                font.bold: true
+              }
+
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                maximumLineCount: 1
+                text: root.artistCounts
+                color: root.dim
+                font.family: Style.font.family
+                font.pixelSize: Style.font.bodySmall
+              }
+            }
           }
 
           // An artist page holds two bands and shows one: the records are a wall of
