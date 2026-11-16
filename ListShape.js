@@ -216,6 +216,9 @@ function plan(state) {
   } else if (view === "browse") {
     if (browseSlug === "person") {
       append(built, "person", "personPlaylists", KINDS.playlists, lists.personPlaylists, columns)
+      // A person's own audio stands under their playlists the way a section's tracks
+      // stand under its playlists: cards first, rows after them, one cursor order.
+      append(built, "person", "tracks", KINDS.tracks, lists.tracks, 1)
       gallery = gridView && lists.personPlaylists.length > 0
     } else if (browseSlug === "friends") {
       append(built, "friends", "friends", KINDS.friends, lists.friends, friendsGallery ? columns : 1)

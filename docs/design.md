@@ -1214,8 +1214,24 @@ not last: choosing a person is a route to a list, not a section, and a chip at t
 end of a row that scrolls is a chip nobody finds. It opens a screen with the friend
 list — a photo and a name each, clickable — a field for a link, an id or a friend's
 name, and the people opened before. Clicking anybody opens their page: their name,
-how many playlists they have, a «Назад» button, and the playlists in the gallery or
-as rows. The keyboard cursor walks the list the same way it walks tracks.
+how many playlists and tracks they have, a «Назад» button, their playlists in the
+gallery or as rows under a «Плейлисты» heading, and then their own audio as track
+rows under «Треки». The keyboard cursor walks the two bands in that order, the way
+it walks a section's playlists and then its tracks.
+
+The two bands page differently, because VK's answers do. A person's playlists come
+in one answer — `audio.getPlaylists` pages by `count`/`offset`, but a filter of
+`offset` past the first page loses entries (a page of 100 asked with `offset=100`
+returns items the first page already had), so the whole reachable list is fetched
+in one request and the panel counts them: 113 on a page that reports 113. Its
+`count` is not a total and must not be shown as one — asking `count=50` for a
+person with 113 playlists answers 50 items and `count` 50. A person's **tracks**
+do page cleanly by `offset`, and there are thousands of them (5183 for one page
+checked), so the page opens with the first 300 and grows by another 300 on «Ещё»,
+which appears only while `tracks_total` says there is a rest. The page's heading
+counts both bands (`83 плейлиста · 5183 трека`) for the same reason: the number
+beside a name used to be the playlist count alone over a page that now holds audio
+too.
 
 So the plugin offers four ways in — the playlist search, the friend list, any
 person by link, id or screen name, and its own playlists in the gallery — and keeps

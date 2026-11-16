@@ -190,6 +190,14 @@ case "$command_name" in
     fi
     send "$(jq -nc --arg query "$*" '{command:"person", query:$query}')"
     ;;
+  # The next page of a person's own audio: `person` answers the first one, and
+  # the page's «Ещё» asks for the rest the same way.
+  person-tracks)
+    owner="$(number "${1:-}")"
+    offset="$(number "${2:-0}")"
+    send "$(jq -nc --argjson ownerId "$owner" --argjson offset "$offset" \
+      '{command:"person_tracks", ownerId:$ownerId, offset:$offset}')"
+    ;;
   search)
     remember=false
     query=""

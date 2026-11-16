@@ -157,8 +157,9 @@ TestCase {
     compare(listed.gallery, false)
   }
 
-  // A person's page is their playlists and nothing else; the open playlist is tracks and
-  // nothing else, whatever view it was opened from.
+  // A person's page is their playlists and then their own audio — cards above rows, the
+  // way a section stands. The open playlist is tracks and nothing else, whatever view it
+  // was opened from.
   function test_a_person_and_an_open_playlist_are_one_band_each() {
     var person = ListShape.plan({ view: "browse", browseSlug: "person", gridView: true,
       columns: 3, personPlaylists: cards(5) })
@@ -166,6 +167,15 @@ TestCase {
     compare(columnsOf(person), "3")
     compare(person.gallery, true)
     compare(person.showsPlaylists, true)
+
+    var withAudio = ListShape.plan({ view: "browse", browseSlug: "person", gridView: true,
+      columns: 3, personPlaylists: cards(5), tracks: tracks(4, "p") })
+    compare(kinds(withAudio), "playlists,tracks")
+    compare(columnsOf(withAudio), "3,1")
+    compare(withAudio.items.length, 9)
+    compare(ListShape.offsetOf(withAudio, "tracks"), 5)
+    compare(ListShape.slotAt(withAudio, 5).kind, "tracks")
+    compare(ListShape.slotAt(withAudio, 4).list, "personPlaylists")
 
     var opened = ListShape.plan({ view: "search", searchMode: "playlists", gridView: true,
       columns: 3, openPlaylist: { id: 7 }, playlistTracks: tracks(6),
@@ -279,7 +289,7 @@ TestCase {
       sectionState({ filter: "Track" }),
       { view: "queue", queue: tracks(4, "q") },
       { view: "browse", browseSlug: "friends", friends: cards(2), people: cards(3), gridView: true, columns: 4 },
-      { view: "browse", browseSlug: "person", personPlaylists: cards(2), gridView: true, columns: 3 },
+      { view: "browse", browseSlug: "person", personPlaylists: cards(2), tracks: tracks(3, "p"), gridView: true, columns: 3 },
       { view: "browse", browseSlug: "radiostations", stations: [{ id: 1, name: "Джаз" }] },
       { view: "search", searchState: "results", queryLength: 3, results: tracks(3, "r") },
       { view: "search", searchMode: "artists", searchState: "results", queryLength: 3,

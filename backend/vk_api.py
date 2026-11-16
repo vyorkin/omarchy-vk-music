@@ -210,6 +210,7 @@ DESCRIPTIONS = {
     "playlist_not_followed": "the playlist is not in my music",
     "artist_key_required": "artist id or url is required",
     "artist_not_found": "artist not found",
+    "person_key_required": "person id is required",
 }
 
 
@@ -1085,6 +1086,30 @@ class VkClient:
         )
         return _tracks_from(response)
 
+    def audios_by_owner(
+        self, owner_id: int, *, count: int = 300, offset: int = 0
+    ) -> tuple[list[Track], int]:
+        """`audio.get` on somebody's own page: their tracks, paged by offset.
+
+        Verified live 2026-11-16: unlike the playlist list, `count` here *is* the
+        total (5183 for the page the probe asked about) and offsets are honoured
+        to the last item (offset 5180 answered the last two of 5183), so
+        `offset + len(page) < count` says whether another page exists.
+        `audio.getCount` is gone from the API — it answers "Unknown method passed"
+        — which is why the total is read from here.
+        """
+        response = self.call(
+            "audio.get", owner_id=owner_id, count=count, offset=offset, extended=1
+        )
+        tracks = _tracks_from(response)
+        total = offset + len(tracks)
+        if isinstance(response, Mapping):
+            try:
+                total = int(response.get("count", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+        return tracks, max(total, offset + len(tracks))
+
     def audio_get_by_keys(self, keys: Sequence[str]) -> list[Track]:
         if not keys:
             return []
@@ -1096,6 +1121,35 @@ class VkClient:
             "audio.getPlaylists", owner_id=owner_id, count=count, offset=offset
         )
         return _playlists_from(response)
+
+    def audio_playlists_all(
+        self, owner_id: int, *, page_size: int = 200, max_pages: int = 20
+    ) -> list[Playlist]:
+        """Every playlist a page hands out, fetched page by page into one list.
+
+        Verified live 2026-11-16 on a page whose answer claims 113 playlists:
+        `count=200` answered 83 unique items, the next page repeated 23 of them
+        and brought nothing new, and 30 of the claimed 113 never came back at all
+        — VK counts lists it will not serve. A page can also arrive shorter than
+        asked while more remain (`count=50` answered 39, then 34, then 10), so the
+        offset advances by what actually arrived, and the walk stops on a page
+        that adds nothing.
+        """
+        seen: set[str] = set()
+        playlists: list[Playlist] = []
+        offset = 0
+        for _ in range(max_pages):
+            page = self.audio_playlists(owner_id, count=page_size, offset=offset)
+            if not page:
+                break
+            fresh = [playlist for playlist in page if playlist.key not in seen]
+            if not fresh:
+                break
+            for playlist in fresh:
+                seen.add(playlist.key)
+            playlists.extend(fresh)
+            offset += len(page)
+        return playlists
 
     def my_playlists(self, owner_id: int, *, count: int = 100) -> list[Playlist]:
         """«Моя музыка» → плейлисты: my own lists *and* the ones I follow.

@@ -316,6 +316,7 @@ var MESSAGES = {
   "reason:vk_error": { en: "VK error", de: "VK-Fehler", es: "error de VK", fr: "erreur VK", ja: "VK エラー", zh: "VK 错误", uk: "помилка VK", ru: "ошибка VK" },
   "reason:not_signed_in": { en: "not signed in", de: "nicht angemeldet", es: "sin sesión", fr: "non connecté", ja: "サインインしていません", zh: "未登录", uk: "немає входу", ru: "нет входа" },
   "reason:person_not_found": { en: "person not found", de: "Person nicht gefunden", es: "persona no encontrada", fr: "personne introuvable", ja: "ユーザーが見つかりません", zh: "找不到该用户", uk: "людину не знайдено", ru: "человек не найден" },
+  "reason:person_key_required": { en: "a person id is required", de: "eine Personen-ID ist nötig", es: "se requiere un id de persona", fr: "un identifiant de personne est requis", ja: "人物の ID が必要です", zh: "需要用户 ID", uk: "потрібен ідентифікатор людини", ru: "нужен идентификатор человека" },
   "reason:no_stream_link": { en: "no stream link", de: "kein Stream-Link", es: "sin enlace de emisión", fr: "aucun lien de flux", ja: "ストリームのリンクがありません", zh: "没有流链接", uk: "немає посилання на потік", ru: "нет ссылки на поток" },
   "reason:empty_link": { en: "empty link", de: "leerer Link", es: "enlace vacío", fr: "lien vide", ja: "リンクが空です", zh: "链接为空", uk: "порожнє посилання", ru: "пустая ссылка" },
   "reason:unknown_section": { en: "unknown section", de: "unbekannter Bereich", es: "sección desconocida", fr: "section inconnue", ja: "不明なセクション", zh: "未知的版块", uk: "невідомий розділ", ru: "неизвестный раздел" },

@@ -213,6 +213,14 @@ def parse_argv(argv: list[str]) -> dict:
         if not words:
             raise SystemExit("использование: person <ссылка | id | имя>")
         return {"command": "person", "query": " ".join(words)}
+    if head == "person-tracks":
+        if not words:
+            raise SystemExit("использование: person-tracks <id> [offset]")
+        return {
+            "command": "person_tracks",
+            "ownerId": int(words[0]),
+            "offset": int(words[1]) if len(words) > 1 else 0,
+        }
     if head == "suggestions":
         return {"command": "suggestions", "query": " ".join(words)}
     if head == "seek":

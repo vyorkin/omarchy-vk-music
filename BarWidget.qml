@@ -959,6 +959,11 @@ Panel {
   property alias friends: session.friends
   property var person: null
   property alias personPlaylists: session.personPlaylists
+  // A person's own audio: the page opens with the first page of it, and the two
+  // numbers say whether «Ещё» has a page behind it. VK's `audio.get` answers a real
+  // total, so the button knows without a round trip that comes back empty.
+  property bool personTracksMore: false
+  property int personTracksTotal: 0
   property string personQuery: ""
   // «/» filters the list in front of you rather than searching VK: vim's search
   // inside the open buffer. It applies to whatever the panel is showing, and it is
@@ -1630,7 +1635,10 @@ Panel {
     var list = root.activeList()
     if (slot.scope === "playlist") return list.playlistTrackRepeater
     if (slot.scope === "queue") return list.queueRepeater
-    if (slot.scope === "person") return root.gridView ? list.browseGrid : list.browsePlaylistRows
+    if (slot.scope === "person") {
+      if (slot.kind === "tracks") return list.browseTrackRepeater
+      return root.gridView ? list.browseGrid : list.browsePlaylistRows
+    }
     if (slot.scope === "friends") {
       // The two walls of the friends page answer for themselves: one of them can be a wall
       // of cards while the other is a row of one.
@@ -1923,8 +1931,13 @@ Panel {
       if (session.loading("person")) return root.t("Открываю…")
       var mine = root.personPlaylists.length
       if (!root.person) return root.t("Человек не найден")
+      // Both bands, because both are on the page now: the audio behind «Ещё» is
+      // thousands of tracks long, and a header counting only playlists would keep
+      // saying «73 плейлиста» over a page that holds more than that.
+      var audio = root.personTracksTotal
       return String(root.person.name || root.t("Человек"))
         + (mine === 0 ? root.t(" · пусто") : " · " + mine + " " + I18n.plural(root.language, mine, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов")))
+        + (audio === 0 ? "" : " · " + audio + " " + I18n.plural(root.language, audio, root.t("трек"), root.t("трека"), root.t("треков")))
     }
     if (root.browseSlug === "artist") {
       if (session.loading("artist")) return root.t("Открываю…")
@@ -2022,6 +2035,8 @@ Panel {
     // and a page nobody is looking at must not keep the sections off the bar.
     root.person = null
     root.personPlaylists = []
+    root.personTracksMore = false
+    root.personTracksTotal = 0
     if (force !== true) session.emptySectionTries = 0
     root.browseSlug = slug
     root.tracks = []
@@ -2108,10 +2123,16 @@ Panel {
   function playBrowseTrack(index) {
     // The section page is the list; the queue becomes that page, in its own order. An
     // artist page is the same list with a different place behind it, so a playlist of the
-    // popular tracks still knows where it came from.
+    // popular tracks still knows where it came from. A person's page is their audio once
+    // their playlists end, and the queue starts from there.
     if (root.browseSlug === "artist" && root.artist) {
       root.playList(root.tracks, index, "artist", String(root.artist.id || ""),
         root.browseTitle !== "" ? root.browseTitle : root.t("Исполнитель"))
+      return
+    }
+    if (root.browseSlug === "person" && root.person) {
+      root.playList(root.tracks, index, "person", String(root.person.id || ""),
+        root.browseTitle !== "" ? root.browseTitle : root.t("Человек"))
       return
     }
     root.playList(root.tracks, index, "section", root.browseSlug,
@@ -2217,6 +2238,8 @@ Panel {
     root.clearBrowseLoading()
     root.person = null
     root.personPlaylists = []
+    root.personTracksMore = false
+    root.personTracksTotal = 0
     root.browseSlug = "favorites"
     root.browseTitle = root.t("Избранное")
     root.tracks = []
@@ -2245,6 +2268,8 @@ Panel {
     // that call each other are a loop, not a pair.
     root.person = null
     root.personPlaylists = []
+    root.personTracksMore = false
+    root.personTracksTotal = 0
     root.browseSlug = "friends"
     root.browseTitle = root.t("Друзья")
     root.tracks = []
@@ -2262,6 +2287,8 @@ Panel {
     var token = session.begin("browse", "person")
     root.person = null
     root.personPlaylists = []
+    root.personTracksMore = false
+    root.personTracksTotal = 0
     // The previous person's playlists must not linger under the new name.
     root.playlists = []
     root.browseSlug = "person"
@@ -2276,9 +2303,33 @@ Panel {
         // The same list feeds the gallery and the rows: one place decides what a
         // person's page shows.
         root.playlists = root.personPlaylists
+        root.tracks = answer.data.tracks || []
+        root.personTracksTotal = Number(answer.data.tracks_total || 0)
+        root.personTracksMore = answer.data.tracks_more === true
         root.browseTitle = root.person ? String(root.person.name || root.t("Человек")) : root.t("Человек")
       } else {
       }
+    })
+  }
+
+  // The next page of a person's own audio, for «Ещё» and for the list's own reaching
+  // of its end. The page is appended, so the cursor and the scroll stay where they are;
+  // opening another person begins a new «browse» token and a late page is dropped.
+  function loadPersonTracks() {
+    if (!root.person || String(root.person.id || "") === "") return
+    if (session.loading("personTracksMore")) return
+    var token = session.begin("browse", "personTracksMore")
+    api.request("person_tracks", {
+      personId: Number(root.person.id || 0),
+      // The raw list, not the filtered one the plan draws: the offset counts the
+      // person's tracks, not the rows a filter happened to leave on screen.
+      offset: root.tracks.length
+    }, function(answer) {
+      if (!session.accept(token)) return
+      if (!answer || !answer.ok || !answer.data) return
+      root.tracks = root.tracks.concat(answer.data.tracks || [])
+      root.personTracksTotal = Number(answer.data.total || 0)
+      root.personTracksMore = answer.data.more === true
     })
   }
 
@@ -2290,6 +2341,8 @@ Panel {
     root.cursor = -1
     root.person = null
     root.personPlaylists = []
+    root.personTracksMore = false
+    root.personTracksTotal = 0
     // Back to the people the page was opened from. Leaving the slug on «person» with
     // nobody in it is what made the header say «Человек не найден» after a step back
     // instead of showing the list again — the page's own «Назад» button had the same
@@ -2529,6 +2582,8 @@ Panel {
     root.playlistBack = ""
     root.playlistBackView = ""
     root.person = null
+    root.personTracksMore = false
+    root.personTracksTotal = 0
     root.pendingTrack = null
     root.pendingIndex = -1
     // A filter belongs to the list it was typed in, and every one of those lists
@@ -4370,17 +4425,29 @@ Panel {
       return [gallery.plan.columns, gallery.plan.cellRows,
         Math.round(gallery.plan.cellWidth), Math.round(gallery.captionBlock)].join(":")
     }
-    // Infinite scroll for search: when the viewport comes within half a screen of the
-    // end, ask for the next offset page. The «Ещё» button under the list is the same
-    // call, kept for a click that does not need a scroll. Only the active body may
-    // answer: the other one is a full copy of this list with the same aliases.
+    // Infinite scroll for search and for a person's audio: when the viewport comes
+    // within half a screen of the end, ask for the next offset page. The «Ещё» button
+    // under the list is the same call, kept for a click that does not need a scroll. A
+    // person's playlists are not paged — the backend walks VK's offsets and answers with
+    // all of them — so the only thing growing here is their tracks. Only the active body
+    // may answer: the other one is a full copy of this list with the same aliases.
     function maybeLoadMore() {
       if (view !== root.activeList()) return
-      if (root.view !== "search" || root.openPlaylist !== null) return
-      if (root.searchMode !== "tracks" || root.searchState !== "results") return
-      if (!root.resultsMore || session.loading("searchMore")) return
+      if (root.openPlaylist !== null) return
+      var person = root.view === "browse" && root.browseSlug === "person"
+      if (person) {
+        if (!root.personTracksMore || session.loading("personTracksMore")) return
+      } else {
+        if (root.view !== "search") return
+        if (root.searchMode !== "tracks" || root.searchState !== "results") return
+        if (!root.resultsMore || session.loading("searchMore")) return
+      }
       var limit = Math.max(0, scroller.contentHeight - scroller.height)
       if (limit > 0 && limit - scroller.contentY > Math.max(Style.space(48), scroller.height / 2)) return
+      if (person) {
+        root.loadPersonTracks()
+        return
+      }
       root.searchMoreTracks()
     }
 
@@ -5083,6 +5150,14 @@ Panel {
           visible: root.browseSlug === "artist" && root.playlists.length > 0
         }
 
+        // A person's page holds two bands — their playlists and then their own audio —
+        // and the status bar already names the page, so the band says what it is.
+        PanelSectionHeader {
+          text: root.t("Плейлисты")
+          foreground: root.dim
+          visible: root.browseSlug === "person" && root.playlists.length > 0
+        }
+
         // The sections are out of the scroll (see above): the list starts with what the
         // section holds, so the gallery's first row is the list's first row.
         PlaylistGrid {
@@ -5206,9 +5281,12 @@ Panel {
         PanelSectionHeader {
           text: root.browseSlug === "artist" && root.artistAllTracks
             ? root.t("Все треки")
-            : root.t("Популярные треки")
+            : root.browseSlug === "person"
+              ? root.t("Треки")
+              : root.t("Популярные треки")
           foreground: root.dim
-          visible: root.browseSlug === "artist" && root.tracks.length > 0
+          visible: (root.browseSlug === "artist" || root.browseSlug === "person")
+            && root.tracks.length > 0
         }
 
         Repeater {
@@ -5228,12 +5306,17 @@ Panel {
         Button {
           width: listColumn.width
           leftAlign: true
-          visible: root.browseNext !== ""
-          enabled: !session.loading("browseMore")
+          // A section pages by the cursor VK handed back; a person's page pages by the
+          // offset of the audio it already holds, and the counts say whether a page is
+          // left. A person's playlists arrive whole, so this button never speaks for them.
+          visible: root.browseSlug === "person" ? root.personTracksMore : root.browseNext !== ""
+          enabled: root.browseSlug === "person"
+            ? !session.loading("personTracksMore")
+            : !session.loading("browseMore")
           opacity: enabled ? 1.0 : 0.5
           text: root.t("Ещё")
           foreground: root.textColor
-          onClicked: root.browseMore()
+          onClicked: root.browseSlug === "person" ? root.loadPersonTracks() : root.browseMore()
         }
       }
 

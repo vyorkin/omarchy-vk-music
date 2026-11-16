@@ -196,6 +196,10 @@ ARTIST_SEARCH_PAGE_SIZE = 50
 # `audio.getAudiosByArtist` answers its whole list in one call for most artists (200
 # tracks for King Crimson), and VK refuses more than 300 at a time.
 ARTIST_TRACK_PAGE_SIZE = 300
+# A person's own audio is paged by offset too, and the same 300-per-call ceiling
+# applies. Their `count` *is* a total (5183 for the page that was probed), so the
+# panel knows how many pages are left without an empty round trip.
+PERSON_TRACK_PAGE_SIZE = 300
 
 # Errors that mean "stop and tell the user". The value is a reason code: the panel
 # translates it, and `describe` turns it into the phrase the journal prints.
@@ -922,8 +926,14 @@ class Player:
             return {"code": "halted", "params": {"reason": self.client.halted_reason}}
         return None
 
-    def api(self, function: Callable[[], Any]) -> Any:
-        """Run one API call, translating failures into state the UI can show."""
+    def api(self, function: Callable[[], Any], *, quiet: bool = False) -> Any:
+        """Run one API call, translating failures into state the UI can show.
+
+        `quiet` is for a call whose failure must not become the panel's error line:
+        a person's own audio can be closed to us while their playlists are not, and
+        the page that answered has no business reading as a failed one. The halt
+        path is not quiet — a token that stopped working stops every page.
+        """
         if not self.load_session():
             raise VkApiError(0, "not signed in", method="session", reason="not_signed_in")
         assert self.client is not None
@@ -941,7 +951,8 @@ class Player:
             log(f"halted: {describe(reason)} ({exc.message})")
             raise
         except VkApiError as exc:
-            self.error = f"VK: {describe(classify(exc))}"
+            if not quiet:
+                self.error = f"VK: {describe(classify(exc))}"
             log(f"api error: {describe(classify(exc))} — {exc.message}")
             raise
 
@@ -1123,11 +1134,17 @@ class Player:
         return list(people)
 
     def person(self, query: str) -> dict[str, Any]:
-        """Open somebody's playlists: a friend, a stranger, a link, an id.
+        """Open somebody's page: their playlists and the first page of their audio.
 
         The friend list already knows its own people, so a name that matches one is
         answered from there; everything else goes to `users.get`, which resolves
         screen names as happily as it does ids.
+
+        The playlists are *all* of them: VK hands a page out in pieces that repeat
+        each other and can come back shorter than asked, so `audio_playlists_all`
+        walks the offsets and keeps one of each (see its docstring for the numbers).
+        The audio is one page of many — a person can hold thousands of tracks — and
+        `tracks_more` says whether `person_tracks` has another page.
         """
         reference = parse_person_reference(query)
         if not reference:
@@ -1143,12 +1160,56 @@ class Player:
                 raise VkApiError(0, f"person not found: {query}", method="person",
                                  reason="person_not_found", params={"query": query})
             person = found[0]
-        playlists = self.api(lambda: self.client.audio_playlists(person.id, count=100))
+        playlists = self.api(
+            lambda: self.client.audio_playlists_all(person.id)  # type: ignore[union-attr]
+        )
+        tracks, total, more = self._person_tracks(person.id, 0)
         self.remember_person(person)
         return {
             "person": person.to_dict(),
             "playlists": [playlist.to_dict() for playlist in playlists],
+            "tracks": [track_to_state(track) for track in tracks],
+            "tracks_total": total,
+            "tracks_more": more,
         }
+
+    def person_tracks(self, ownerId: int = 0, offset: int = 0) -> dict[str, Any]:
+        """The next page of somebody's own audio, after the page `person` answered."""
+        owner_id = int(ownerId or 0)
+        if not owner_id:
+            raise VkApiError(0, "person id is required", method="audio.get",
+                             reason="person_key_required")
+        start = max(0, int(offset or 0))
+        tracks, total, more = self._person_tracks(owner_id, start)
+        return {
+            "owner_id": owner_id,
+            "offset": start,
+            "total": total,
+            "tracks": [track_to_state(track) for track in tracks],
+            "more": more,
+        }
+
+    def _person_tracks(
+        self, owner_id: int, offset: int = 0
+    ) -> tuple[list[Track], int, bool]:
+        """One page of somebody's own audio, or none if VK keeps it to themselves.
+
+        A page of playlists opens even when the audio is closed to us: `audio.get`
+        is a second call with its own permission, and its refusal is logged rather
+        than shown as an error over a page that answered.
+        """
+        start = max(0, int(offset or 0))
+        try:
+            tracks, total = self.api(
+                lambda: self.client.audios_by_owner(  # type: ignore[union-attr]
+                    owner_id, offset=start, count=PERSON_TRACK_PAGE_SIZE
+                ),
+                quiet=True,
+            )
+        except VkApiError as exc:
+            log(f"could not read {owner_id}'s audio: {exc.message}")
+            return [], 0, False
+        return tracks, total, start + len(tracks) < total
 
     def my_playlists(self) -> dict[str, Any]:
         """«Избранное»: the playlists saved to my music, my own and followed alike.
@@ -2661,8 +2722,12 @@ class Backend:
         return [person.to_dict() for person in people]
 
     def cmd_person(self, query: str = "") -> dict[str, Any]:
-        """Somebody's playlists, by link, screen name, id or friend's name."""
+        """Somebody's page: their playlists and the first page of their audio."""
         return self.player.person(query)
+
+    def cmd_person_tracks(self, ownerId: int = 0, offset: int = 0) -> dict[str, Any]:
+        """The next page of somebody's own audio, after `person` answered the first."""
+        return self.player.person_tracks(ownerId=ownerId, offset=offset)
 
     def cmd_suggestions(self, query: str = "") -> list[str]:
         if not query.strip():
