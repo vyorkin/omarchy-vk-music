@@ -1681,6 +1681,14 @@ Three details that were not obvious:
   the content. Both the reveal and the first-visible-row lookup now map the row
   into `scroller.contentItem` (`TrackList.contentRoot`) first, which is the space
   `contentY` counts in.
+* **A new page starts at its top.** The `Flickable` keeps its `contentY` when the
+  content under it is replaced, and Qt clamps that offset to the bottom as soon as
+  the new page is shorter than the old one. A person's page — opened from a longer
+  list — therefore landed on its last rows and read as a list of eight instead of
+  the 73 the status bar counted. `root.pageKey` names the page on screen (view,
+  section, open playlist, person, artist, committed search, filter), and the list
+  resets to zero when it changes; a cursor reveal still runs after the reset and
+  wins.
 * **Only one handler may own Enter.** The search field had its own `onAccepted`
   (`runSearch(true)`) *and* the panel's key catcher reported Return. The field
   handled it first, which re-ran the search and reset the selection a moment

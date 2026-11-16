@@ -75,6 +75,25 @@ Panel {
   // page starts.
   property string browseSlug: ""
   property string browseTitle: ""
+  // Everything that decides which page the list is showing, as one string: the view,
+  // the section, the person, the artist, the open playlist, the search and the filter.
+  // The list resets its scroll when this changes (see TrackList), because the Flickable
+  // keeps the old offset when the content under it is replaced — and Qt clamps that
+  // offset to the bottom as soon as the new page is shorter. That is how a person's page
+  // of 73 playlists opened on its last rows and read as a list of eight.
+  readonly property string pageKey: [
+    root.view,
+    root.browseSlug,
+    root.filter,
+    root.view === "search" ? String(root._searchedQuery || "") + "|" + root.searchMode : "",
+    // Only whether one is open: every page that opens another goes through the empty
+    // value first (a person is cleared before the next one loads, a playlist is null
+    // while the list under it is on screen), and reading a field of a `var` in a
+    // binding is the staleness this file has been bitten by before.
+    root.openPlaylist ? "playlist" : "",
+    root.person ? "person" : "",
+    root.artist ? "artist" : ""
+  ].join("|")
   property alias tracks: session.tracks
   property alias playlists: session.playlists
   property string browseNext: ""
@@ -4942,6 +4961,16 @@ Panel {
           scroller.contentY = Math.max(0, Math.min(limit, scroller.contentY - notches * Style.space(48)))
           event.accepted = true
         }
+      }
+
+      // A page opens at the top of its own list. The Flickable keeps its scroll offset
+      // when the content under it is replaced, and Qt clamps that offset to the bottom as
+      // soon as the new page is shorter than the old one — a person's page of 73 playlists
+      // opened on its last rows, which read as a list with eight. The cursor reveal still
+      // wins when it has a row to show: it runs after the page has changed.
+      Connections {
+        target: root
+        function onPageKeyChanged() { scroller.contentY = 0 }
       }
 
     Column {
