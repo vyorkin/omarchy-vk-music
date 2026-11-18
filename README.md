@@ -111,6 +111,7 @@ deleted as soon as the download ends.
 | `Enter` | play what is selected |
 | `/` | filter the open list |
 | `m` | gallery or list |
+| `s` | the list's order (by track count, or by length) |
 | `[` `]` | previous / next tab |
 | `⇧H` `⇧L` | previous / next section |
 | `Tab` | from a field into the list |

@@ -214,4 +214,109 @@ TestCase {
     compare(lists.accept(browse), false)
     compare(lists.accept(queueToken), true)
   }
+
+  // -- the order a list is stored in -------------------------------------------------
+  //
+  // The order is the list's, not the plan's: a sorted array is what the rows draw, what
+  // «Играть весь плейлист» builds a queue from and what «Ещё» offsets into. `put()` is the
+  // one door an answer comes through, so a list cannot be loaded unsorted.
+
+  function lengths(list) {
+    var out = []
+    for (var i = 0; i < list.length; i++) out.push(list[i].key)
+    return out.join("")
+  }
+
+  function test_put_applies_the_chosen_order() {
+    var lists = loaded()
+    lists.trackSort = "duration-desc"
+    lists.put("playlistTracks", [
+      { key: "a", title: "A", duration: 30 },
+      { key: "b", title: "B", duration: 200 },
+      { key: "c", title: "C", duration: 60 }
+    ])
+    compare(lengths(lists.playlistTracks), "bca")
+    lists.playlistSort = "count-asc"
+    lists.put("playlists", [
+      { key: "1_1", title: "One", count: 30 },
+      { key: "1_2", title: "Two", count: 5 }
+    ])
+    compare(lengths(lists.playlists), "1_21_1")
+  }
+
+  // A different order is a rebuild of the loaded lists, not a refetch; and the choice is
+  // reversible, because «VK order» is a rank table and not a copy the rebuild would replace.
+  function test_a_different_order_rebuilds_and_vk_returns() {
+    var lists = loaded()
+    lists.put("playlistTracks", [
+      { key: "a", title: "A", duration: 300 },
+      { key: "b", title: "B", duration: 100 }
+    ])
+    compare(lengths(lists.playlistTracks), "ab")
+    lists.setSort("tracks", "duration-asc")
+    compare(lengths(lists.playlistTracks), "ba")
+    lists.setSort("tracks", "vk")
+    compare(lengths(lists.playlistTracks), "ab")
+  }
+
+  // A like rebuilds every list holding the track in place. The sort must see that rebuilt
+  // list, not a snapshot taken when the answer arrived — otherwise a like, then a different
+  // order, would show the track unliked again.
+  function test_a_like_survives_a_different_order() {
+    var lists = loaded()
+    lists.put("playlistTracks", [
+      { key: "a", title: "A", duration: 300, is_liked: false },
+      { key: "b", title: "B", duration: 100, is_liked: false }
+    ])
+    lists.like("a", true)
+    lists.setSort("tracks", "duration-asc")
+    compare(lengths(lists.playlistTracks), "ba")
+    compare(lists.playlistTracks[1].key, "a")
+    compare(lists.playlistTracks[1].is_liked, true)
+  }
+
+  // The ranks belong to the lists, and the lists are emptied on an account switch: a rank
+  // left over from the old session would place the next session's items at indexes they
+  // never arrived at. The chosen order itself is the panel's preference and stays.
+  function test_reset_drops_the_arrival_ranks() {
+    var lists = loaded()
+    lists.put("playlistTracks", [
+      { key: "a", title: "A", duration: 300 },
+      { key: "b", title: "B", duration: 100 }
+    ])
+    lists.reset()
+    compare(lists.playlistTracks.length, 0)
+    lists.put("playlistTracks", [
+      { key: "b", title: "B", duration: 100 },
+      { key: "a", title: "A", duration: 300 }
+    ])
+    compare(lengths(lists.playlistTracks), "ba")
+  }
+
+  // «Ещё» appends while the reader may be looking at another order: the page on screen keeps
+  // the ranks VK sent, and the new page lands after them in VK order.
+  function test_an_appended_page_keeps_the_vk_order() {
+    var lists = loaded()
+    lists.put("tracks", [
+      { key: "a", title: "A", duration: 300 },
+      { key: "b", title: "B", duration: 100 }
+    ])
+    lists.setSort("tracks", "duration-asc")
+    compare(lengths(lists.tracks), "ba")
+    lists.append("tracks", [{ key: "c", title: "C", duration: 200 }])
+    compare(lengths(lists.tracks), "bca")
+    lists.setSort("tracks", "vk")
+    compare(lengths(lists.tracks), "abc")
+  }
+
+  // The queue keeps its own order: it is the order of playback, and `Sort` does not name it.
+  function test_the_queue_is_never_sorted() {
+    var lists = loaded()
+    lists.trackSort = "duration-asc"
+    lists.put("queue", [
+      { key: "a", title: "A", duration: 300 },
+      { key: "b", title: "B", duration: 100 }
+    ])
+    compare(lengths(lists.queue), "ab")
+  }
 }

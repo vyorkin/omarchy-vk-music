@@ -57,6 +57,13 @@ T["Поиск"] = { en: "Search", de: "Suche", es: "Buscar", fr: "Recherche", ja
 T["Треки"] = { en: "Tracks", de: "Titel", es: "Pistas", fr: "Titres", ja: "曲", zh: "曲目", uk: "Треки", ru: "Треки" }
 T["Плейлисты"] = { en: "Playlists", de: "Playlists", es: "Listas", fr: "Playlists", ja: "プレイリスト", zh: "歌单", uk: "Плейлисти", ru: "Плейлисты" }
 T["Плейлист"] = { en: "Playlist", de: "Playlist", es: "Lista", fr: "Playlist", ja: "プレイリスト", zh: "歌单", uk: "Плейлист", ru: "Плейлист" }
+T["Сортировка"] = { en: "Sort", de: "Sortieren", es: "Ordenar", fr: "Trier", ja: "並べ替え", zh: "排序", uk: "Сортування", ru: "Сортировка" }
+T["сортировка"] = { en: "sort", de: "Sortieren", es: "ordenar", fr: "trier", ja: "並べ替え", zh: "排序", uk: "сортування", ru: "сортировка" }
+T["Порядок VK"] = { en: "VK order", de: "VK-Reihenfolge", es: "Orden de VK", fr: "Ordre VK", ja: "VK の順", zh: "VK 顺序", uk: "Порядок VK", ru: "Порядок VK" }
+T["Сначала большие"] = { en: "Most tracks first", de: "Meiste Titel zuerst", es: "Con más pistas primero", fr: "Plus de titres d'abord", ja: "曲数が多い順", zh: "曲数从多到少", uk: "Спочатку більші", ru: "Сначала большие" }
+T["Сначала маленькие"] = { en: "Fewest tracks first", de: "Wenigste Titel zuerst", es: "Con menos pistas primero", fr: "Moins de titres d'abord", ja: "曲数が少ない順", zh: "曲数从少到多", uk: "Спочатку менші", ru: "Сначала маленькие" }
+T["Сначала длинные"] = { en: "Longest first", de: "Längste zuerst", es: "Primero las más largas", fr: "Les plus longues d'abord", ja: "長い順", zh: "时长从长到短", uk: "Спочатку довгі", ru: "Сначала длинные" }
+T["Сначала короткие"] = { en: "Shortest first", de: "Kürzeste zuerst", es: "Primero las más cortas", fr: "Les plus courtes d'abord", ja: "短い順", zh: "时长从短到长", uk: "Спочатку короткі", ru: "Сначала короткие" }
 T["Подсказки"] = { en: "Suggestions", de: "Vorschläge", es: "Sugerencias", fr: "Suggestions", ja: "候補", zh: "建议", uk: "Підказки", ru: "Подсказки" }
 T["Люди"] = { en: "People", de: "Personen", es: "Personas", fr: "Personnes", ja: "人", zh: "用户", uk: "Люди", ru: "Люди" }
 T["Друзья"] = { en: "Friends", de: "Freunde", es: "Amigos", fr: "Amis", ja: "友達", zh: "好友", uk: "Друзі", ru: "Друзья" }
@@ -425,6 +432,7 @@ var KEYS = [
   { keys: ["m"], what: "вид" },
   { keys: ["[", "]"], what: "вкладки" },
   { keys: ["⇧H", "⇧L"], what: "раздел" },
+  { keys: ["s"], what: "сортировка" },
   { keys: ["Esc"], what: "закрыть" }
 ]
 

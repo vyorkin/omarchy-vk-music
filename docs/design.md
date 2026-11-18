@@ -1659,6 +1659,31 @@ telling the truth about itself:
   search it reads `Esc очистить поиск` and clears the field instead of closing the
   popup — the second press closes, so backing out is one step at a time.
 
+### The order of a list
+
+Two orders beyond VK's own: playlists by the number of tracks inside, tracks by
+their length. The order belongs to the list, not to the view — `SessionLists.put()`
+sorts the array an answer lands in, so the rows, «Играть весь плейлист»'s queue and
+«Ещё»'s offset all read one order (ADR-0005). The filter stays the view's business.
+
+* **Where.** A cell in the popup's bar, left of the playlist heart, shown only when
+  the page has a list to order: `arrow-up-down` while the list is in VK's order,
+  the direction's arrow once it is not, and the accent tint on the glyph. It opens
+  a menu of `Порядок VK`, `Сначала длинные`/`Сначала короткие` (tracks) or
+  `Сначала большие`/`Сначала маленькие` (playlists). On a person's page both
+  lists are on screen, and the rows are grouped — `Плейлисты · …`, `Треки · …`.
+* **From the keys.** `s` opens the same menu near the bar. A choice moves every
+  row of the page, so the item under the cursor is held by its `key` across the
+  rebuild: Enter after `s` plays what it played before.
+* **What it survives.** The choice is a preference (`playlistSort`, `trackSort`)
+  and outlives the panel; the arrival ranks are the session's and go with `reset()`.
+  A page appended with «Ещё» keeps the ranks it had (`Sort.extend`), and the new
+  items take their places at the end of `Порядок VK` even if the reader was looking
+  at another order when the page came in.
+* **What it does not touch.** The queue: its order is the order of playback. An
+  item with no value — a station's duration, a count VK did not send — sorts to the
+  end either way, because an unknown at the top reads as the shortest thing there.
+
 ## Queue actions
 
 Three commands exist for the popup to build on: `queue_remove <index>`,

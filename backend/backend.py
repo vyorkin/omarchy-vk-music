@@ -126,6 +126,14 @@ PREFERENCE_SCHEMA: dict[str, dict[str, Any]] = {
     # Drawn as a glyph in the popup's own bar, not as a labelled row in the settings.
     "playlistView": {"kind": "choice", "default": "list", "options": ["list", "grid"],
                      "shown": False},
+    # The order a list is drawn in, one per family: the count of tracks inside a playlist, and
+    # the length of a track. «vk» is the order VK sent, which is why it is a choice and not
+    # the absence of one. Drawn as a glyph in the popup's bar, not as a labelled row in the
+    # settings: the list it orders is one click away from the menu.
+    "playlistSort": {"kind": "choice", "default": "vk",
+                     "options": ["vk", "count-desc", "count-asc"], "shown": False},
+    "trackSort": {"kind": "choice", "default": "vk",
+                  "options": ["vk", "duration-desc", "duration-asc"], "shown": False},
     # Whether the compact player's second line — shuffle, repeat and the volume — is open.
     # The dots set it, and it outlives the popup the way a bar option does: the card does
     # not put a row away behind this one on every close, and a reopened card is the card

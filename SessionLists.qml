@@ -23,6 +23,7 @@
 import QtQuick
 import "Likes.js" as Likes
 import "Follows.js" as Follows
+import "Sort.js" as Sort
 
 QtObject {
   id: session
@@ -62,6 +63,15 @@ QtObject {
   property var _flags: ({})
   property var _tokens: ({})
 
+  // The order the reader chose, one per family of list (`Sort.modes`). It is a choice, not
+  // a fact of the session, so it survives `reset()`; what does not survive is the arrival
+  // rank of the lists themselves, which `reset()` drops with the lists.
+  property string playlistSort: "vk"
+  property string trackSort: "vk"
+  // Per list, `key` -> the index it arrived at. Stored as ranks rather than as a copy of the
+  // array: a like or a follow rebuilds a list in place, and a copy would undo the rebuild.
+  property var _arrivals: ({})
+
   // The lists, under the names `plan()` reads. `history` and `people` arrive with the
   // status, so the panel adds them to what this returns.
   function state() {
@@ -77,6 +87,63 @@ QtObject {
       results: session.results,
       artists: session.artists,
       suggestions: session.suggestions
+    }
+  }
+
+  // The one way an answer reaches a list. It does three things at once — remember the order
+  // the answer arrived in, apply the order the reader chose, and hand the result to the
+  // bindings — so no call site can forget one of them. A page appended to a sorted list is
+  // the same call: the rank table grows with the new keys and the whole list is re-sorted.
+  function put(name, list) {
+    var key = String(name)
+    var items = list || []
+    var ranks = Sort.arrivals(items)
+    var table = ({})
+    for (var other in session._arrivals) table[other] = session._arrivals[other]
+    table[key] = ranks
+    session._arrivals = table
+    session[key] = Sort.apply(items, Sort.family(key), session.sortMode(key), ranks)
+  }
+
+  // An answer appended to what is already on screen. The difference from `put()` is the rank
+  // table: a page keeps the ranks of the list it lands on, so «Порядок VK» still begins with
+  // what arrived first, even if the reader was looking at a different order when the page
+  // came in.
+  function append(name, page) {
+    var key = String(name)
+    var added = page || []
+    var known = session._arrivals[key] || ({})
+    var items = (session[key] || []).concat(added)
+    var ranks = Sort.extend(known, added)
+    var table = ({})
+    for (var other in session._arrivals) table[other] = session._arrivals[other]
+    table[key] = ranks
+    session._arrivals = table
+    session[key] = Sort.apply(items, Sort.family(key), session.sortMode(key), ranks)
+  }
+
+  // Which order a named list is drawn in; empty for a list `Sort` does not order (the queue).
+  function sortMode(name) {
+    var family = Sort.family(String(name))
+    if (family === "playlists") return session.playlistSort
+    if (family === "tracks") return session.trackSort
+    return ""
+  }
+
+  // A choice from the panel: every loaded list of that family is rebuilt from what it holds
+  // now, so a like or a follow made after the answer is not undone by a different order.
+  function setSort(family, mode) {
+    var wanted = Sort.sanitize(family, mode)
+    if (family === "playlists") session.playlistSort = wanted
+    else if (family === "tracks") session.trackSort = wanted
+    else return
+    session.resort(family)
+  }
+
+  function resort(family) {
+    for (var name in session._arrivals) {
+      if (Sort.family(name) !== family) continue
+      session[name] = Sort.apply(session[name], family, session.sortMode(name), session._arrivals[name])
     }
   }
 
@@ -231,5 +298,9 @@ QtObject {
     session.emptySectionTries = 0
     session._flags = ({})
     session._tokens = ({})
+    // The lists are empty, and the ranks they had would place the next session's items at
+    // ranks they never arrived at. The chosen order stays: it is the panel's preference,
+    // not a fact about an account.
+    session._arrivals = ({})
   }
 }

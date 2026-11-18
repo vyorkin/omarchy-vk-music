@@ -87,8 +87,9 @@ TestCase {
     compare(rows[0].what, "pause")
     // The brackets stay apart, because they are a pair the reader presses twice.
     compare(rows[5].keys, "[ ]")
-    compare(rows[7].what, "close")
-    compare(I18n.hintRows("ru")[7].what, "закрыть")
+    compare(rows[7].what, "sort")
+    compare(rows[8].what, "close")
+    compare(I18n.hintRows("ru")[8].what, "закрыть")
   }
 
   // Every word in the table is a key, so a language that is missing one shows the key and

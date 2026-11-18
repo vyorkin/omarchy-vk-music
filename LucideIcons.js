@@ -71,6 +71,10 @@ var glyphs = {
 var bodies = {
   "arrow-left": '<path d="m12 19-7-7 7-7" /> <path d="M19 12H5" />',
   "arrow-up-right": '<path d="M7 7h10v10" /> <path d="M7 17 17 7" />',
+  // The list's order: neutral until one is chosen, then the direction it runs in.
+  "arrow-up-down": '<path d="m21 16-4 4-4-4" /> <path d="M17 20V4" /> <path d="m3 8 4-4 4 4" /> <path d="M7 4v16" />',
+  "arrow-down-wide-narrow": '<path d="m3 16 4 4 4-4" /> <path d="M7 20V4" /> <path d="M11 4h10" /> <path d="M11 8h7" /> <path d="M11 12h4" />',
+  "arrow-up-narrow-wide": '<path d="m3 8 4-4 4 4" /> <path d="M7 4v16" /> <path d="M11 12h4" /> <path d="M11 16h7" /> <path d="M11 20h10" />',
   "audio-lines": '<path d="M2 10v3" /> <path d="M6 6v11" /> <path d="M10 3v18" /> <path d="M14 8v7" /> <path d="M18 5v13" /> <path d="M22 10v3" />',
   "check": '<path d="M20 6 9 17l-5-5" />',
   "chevron-down": '<path d="m6 9 6 6 6-6" />',

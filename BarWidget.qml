@@ -20,6 +20,7 @@ import "i18n.js" as I18n
 import "GalleryFit.js" as GalleryFit
 import "GalleryWalk.js" as GalleryWalk
 import "ListShape.js" as ListShape
+import "Sort.js" as Sort
 import "Follows.js" as Follows
 import "BarShares.js" as BarShares
 import "StatusShape.js" as StatusShape
@@ -872,9 +873,9 @@ Panel {
   function runSearch(force) {
     var text = root.query.trim()
     if (text.length < 2) {
-      root.results = []
+      session.put("results", [])
       root.resultsMore = false
-      root.foundPlaylists = []
+      session.put("foundPlaylists", [])
       root.artists = []
       root.artistsMore = false
       root.searchState = "typing"
@@ -925,7 +926,7 @@ Panel {
     api.request("search", { query: text, remember: remember === true }, function(answer) {
       if (!session.accept(token)) return
       if (answer && answer.ok) {
-        root.results = answer.data.tracks || []
+        session.put("results", answer.data.tracks || [])
         root.resultsMore = answer.data.more === true
         root.searchState = "results"
       } else {
@@ -968,7 +969,7 @@ Panel {
       api.request("artist_tracks", { artistId: exact, offset: 0 }, function(page) {
         if (!session.accept(pageToken)) return
         if (page && page.ok && page.data) {
-          root.results = page.data.tracks || []
+          session.put("results", page.data.tracks || [])
           root.resultsMore = page.data.more === true
           root.searchState = "results"
         } else {
@@ -992,7 +993,7 @@ Panel {
     var done = function(answer) {
       if (!session.accept(token)) return
       if (!answer || !answer.ok) return
-      root.results = root.results.concat(answer.data.tracks || [])
+      session.append("results", answer.data.tracks || [])
       root.resultsMore = answer.data.more === true
     }
     // A resolved artist's list pages through `getAudiosByArtist`, whose `more` is exact; a
@@ -1275,6 +1276,158 @@ Panel {
     root.pendingPlaylist = null
   }
 
+  // ----------------------------------------------------------------- sorting ---
+  //
+  // The order a list is drawn in, chosen from the bar. It is the list's own order, not the
+  // plan's: `SessionLists.put()` sorts the array an answer lands in, so «Играть весь
+  // плейлист», the queue it builds and «Ещё»'s offset all already agree with the screen —
+  // the filter is the only thing that draws fewer rows than the list holds.
+  property bool sortMenuOpen: false
+  property real sortMenuX: 0
+  property real sortMenuY: 0
+
+  // What this page can order, as list families. A family whose list is empty is not
+  // offered: a row that would reorder nothing is a row to read past. Both are offered on a
+  // person's page, where the gallery and the rows are two lists in one scroll.
+  function sortScopes() {
+    var out = []
+    if (root.openPlaylist !== null) {
+      if (root.playlistTracks.length > 0) out.push("tracks")
+      return out
+    }
+    if (root.view === "queue" || root.view === "settings") return out
+    if (root.view === "search") {
+      if (root.searchMode === "playlists") {
+        if (root.foundPlaylists.length > 0) out.push("playlists")
+        return out
+      }
+      if (root.searchMode === "artists" && root.artistSearchScope === "artists") return out
+      if (root.results.length > 0) out.push("tracks")
+      return out
+    }
+    if (root.view !== "browse") return out
+    if (root.browseSlug === "favorites") {
+      if (root.playlists.length > 0) out.push("playlists")
+      return out
+    }
+    if (root.browseSlug === "friends" || root.browseSlug === "radiostations") return out
+    if (root.browseSlug === "artist") {
+      if (root.artistTab === "albums") {
+        if (root.playlists.length > 0) out.push("playlists")
+      } else if (root.tracks.length > 0) {
+        out.push("tracks")
+      }
+      return out
+    }
+    if (root.playlists.length > 0) out.push("playlists")
+    if (root.tracks.length > 0) out.push("tracks")
+    return out
+  }
+
+  function sortMode(family) {
+    return family === "playlists" ? session.playlistSort : session.trackSort
+  }
+
+  function sortActive() {
+    var scopes = root.sortScopes()
+    for (var i = 0; i < scopes.length; i++) {
+      if (root.sortMode(scopes[i]) !== "vk") return true
+    }
+    return false
+  }
+
+  // Neutral while the list is in VK's own order, then the direction it runs in. Two lists
+  // on one page may disagree, and a button cannot show two arrows: it stays neutral and
+  // the menu says which is which.
+  function sortGlyphName() {
+    var scopes = root.sortScopes()
+    if (scopes.length !== 1) return "arrow-up-down"
+    var mode = root.sortMode(scopes[0])
+    if (mode.indexOf("-asc") > 0) return "arrow-up-narrow-wide"
+    if (mode.indexOf("-desc") > 0) return "arrow-down-wide-narrow"
+    return "arrow-up-down"
+  }
+
+  function sortModeLabel(family, mode) {
+    if (family === "playlists") {
+      if (mode === "count-desc") return root.t("Сначала большие")
+      if (mode === "count-asc") return root.t("Сначала маленькие")
+      return root.t("Порядок VK")
+    }
+    if (mode === "duration-desc") return root.t("Сначала длинные")
+    if (mode === "duration-asc") return root.t("Сначала короткие")
+    return root.t("Порядок VK")
+  }
+
+  function sortTooltip() {
+    var scopes = root.sortScopes()
+    if (scopes.length !== 1) return root.t("Сортировка")
+    return root.t("Сортировка") + ": " + root.sortModeLabel(scopes[0], root.sortMode(scopes[0]))
+  }
+
+  function sortMenuRows() {
+    var rows = []
+    var scopes = root.sortScopes()
+    for (var s = 0; s < scopes.length; s++) {
+      var family = scopes[s]
+      var modes = Sort.modes(family)
+      var current = root.sortMode(family)
+      for (var i = 0; i < modes.length; i++) {
+        var mode = modes[i]
+        var label = root.sortModeLabel(family, mode)
+        if (scopes.length > 1) {
+          label = (family === "playlists" ? root.t("Плейлисты") : root.t("Треки")) + " · " + label
+        }
+        rows.push({
+          icon: mode === current ? "check" : "",
+          label: label,
+          highlighted: mode === current,
+          action: (function(chosenFamily, chosenMode) {
+            return function() { root.changeSort(chosenFamily, chosenMode) }
+          })(family, mode)
+        })
+      }
+    }
+    return rows
+  }
+
+  function openSortMenu(x, y) {
+    if (root.sortScopes().length === 0) return
+    root.sortMenuX = Number(x || 0)
+    root.sortMenuY = Number(y || 0)
+    root.sortMenuOpen = true
+  }
+
+  function closeSortMenu() {
+    root.sortMenuOpen = false
+  }
+
+  // A different order moves every row of the page, and the keyboard's place is a row, not
+  // an index: the item under the cursor is held by its `key` across the rebuild, so Enter
+  // after `s` plays what it played before.
+  function changeSort(family, mode) {
+    root.sortMenuOpen = false
+    var held = null
+    var before = root.cursorItems()
+    if (root.cursor >= 0 && root.cursor < before.length) held = before[root.cursor]
+    session.setSort(family, mode)
+    root.setPreference(family === "playlists" ? "playlistSort" : "trackSort", mode)
+    if (held !== null) root.cursor = ListShape.indexOf(root.cursorItems(), held)
+  }
+
+  // The daemon's answer is the order's home: the choice outlives the panel, and every
+  // account's session is told what it is. Only a difference is acted on — the status poll
+  // hands the same values back every few seconds, and rebuilding a list under the pointer
+  // for them would be a list that moves on its own.
+  function syncSorts() {
+    var playlists = Sort.sanitize("playlists", root.prefs.playlistSort)
+    var tracks = Sort.sanitize("tracks", root.prefs.trackSort)
+    if (playlists !== session.playlistSort) session.setSort("playlists", playlists)
+    if (tracks !== session.trackSort) session.setSort("tracks", tracks)
+  }
+
+  onPrefsChanged: root.syncSorts()
+
   // What a playlist has that is not a way into it: whether it is in my music, the link to
   // share, and the page on VK. The save row is lit and picked when the list is already
   // saved, and the answer to the save comes back through `pendingPlaylist`, which rebuilds
@@ -1377,7 +1530,7 @@ Panel {
       // «Избранное» is the list of saved copies, so a save and a removal both change what
       // belongs on it: the page on screen is answered with the authoritative list.
       if (root.browseSlug === "favorites" && root.openPlaylist === null) {
-        root.playlists = page.playlists || []
+        session.put("playlists", page.playlists || [])
       }
     })
   }
@@ -1649,7 +1802,7 @@ Panel {
 
   function clearSearch() {
     root.query = ""
-    root.results = []
+    session.put("results", [])
     root.resultsMore = false
     root.suggestions = []
     root.artists = []
@@ -2169,13 +2322,13 @@ Panel {
     // A section is a way in of its own: the person whose page we were on is behind us now,
     // and a page nobody is looking at must not keep the sections off the bar.
     root.person = null
-    root.personPlaylists = []
+    session.put("personPlaylists", [])
     root.personTracksMore = false
     root.personTracksTotal = 0
     if (force !== true) session.emptySectionTries = 0
     root.browseSlug = slug
-    root.tracks = []
-    root.playlists = []
+    session.put("tracks", [])
+    session.put("playlists", [])
     root.browseNext = ""
     root.browseTitle = ""
     // One guard for the page: a section, a person and an opened playlist answer into
@@ -2211,8 +2364,8 @@ Panel {
       session.emptySectionTries = 0
     }
     root.browseTitle = root.sectionTitle(root.browseSlug) || String(page.title || "")
-    root.tracks = page.tracks || []
-    root.playlists = page.playlists || []
+    session.put("tracks", page.tracks || [])
+    session.put("playlists", page.playlists || [])
     root.browseNext = String(page.next || "")
   }
 
@@ -2249,8 +2402,8 @@ Panel {
       if (!session.accept(token)) return
       if (!answer || !answer.ok) return
       var page = answer.data || {}
-      root.tracks = root.tracks.concat(page.tracks || [])
-      root.playlists = root.playlists.concat(page.playlists || [])
+      session.append("tracks", page.tracks || [])
+      session.append("playlists", page.playlists || [])
       root.browseNext = String(page.next || "")
     })
   }
@@ -2309,7 +2462,7 @@ Panel {
     root.playlistBackView = root.view
     root.playlistBack = root.browseSlug
     root.openPlaylist = item
-    root.playlistTracks = []
+    session.put("playlistTracks", [])
     root.browseSlug = "playlist"
     api.request("playlist_tracks", {
       ownerId: owner,
@@ -2319,7 +2472,7 @@ Panel {
     }, function(answer) {
       if (!session.accept(token)) return
       if (answer && answer.ok && answer.data) {
-        root.playlistTracks = answer.data.tracks || []
+        session.put("playlistTracks", answer.data.tracks || [])
       } else {
       }
     })
@@ -2335,7 +2488,7 @@ Panel {
     root.cursor = -1
     root.clearBrowseLoading()
     root.openPlaylist = null
-    root.playlistTracks = []
+    session.put("playlistTracks", [])
     root.view = root.playlistBackView !== "" ? root.playlistBackView : "browse"
     root.browseSlug = root.playlistBack !== "" ? root.playlistBack : "explore"
   }
@@ -2372,13 +2525,13 @@ Panel {
     root.focusList()
     root.clearBrowseLoading()
     root.person = null
-    root.personPlaylists = []
+    session.put("personPlaylists", [])
     root.personTracksMore = false
     root.personTracksTotal = 0
     root.browseSlug = "favorites"
     root.browseTitle = root.t("Избранное")
-    root.tracks = []
-    root.playlists = []
+    session.put("tracks", [])
+    session.put("playlists", [])
     root.browseNext = ""
     root.loadFavorites()
   }
@@ -2389,7 +2542,7 @@ Panel {
       if (!session.accept(token)) return
       if (!answer || !answer.ok) return
       var page = answer.data || {}
-      root.playlists = page.playlists || []
+      session.put("playlists", page.playlists || [])
     })
   }
 
@@ -2402,13 +2555,13 @@ Panel {
     // by calling closePerson: that function returns to this list, and two functions
     // that call each other are a loop, not a pair.
     root.person = null
-    root.personPlaylists = []
+    session.put("personPlaylists", [])
     root.personTracksMore = false
     root.personTracksTotal = 0
     root.browseSlug = "friends"
     root.browseTitle = root.t("Друзья")
-    root.tracks = []
-    root.playlists = []
+    session.put("tracks", [])
+    session.put("playlists", [])
     root.browseNext = ""
     root.loadFriends()
   }
@@ -2421,24 +2574,25 @@ Panel {
     root.cursor = -1
     var token = session.begin("browse", "person")
     root.person = null
-    root.personPlaylists = []
+    session.put("personPlaylists", [])
     root.personTracksMore = false
     root.personTracksTotal = 0
     // The previous person's playlists must not linger under the new name.
-    root.playlists = []
+    session.put("playlists", [])
     root.browseSlug = "person"
-    root.tracks = []
+    session.put("tracks", [])
     root.browseNext = ""
     root.browseTitle = root.t("Человек")
     api.request("person", { query: text }, function(answer) {
       if (!session.accept(token)) return
       if (answer && answer.ok && answer.data) {
         root.person = answer.data.person || null
-        root.personPlaylists = answer.data.playlists || []
-        // The same list feeds the gallery and the rows: one place decides what a
-        // person's page shows.
-        root.playlists = root.personPlaylists
-        root.tracks = answer.data.tracks || []
+        // The same answer feeds the gallery and the rows: one place decides what a
+        // person's page shows. Each list keeps its own arrival ranks, so «Порядок VK»
+        // returns each of them to the order it came in, not to the other one's sort.
+        session.put("personPlaylists", answer.data.playlists || [])
+        session.put("playlists", answer.data.playlists || [])
+        session.put("tracks", answer.data.tracks || [])
         root.personTracksTotal = Number(answer.data.tracks_total || 0)
         root.personTracksMore = answer.data.tracks_more === true
         root.browseTitle = root.person ? String(root.person.name || root.t("Человек")) : root.t("Человек")
@@ -2462,7 +2616,7 @@ Panel {
     }, function(answer) {
       if (!session.accept(token)) return
       if (!answer || !answer.ok || !answer.data) return
-      root.tracks = root.tracks.concat(answer.data.tracks || [])
+      session.append("tracks", answer.data.tracks || [])
       root.personTracksTotal = Number(answer.data.total || 0)
       root.personTracksMore = answer.data.more === true
     })
@@ -2475,15 +2629,15 @@ Panel {
   function closePerson() {
     root.cursor = -1
     root.person = null
-    root.personPlaylists = []
+    session.put("personPlaylists", [])
     root.personTracksMore = false
     root.personTracksTotal = 0
     // Back to the people the page was opened from. Leaving the slug on «person» with
     // nobody in it is what made the header say «Человек не найден» after a step back
     // instead of showing the list again — the page's own «Назад» button had the same
     // hole.
-    root.playlists = []
-    root.tracks = []
+    session.put("playlists", [])
+    session.put("tracks", [])
     root.browseNext = ""
     root.browseSlug = "friends"
     root.browseTitle = root.t("Друзья")
@@ -2515,8 +2669,8 @@ Panel {
     root.artistTracksMore = false
     root.artistTracksTotal = 0
     root.artistTab = "tracks"
-    root.playlists = []
-    root.tracks = []
+    session.put("playlists", [])
+    session.put("tracks", [])
     root.browseNext = ""
     root.browseSlug = "artist"
     root.browseTitle = name === undefined || String(name) === ""
@@ -2527,8 +2681,8 @@ Panel {
       if (!session.accept(token)) return
       if (answer && answer.ok && answer.data) {
         root.artist = answer.data.artist || null
-        root.playlists = answer.data.playlists || []
-        root.tracks = answer.data.tracks || []
+        session.put("playlists", answer.data.playlists || [])
+        session.put("tracks", answer.data.tracks || [])
         root.browseTitle = root.artist
           ? String(root.artist.name || root.t("Исполнитель"))
           : root.t("Исполнитель не найден")
@@ -2564,7 +2718,7 @@ Panel {
         if (!session.accept(token)) return
         if (!answer || !answer.ok || !answer.data) return
         var page = answer.data.tracks || []
-        root.tracks = root.tracks.concat(page)
+        session.append("tracks", page)
         root.artistTracksTotal = Number(answer.data.total || 0)
         root.artistTracksMore = answer.data.more === true
         root.artistAllTracks = true
@@ -2582,8 +2736,8 @@ Panel {
     root.artistTab = "tracks"
     root.artistBackView = ""
     root.artistBackSlug = ""
-    root.playlists = []
-    root.tracks = []
+    session.put("playlists", [])
+    session.put("tracks", [])
     root.browseNext = ""
     // A search is still in the field with its results, so the cheapest way back is the
     // tab it was in. A section is asked for again: the rows are cheap, and carrying its
@@ -2622,7 +2776,7 @@ Panel {
   function loadPlaylistSearch() {
     var text = root.query.trim()
     if (text.length < 2) {
-      root.foundPlaylists = []
+      session.put("foundPlaylists", [])
       session.foundPlaylistsTotal = 0
       return
     }
@@ -2630,10 +2784,10 @@ Panel {
     api.request("playlist_search", { query: text }, function(answer) {
       if (!session.accept(token)) return
       if (answer && answer.ok && answer.data) {
-        root.foundPlaylists = answer.data.playlists || []
+        session.put("foundPlaylists", answer.data.playlists || [])
         session.foundPlaylistsTotal = Number(answer.data.total || 0)
       } else {
-        root.foundPlaylists = []
+        session.put("foundPlaylists", [])
         session.foundPlaylistsTotal = 0
       }
     })
@@ -6212,6 +6366,32 @@ Panel {
           font.pixelSize: Style.font.caption
         }
 
+        // The list's own order: one cell, a menu of the orders that fit it, and a lit glyph
+        // while it is not VK's. It appears only when there is a list to order — a queue's
+        // order is the order of playback, and `Sort` does not offer it.
+        BarDivider { visible: root.sortScopes().length > 0; Layout.preferredHeight: root.topBarHeight }
+
+        Item {
+          visible: root.sortScopes().length > 0
+          Layout.preferredWidth: root.topBarHeight
+          Layout.preferredHeight: root.topBarHeight
+
+          BarGlyph {
+            id: sortGlyph
+            anchors.fill: parent
+            barItem: root.bar
+            loading: false
+            name: root.sortGlyphName()
+            fillOnHover: false
+            iconColor: root.sortActive() ? Color.accent : root.textColor
+            tooltip: root.sortTooltip()
+            onClicked: {
+              var point = root.menuPoint(sortGlyph, sortGlyph.width / 2, sortGlyph.height)
+              root.openSortMenu(point.x, point.y)
+            }
+          }
+        }
+
         // The playlist's own two actions, on the bar where the pointer already is when the
         // list is open: the heart saves it, the dots offer the link and the same save
         // spelled out. A bar that is too narrow for all of it lets the heading elide first —
@@ -7745,6 +7925,10 @@ Panel {
           root.closePlaylistMenu()
           return
         }
+        if (root.sortMenuOpen) {
+          root.closeSortMenu()
+          return
+        }
         if (root.view === "search" && root.query.length > 0) {
           root.clearSearch()
           root.activeField().forceActiveFocus()
@@ -7773,6 +7957,16 @@ Panel {
         if (character === "/") {
           // Vim's search: inside the list you are looking at, not a new list.
           root.startFilter()
+          return
+        }
+        // The order, from the keyboard: the same menu the bar's cell opens, near the bar
+        // where the cell sits, so the keys and the pointer reach one set of rows.
+        if (character === "s") {
+          if (root.sortMenuOpen) {
+            root.closeSortMenu()
+            return
+          }
+          root.openSortMenu(keys.width - Style.space(64), keys.height - Style.space(6))
           return
         }
       }
@@ -7874,6 +8068,16 @@ Panel {
         anchorX: root.pendingMenuX
         anchorY: root.pendingMenuY
         onDismissed: root.closePlaylistMenu()
+      }
+      ContextMenu {
+        anchors.fill: parent
+        visible: root.sortMenuOpen
+        rows: visible ? root.sortMenuRows() : []
+        title: root.t("Сортировка")
+        detail: ""
+        anchorX: root.sortMenuX
+        anchorY: root.sortMenuY
+        onDismissed: root.closeSortMenu()
       }
       HintsPanel { }
     }
