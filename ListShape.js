@@ -138,6 +138,12 @@ function plan(state) {
   var browseSlug = String(s.browseSlug || "")
   var artistTab = String(s.artistTab || "tracks")
   var searchMode = String(s.searchMode || "tracks")
+  // The artists box answers in songs or in artist cards. The songs scope is a track search
+  // that resolved to an artist, so it draws the track vocabulary: results, recent queries
+  // and suggestions — a suggestion that opens a track is exactly right there.
+  var artistScope = String(s.artistScope || "tracks")
+  var tracksVocabulary = searchMode === "tracks"
+    || (searchMode === "artists" && artistScope !== "artists")
   var view = String(s.view || "")
   var openPlaylist = s.openPlaylist === undefined ? null : s.openPlaylist
 
@@ -179,25 +185,33 @@ function plan(state) {
     // The recent queries are the list on screen only while the field holds one character or
     // none: past that the search has something to show. Gated here, so the rows and the
     // cursor read the same array rather than each applying the rule.
-    // Recent queries and suggestions answer in the track mode's own vocabulary (a query
-    // string, a track), so the artist mode does not draw them: a suggestion that opens a
-    // track is not a suggestion for an artist search.
-    history: queryLength < 2 && searchMode === "tracks" ? raw.history : [],
+    // Recent queries and suggestions answer in the track vocabulary (a query string, a
+    // track), so the artist-card scope does not draw them: a suggestion that opens a track
+    // is not a suggestion for an artist search. The songs scope draws both, because there
+    // the answer is tracks.
+    history: queryLength < 2 && tracksVocabulary ? raw.history : [],
     suggestions: []
   }
 
   // A search answers in two shapes as well: results once it has run, and — while the query
   // is still one character, or when the search found nothing — what the panel can suggest
   // instead. Filtering those again would ask the list to match a text it came from.
-  // The track results are the list on screen only in the track mode: the other two modes
-  // answer from their own arrays, and a leftover track list must not draw under them.
-  var resultsShowing = searchMode !== "playlists" && searchMode !== "artists"
+  // The track results are the list on screen only in the modes that answer in tracks: the
+  // playlist and artist-card modes have their own arrays, and a leftover track list must
+  // not draw under them.
+  var resultsShowing = tracksVocabulary
     && searchState === "results" && queryLength >= 2
   lists.results = resultsShowing ? filtered(raw.results, filter) : []
-  lists.suggestions = queryLength < 2 || searchMode !== "tracks" ? []
+  lists.suggestions = queryLength < 2 || !tracksVocabulary ? []
     : (resultsShowing
       ? (raw.results.length === 0 ? raw.suggestions : [])
       : raw.suggestions)
+  // The artist cards belong to the other scope, and that scope is not a band this page
+  // shows: emptied here, the way an artist page empties the tab that just left, so the
+  // wall's own switch and the delegates read one answer.
+  if (view === "search" && searchMode === "artists" && artistScope !== "artists") {
+    lists.artists = []
+  }
 
   // One wall of friends and one wall of recently opened people are two bands with two
   // answers, because a section of one is a row: each counts its own cards.
@@ -271,7 +285,7 @@ function plan(state) {
       append(built, "search", "foundPlaylists", KINDS.playlists, lists.foundPlaylists, columns)
       gallery = gridView && lists.foundPlaylists.length > 0
       showsPlaylists = true
-    } else if (searchMode === "artists") {
+    } else if (searchMode === "artists" && artistScope === "artists") {
       // An artist card is a square picture and a name, so the same wall-or-rows switch the
       // playlists use means the same thing here.
       append(built, "search", "artists", KINDS.artists, lists.artists, columns)

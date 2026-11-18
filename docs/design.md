@@ -297,6 +297,26 @@ page it returned rather than a total, so a full page is the only sign that **Е�
 something behind it. The page size is `ARTIST_SEARCH_PAGE_SIZE` (50), and a short page
 ends the list.
 
+That box has two scopes, chosen by the two cells under the query field: «Треки» — the
+songs of that name — and «Исполнители» — the cards. A name typed here is usually a wish to
+hear the songs, so the songs are the default, and the credit on a track opens the box in
+that scope.
+
+The songs scope asks `audio.searchArtists` first only to learn whether an artist with
+exactly that name exists. When one does, `audio.getAudiosByArtist` answers with that
+artist's whole list in its own order, paged by `offset` with the exact total in `count`, so
+**Ещё** never makes an empty round trip. When no card matches — `HOJI | CWH` and other
+credit lines on personal uploads are the common case, and VK links none of them to an
+artist — the query goes to `audio.search` unchanged: it is not an artist, but it is exactly
+how those uploads are credited. The list is a track list either way, and **Ещё** pages
+through whichever of the two calls answered.
+
+The cards scope draws no track vocabulary (recent queries, suggestions) and the songs
+scope draws no cards: the scope that is off screen is emptied in `lists`, the same rule
+the artist page's two tabs follow, so a wall left over from the previous answer cannot
+draw under the new one. The scope is part of `pageKey`, so switching it starts the list at
+the top the way a new page does.
+
 A card is opened by id (`catalog.getAudioArtist` resolves it to the artist's catalog
 section, then `catalog.getSection` fills it). The section answer carries:
 

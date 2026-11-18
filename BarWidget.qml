@@ -75,6 +75,10 @@ Panel {
   property string searchState: "typing"
   // Guards against a slow reply for an older query overwriting newer results.
   property string _searchedQuery: ""
+  // The artist id a «Треки» search resolved its query to, or empty when the query names no
+  // artist and the answer came from the plain track search. «Ещё» reads it to know which
+  // of the two lists it is extending.
+  property string _artistSearchId: ""
   property string view: "queue" // queue | browse | search
   // Browsing a catalog section: which one, what came back, and where the next
   // page starts.
@@ -90,7 +94,9 @@ Panel {
     root.view,
     root.browseSlug,
     root.filter,
-    root.view === "search" ? String(root._searchedQuery || "") + "|" + root.searchMode : "",
+    root.view === "search"
+      ? String(root._searchedQuery || "") + "|" + root.searchMode + "|" + root.artistSearchScope
+      : "",
     // Only whether one is open: every page that opens another goes through the empty
     // value first (a person is cleared before the next one loads, a playlist is null
     // while the list under it is on screen), and reading a field of a `var` in a
@@ -191,6 +197,12 @@ Panel {
 
   readonly property int _queryLength: root.query.trim().length
   readonly property bool resultsShowing: root.searchState === "results" && root._queryLength >= 2
+  // Which scopes answer in tracks: the track mode and the artists box's songs scope. Both
+  // draw the track vocabulary and page through the same «Ещё».
+  function tracksSearch() {
+    return root.searchMode === "tracks"
+      || (root.searchMode === "artists" && root.artistSearchScope !== "artists")
+  }
   readonly property string searchHeader: {
     if (root._queryLength < 2) return ""
     // A playlist search answers in playlists, so its heading counts those.
@@ -200,7 +212,9 @@ Panel {
       if (found === 0) return root.t("Плейлисты не найдены")
       return root.t("Найдено ") + found + " " + I18n.plural(root.language, found, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов"))
     }
-    if (root.searchMode === "artists") {
+    // The artist cards are the heading's business only in their own scope: the tracks scope
+    // answers in songs, and the track heading below counts them, resolved artist or not.
+    if (root.searchMode === "artists" && root.artistSearchScope === "artists") {
       if (root.searchState === "searching") return root.t("Ищу…")
       if (root.searchState !== "results") return ""
       var people = root.artists.length
@@ -881,7 +895,14 @@ Panel {
       if (!force && text === root._searchedQuery && root.searchState === "results") return
       root._searchedQuery = text
       root.searchState = "searching"
-      root.loadArtistSearch()
+      // A page still on its way belongs to the query being replaced, and its flag has to go
+      // with it: it would otherwise leave «Ещё» disabled for the new list.
+      session.setLoading("searchMore", false)
+      if (root.artistSearchScope === "artists") {
+        root.loadArtistSearch()
+        return
+      }
+      root.loadArtistTrackSearch(text)
       return
     }
     // Typing a letter and deleting it again should not cost a second search, and
@@ -890,12 +911,18 @@ Panel {
     // retried by typing again.
     if (!force && text === root._searchedQuery && root.searchState !== "typing") return
     root._searchedQuery = text
+    root._artistSearchId = ""
     // A page still on its way belongs to the query being replaced, and its flag has
     // to go with it: it would otherwise leave «Ещё» disabled for the new list.
     session.setLoading("searchMore", false)
+    root.loadTrackSearch(text, true)
+  }
+
+  // The plain track search, shared by the track mode and by the artists box's tracks scope
+  // when the query names no artist.
+  function loadTrackSearch(text, remember) {
     var token = session.begin("search")
-    root.searchState = "searching"
-    api.request("search", { query: text, remember: true }, function(answer) {
+    api.request("search", { query: text, remember: remember === true }, function(answer) {
       if (!session.accept(token)) return
       if (answer && answer.ok) {
         root.results = answer.data.tracks || []
@@ -904,6 +931,50 @@ Panel {
       } else {
         root.searchState = "typing"
       }
+    })
+  }
+
+  // The artists box's tracks scope. `audio.searchArtists` is asked first only to learn
+  // whether the query names an artist exactly; when it does, `audio.getAudiosByArtist`
+  // answers with that artist's whole list in its own order, which relevance cannot beat.
+  // A name no card matches — a credit line like «HOJI | CWH» is one — goes to
+  // `audio.search` unchanged: it is not an artist, but it is exactly how its uploads are
+  // credited, and the track search is what finds them.
+  function loadArtistTrackSearch(text) {
+    var token = session.begin("search")
+    api.request("artist_search", { query: text }, function(answer) {
+      if (!session.accept(token)) return
+      var wanted = text.toLowerCase()
+      var cards = (answer && answer.ok && answer.data && answer.data.artists) || []
+      var exact = ""
+      for (var i = 0; i < cards.length; i++) {
+        var item = cards[i]
+        if (!item) continue
+        if (String(item.id || "") !== ""
+            && String(item.name || "").trim().toLowerCase() === wanted) {
+          exact = String(item.id)
+          break
+        }
+      }
+      if (exact === "") {
+        root._artistSearchId = ""
+        root.loadTrackSearch(text, true)
+        return
+      }
+      root._artistSearchId = exact
+      // The guard is begun again: the answer above retired its token, and an accepted token
+      // is spent by design (see SessionLists.accept).
+      var pageToken = session.begin("search")
+      api.request("artist_tracks", { artistId: exact, offset: 0 }, function(page) {
+        if (!session.accept(pageToken)) return
+        if (page && page.ok && page.data) {
+          root.results = page.data.tracks || []
+          root.resultsMore = page.data.more === true
+          root.searchState = "results"
+        } else {
+          root.searchState = "typing"
+        }
+      })
     })
   }
 
@@ -918,12 +989,19 @@ Panel {
     // answer cancels nothing else, because only one of the two is in flight with a
     // list on screen.
     var token = session.begin("search", "searchMore")
-    api.request("search", { query: text, offset: offset }, function(answer) {
+    var done = function(answer) {
       if (!session.accept(token)) return
       if (!answer || !answer.ok) return
       root.results = root.results.concat(answer.data.tracks || [])
       root.resultsMore = answer.data.more === true
-    })
+    }
+    // A resolved artist's list pages through `getAudiosByArtist`, whose `more` is exact; a
+    // name with no card behind it pages through the search that found it.
+    if (root._artistSearchId !== "") {
+      api.request("artist_tracks", { artistId: root._artistSearchId, offset: offset }, done)
+    } else {
+      api.request("search", { query: text, offset: offset }, done)
+    }
   }
 
   // The artist search. `audio.searchArtists` answers with no total — its `count` is the
@@ -1021,6 +1099,11 @@ Panel {
   property alias foundPlaylists: session.foundPlaylists
   // «Треки», «Плейлисты» or «Исполнители»: one search box, three kinds of answer.
   property string searchMode: "tracks"
+  // The «Исполнители» box answers in two scopes: `tracks` searches the songs of that name
+  // (`audio.search`, or the artist's whole list when the name resolves to an artist card),
+  // `artists` searches the artist cards themselves. A name typed here is usually a wish to
+  // hear the songs, so the songs are the default; the credit on a track opens this scope.
+  property string artistSearchScope: "tracks"
   // Which page of the settings is open. Three pages instead of one column with rules
   // between its groups: the rules were the only thing telling a reader where one group
   // ended, and a bar of cells says it without a line — the same bar that chooses a section
@@ -1370,6 +1453,10 @@ Panel {
       session.cancel("search")
       root.searchMode = "artists"
     }
+    // The credit on a track is a wish to hear its songs, and a credit line is often not an
+    // artist VK knows at all («HOJI | CWH» is one) — so the box opens on the songs. The
+    // cards are one cell away.
+    root.artistSearchScope = "tracks"
     root.query = text
     root.enterSearch()
     root.runSearch(true)
@@ -1534,11 +1621,29 @@ Panel {
     session.setLoading("searchMore", false)
     root.resultsMore = false
     root.artistsMore = false
+    root._artistSearchId = ""
     root.searchMode = mode
     // The query is the same text but the answer is a different kind of thing: the next
     // run must not be skipped as «already searched».
     root._searchedQuery = ""
     root.cursor = -1
+    if (root.query.trim().length >= 2) root.runSearch(true)
+  }
+
+  // The two scopes of the artists box. Both answer the same query, and the switch is a new
+  // page: the list, its cursor and its «Ещё» belong to the scope that just left.
+  function setArtistSearchScope(scope) {
+    var next = scope === "artists" ? "artists" : "tracks"
+    if (root.artistSearchScope === next) return
+    root.artistSearchScope = next
+    root.cursor = -1
+    session.cancel("search")
+    session.cancel("artists")
+    session.setLoading("searchMore", false)
+    root.resultsMore = false
+    root.artistsMore = false
+    root._artistSearchId = ""
+    root._searchedQuery = ""
     if (root.query.trim().length >= 2) root.runSearch(true)
   }
 
@@ -1551,6 +1656,7 @@ Panel {
     root.artistsMore = false
     root.searchState = "typing"
     root._searchedQuery = ""
+    root._artistSearchId = ""
     session.cancel("search")
     session.cancel("artists")
     session.setLoading("searchMore", false)
@@ -1573,6 +1679,7 @@ Panel {
     state.browseSlug = root.browseSlug
     state.openPlaylist = root.openPlaylist
     state.searchMode = root.searchMode
+    state.artistScope = root.artistSearchScope
     state.searchState = root.searchState
     state.queryLength = root._queryLength
     state.extended = root.isExtended()
@@ -1903,7 +2010,7 @@ Panel {
     if (root.view === "browse" && root.openPlaylist !== null) return "play"
     if (root.view === "queue" && root.queue.length > 0) return "clearQueue"
     // The recent queries are a list too, and it has exactly one thing to do with them.
-    if (root.view === "search" && root.openPlaylist === null && root.searchMode === "tracks"
+    if (root.view === "search" && root.openPlaylist === null && root.tracksSearch()
         && root._queryLength < 2 && root.history.length > 0) return "clearHistory"
     return ""
   }
@@ -4479,7 +4586,7 @@ Panel {
         if (!root.personTracksMore || session.loading("personTracksMore")) return
       } else {
         if (root.view !== "search") return
-        if (root.searchMode !== "tracks" || root.searchState !== "results") return
+        if (!root.tracksSearch() || root.searchState !== "results") return
         if (!root.resultsMore || session.loading("searchMore")) return
       }
       var limit = Math.max(0, scroller.contentHeight - scroller.height)
@@ -4786,7 +4893,7 @@ Panel {
           Layout.preferredHeight: root.barCellHeight
           text: root.t("Исполнители")
           selected: root.searchMode === "artists"
-          tooltipText: root.t("Искать исполнителей и открывать их альбомы")
+          tooltipText: root.t("Искать треки исполнителя или его карточку")
           onClicked: root.setSearchMode("artists")
         }
 
@@ -4987,6 +5094,45 @@ Panel {
       Layout.fillWidth: true
       foreground: root.textColor
       visible: queryBar.visible
+    }
+
+    // The artists box answers in two things, and the switch says which: the songs of the
+    // name (usually what a credit is clicked for), or the artist cards themselves. Two equal
+    // cells, the shape the artist page's «Альбомы»/«Треки» already uses for a choice.
+    RowLayout {
+      id: artistScopeBar
+      Layout.fillWidth: true
+      spacing: 0
+      visible: root.view === "search" && root.openPlaylist === null && !root.filtering
+        && root.searchMode === "artists"
+
+      BarCell {
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
+        Layout.minimumWidth: 0
+        Layout.preferredHeight: root.barCellHeight
+        text: root.t("Треки")
+        selected: root.artistSearchScope === "tracks"
+        tooltipText: root.t("Треки этого исполнителя")
+        onClicked: root.setArtistSearchScope("tracks")
+      }
+
+      BarCell {
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
+        Layout.minimumWidth: 0
+        Layout.preferredHeight: root.barCellHeight
+        text: root.t("Исполнители")
+        selected: root.artistSearchScope === "artists"
+        tooltipText: root.t("Сами исполнители: карточки и их альбомы")
+        onClicked: root.setArtistSearchScope("artists")
+      }
+    }
+
+    PanelSeparator {
+      Layout.fillWidth: true
+      foreground: root.textColor
+      visible: artistScopeBar.visible
     }
 
     // A page with nothing to search yet. The hint cannot be anchored to the viewport —
@@ -5528,8 +5674,8 @@ Panel {
         Button {
           width: listColumn.width
           leftAlign: true
-          visible: root.searchMode === "artists" && root.searchState === "results"
-            && root.artistsMore
+          visible: root.searchMode === "artists" && root.artistSearchScope === "artists"
+            && root.searchState === "results" && root.artistsMore
           enabled: !session.loading("artistsMore")
           opacity: enabled ? 1.0 : 0.5
           text: root.t("Ещё")
@@ -5566,7 +5712,7 @@ Panel {
         Button {
           width: listColumn.width
           leftAlign: true
-          visible: root.searchMode === "tracks" && root.searchState === "results"
+          visible: root.tracksSearch() && root.searchState === "results"
             && root.resultsMore
           enabled: !session.loading("searchMore")
           opacity: enabled ? 1.0 : 0.5

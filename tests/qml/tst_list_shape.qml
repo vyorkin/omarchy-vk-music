@@ -214,7 +214,7 @@ TestCase {
   // leftover track list under the artists, which is why the mode itself is part of the plan.
   function test_an_artist_search_is_a_wall_of_cards() {
     var artists = [{ id: "1", name: "King Crimson" }, { id: "2", name: "Kino" }]
-    var wall = ListShape.plan({ view: "search", searchMode: "artists",
+    var wall = ListShape.plan({ view: "search", searchMode: "artists", artistScope: "artists",
       searchState: "results", queryLength: 5, gridView: true, columns: 3,
       artists: artists, results: tracks(4, "stale") })
     compare(kinds(wall), "artists")
@@ -223,7 +223,7 @@ TestCase {
     compare(wall.showsPlaylists, true)
     compare(wall.items.length, 2)
 
-    var rows = ListShape.plan({ view: "search", searchMode: "artists",
+    var rows = ListShape.plan({ view: "search", searchMode: "artists", artistScope: "artists",
       searchState: "results", queryLength: 5, gridView: false, columns: 3,
       artists: artists, results: tracks(4, "stale") })
     compare(kinds(rows), "artists")
@@ -234,17 +234,48 @@ TestCase {
   // that opens a track is not a suggestion for an artist search, and a mode that showed
   // them under an artist wall would draw two vocabularies at once.
   function test_the_artist_search_shows_no_track_vocabulary() {
-    var typing = ListShape.plan({ view: "search", searchMode: "artists",
+    var typing = ListShape.plan({ view: "search", searchMode: "artists", artistScope: "artists",
       searchState: "typing", queryLength: 1, history: [{ query: "Kino" }],
       suggestions: [{ title: "Kino" }], artists: cards(2) })
     compare(typing.lists.history.length, 0)
     compare(typing.lists.suggestions.length, 0)
 
-    var results = ListShape.plan({ view: "search", searchMode: "artists",
+    var results = ListShape.plan({ view: "search", searchMode: "artists", artistScope: "artists",
       searchState: "results", queryLength: 3, artists: cards(2),
       suggestions: [{ title: "Kino" }] })
     compare(results.lists.suggestions.length, 0)
     compare(kinds(results), "artists")
+  }
+
+  // The same box's songs scope answers in tracks: the query is a name, the list is what
+  // that name wrote, and the artist cards of the other scope are not drawn under it — a
+  // stale wall from the last answer is the disagreement the plan exists to prevent.
+  function test_the_artist_tracks_scope_answers_in_tracks() {
+    var found = ListShape.plan({ view: "search", searchMode: "artists", artistScope: "tracks",
+      searchState: "results", queryLength: 3, results: tracks(2, "s"),
+      artists: cards(3) })
+    compare(kinds(found), "results")
+    compare(found.items.length, 2)
+    compare(found.lists.artists.length, 0)
+    compare(found.showsPlaylists, false)
+
+    // The cards scope draws no songs, the same way: one of the two is the page.
+    var walls = ListShape.plan({ view: "search", searchMode: "artists", artistScope: "artists",
+      searchState: "results", queryLength: 3, artists: [{ id: "1", name: "CWH" }],
+      results: tracks(2, "s") })
+    compare(kinds(walls), "artists")
+    compare(walls.lists.results.length, 0)
+
+    // While the field is short the songs scope draws the track vocabulary it shares with
+    // the track mode: the recent queries, and suggestions when nothing came back.
+    var typing = ListShape.plan({ view: "search", searchMode: "artists", artistScope: "tracks",
+      searchState: "typing", queryLength: 1, history: ["cwh"] })
+    compare(kinds(typing), "history")
+
+    var empty = ListShape.plan({ view: "search", searchMode: "artists", artistScope: "tracks",
+      searchState: "results", queryLength: 3, results: [],
+      suggestions: ["cwh mix"] })
+    compare(kinds(empty), "suggestions")
   }
 
   // An artist's page is two tabs, and only the band of the tab on screen is the list: the
@@ -311,6 +342,8 @@ TestCase {
       { view: "search", searchState: "results", queryLength: 3, results: tracks(3, "r") },
       { view: "search", searchMode: "artists", searchState: "results", queryLength: 3,
         gridView: true, columns: 3, artists: cards(2) },
+      { view: "search", searchMode: "artists", artistScope: "tracks",
+        searchState: "results", queryLength: 3, results: tracks(3, "s") },
       { view: "browse", browseSlug: "artist", artistTab: "albums",
         playlists: cards(2), tracks: tracks(3, "a") },
       { view: "browse", browseSlug: "artist", artistTab: "tracks",
@@ -395,8 +428,10 @@ TestCase {
         lists: "stations" },
       { state: { view: "search", searchMode: "playlists", searchState: "results",
         queryLength: 3, foundPlaylists: cards(2) }, lists: "foundPlaylists" },
-      { state: { view: "search", searchMode: "artists", searchState: "results",
-        queryLength: 3, artists: cards(2) }, lists: "artists" },
+      { state: { view: "search", searchMode: "artists", artistScope: "artists",
+        searchState: "results", queryLength: 3, artists: cards(2) }, lists: "artists" },
+      { state: { view: "search", searchMode: "artists", artistScope: "tracks",
+        searchState: "results", queryLength: 3, results: tracks(2) }, lists: "results" },
       { state: { view: "search", searchState: "results", queryLength: 3, results: tracks(2) },
         lists: "results" },
       { state: { view: "search", searchState: "typing", queryLength: 1, history: ["kino"] },
@@ -467,7 +502,7 @@ TestCase {
 
     // An artist card carries the artist, so the page is opened by id rather than by
     // searching the painted name again.
-    var artists = ListShape.plan({ view: "search", searchMode: "artists",
+    var artists = ListShape.plan({ view: "search", searchMode: "artists", artistScope: "artists",
       searchState: "results", queryLength: 3,
       artists: [{ id: "170", name: "King Crimson" }] })
     var card = artists.lists.artists[0]
