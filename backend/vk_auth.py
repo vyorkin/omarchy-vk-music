@@ -27,6 +27,7 @@ import json
 import os
 import re
 import secrets
+import signal
 import subprocess
 import threading
 import time
@@ -67,6 +68,14 @@ COOKIE_NAMES = ("p", "remixsid")
 
 class VkAuthError(RuntimeError):
     """Login cannot continue; the message is safe to show."""
+
+
+class LoginWindowError(VkAuthError):
+    """The login window could not be opened: no browser, or it refused to start."""
+
+
+class LoginWindowEmptyError(VkAuthError):
+    """The login window is open, but nobody has signed in to VK there yet."""
 
 
 @dataclass(frozen=True)
@@ -304,6 +313,150 @@ def _read_firefox_cookies(
             best[name] = (score, str(value))
     freshest = max((score for score, _ in best.values()), default=0)
     return {name: value for name, (_, value) in best.items()}, freshest
+
+
+# -- the login window ------------------------------------------------------
+#
+# Reading the browser's freshest session can only ever return the account that
+# session is signed into: pressing «sign in with the browser» while VK is already
+# open therefore re-added the active account, and no second one could be added
+# without signing out of the first in the browser. The login window fixes that
+# with a profile of its own, inside the config directory, that holds nothing
+# until the user signs in there — the same cookie reader as above, pointed at
+# one known store instead of every store on the machine.
+
+LOGIN_PROFILE_DIR = CONFIG_DIR / "login-profile"
+LOGIN_PAGE = "https://vk.ru/"
+
+_login_window: subprocess.Popen | None = None
+_LOGIN_WINDOW_LOCK = threading.Lock()
+
+
+def login_profile_dir() -> Path:
+    """The profile the login window runs in, created on first use.
+
+    Firefox refuses to start on a path that does not exist ("Could not find
+    profile folder."), so the directory is made here rather than by the browser.
+    """
+    LOGIN_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    return LOGIN_PROFILE_DIR
+
+
+def login_browser_command(profile: Path) -> list[str] | None:
+    """The browser that opens the login window, or None when there is none.
+
+    `--new-instance` is what keeps the window out of the user's own browser
+    process: without it the URL would land in the running Firefox and the login
+    profile would never be used. `OMARCHY_VK_MUSIC_BROWSER` names another
+    Firefox-family binary for machines where the default order is wrong.
+    """
+    override = os.environ.get("OMARCHY_VK_MUSIC_BROWSER", "").strip()
+    if override:
+        return [override, "--new-instance", "--profile", str(profile), LOGIN_PAGE]
+    from shutil import which
+
+    for name in ("firefox", "zen-browser", "librewolf"):
+        if which(name):
+            return [name, "--new-instance", "--profile", str(profile), LOGIN_PAGE]
+    return None
+
+
+def _profile_lock_pid(profile: Path) -> int | None:
+    """The pid of a browser already running on this profile, if any.
+
+    Firefox writes a `lock` symlink whose target ends in `+<pid>`. Reading it
+    lets a second panel session reuse the window instead of starting a second
+    instance that can only fail on a locked profile.
+    """
+    try:
+        target = os.readlink(profile / "lock")
+    except OSError:
+        return None
+    match = re.search(r"\+(\d+)$", target)
+    if not match:
+        return None
+    pid = int(match.group(1))
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return None
+    return pid
+
+
+def _is_login_profile_process(pid: int) -> bool:
+    """A pid from the lock file is only ours when its command names the profile."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+            command = handle.read().replace(b"\0", b" ").decode("utf-8", "replace")
+    except OSError:
+        return False
+    return str(LOGIN_PROFILE_DIR) in command
+
+
+def open_login_window() -> dict[str, Any]:
+    """Start the browser on the login profile, or say why it cannot."""
+    profile = login_profile_dir()
+    running = _profile_lock_pid(profile)
+    if running is not None and _is_login_profile_process(running):
+        return {"pid": running, "profile": str(profile), "reused": True}
+    command = login_browser_command(profile)
+    if command is None:
+        raise LoginWindowError("no Firefox-family browser found")
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        raise LoginWindowError(f"could not start the browser: {exc}") from exc
+    global _login_window
+    with _LOGIN_WINDOW_LOCK:
+        _login_window = process
+    return {"pid": process.pid, "profile": str(profile), "reused": False}
+
+
+def close_login_window() -> bool:
+    """Stop the login window. The user's own browser is a different process."""
+    global _login_window
+    with _LOGIN_WINDOW_LOCK:
+        process, _login_window = _login_window, None
+    pid = process.pid if process is not None and process.poll() is None else None
+    if pid is None:
+        running = _profile_lock_pid(LOGIN_PROFILE_DIR)
+        if running is None or not _is_login_profile_process(running):
+            return False
+        pid = running
+    # Firefox forks its content processes into the session `Popen` created, so
+    # the whole group goes, not just the process that was started.
+    try:
+        os.killpg(os.getpgid(pid), signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            return False
+    if process is not None:
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+    return True
+
+
+def login_profile_cookies() -> dict[str, str]:
+    """The VK session inside the login window, or a refusal naming the next step."""
+    store = LOGIN_PROFILE_DIR / "cookies.sqlite"
+    if not store.is_file():
+        raise LoginWindowEmptyError("the login window has no VK session yet")
+    try:
+        return fetch_browser_cookies(store)
+    except VkAuthError as exc:
+        raise LoginWindowEmptyError(str(exc)) from exc
 
 
 # -- mobile path -----------------------------------------------------------

@@ -120,19 +120,23 @@ single-account `token.json` of earlier versions is read once, folded into the
 store and removed; an existing installation keeps its session.
 
 The reason the store exists is a browser fact: cookies describe the one session
-the browser is signed into, so the browser path can only ever add that account.
-A second account is added with the password grant instead, which is why that
-path is part of the panel and not only of the CLI. The password travels over a
-`request` command's stdin, never as an argument, and is dropped from the daemon
-as soon as the token arrives.
+the browser is signed into, so reading the everyday browser can only ever add
+that account. The browser path therefore opens a **login window**: a Firefox
+profile of the plugin's own (`~/.config/omarchy-vk-music/login-profile`),
+started with `--new-instance` so it never falls into the running browser's
+window. Nothing is signed in there until the user does it, and **Check** reads
+that one store and nothing else — a second account, without signing out of the
+first anywhere. The password grant stays behind the other link and is still
+what serves machines without a Firefox-family browser.
 
-Reading the browser cookies is also a choice of profile: a machine keeps
+Reading the everyday browser is also a choice of profile: a machine keeps
 several Firefox-family profiles, and more than one can hold a complete
 `p`/`remixsid` pair. Taking the first profile that has them signed the panel
 into an old account while the window in front of the user was signed into
 another, and the click looked dead because the account it added was already
-active. The freshest pair wins now — `lastAccessed` moves whenever a browser
-uses a cookie — and the form reports which account was added.
+active. The freshest pair wins for the CLI's `auth web` — `lastAccessed` moves
+whenever a browser uses a cookie. When the account read back is the one already
+active, the panel says so instead of claiming an account was added.
 
 Each account owns its queue, position, liked copies, search history and recent
 people; those live under `state.json`'s `accounts` map. Preferences and volume

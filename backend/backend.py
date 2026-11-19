@@ -44,11 +44,16 @@ from vk_api import (
 )
 from vk_auth import (
     VkAuthError,
+    LoginWindowEmptyError,
+    LoginWindowError,
     account_list,
     active_account_id,
     active_record,
+    close_login_window,
     fetch_browser_cookies,
+    login_profile_cookies,
     needs_refresh,
+    open_login_window,
     parse_cookies,
     refresh_web_record,
     remove_account as remove_stored_account,
@@ -2483,6 +2488,12 @@ class Backend:
             if exc.message and exc.message != single:
                 detail.setdefault("detail", exc.message)
             return error_payload("vk_error", message, detail)
+        except LoginWindowEmptyError as exc:
+            # Its own code, because the next step is different from every other
+            # refusal: the window is open and the panel must say "sign in there".
+            return error_payload("login_window_empty", str(exc))
+        except LoginWindowError as exc:
+            return error_payload("login_window", str(exc), {"detail": str(exc)})
         except VkAuthError as exc:
             return error_payload("auth_error", str(exc), {"detail": str(exc)})
         except CacheError as exc:
@@ -2504,9 +2515,25 @@ class Backend:
     def cmd_session(self) -> dict[str, Any]:
         return session_summary(self.player.record)
 
-    def cmd_auth_web(self, cookies: str | None = None, fromBrowser: bool = True) -> dict[str, Any]:
+    def _known_account(self, user_id: Any) -> tuple[bool, bool]:
+        """(already stored, currently active) before a sign-in overwrites the store."""
+        key = str(user_id)
+        known = any(str(item.get("user_id")) == key for item in account_list())
+        return known, str(active_account_id() or "") == key
+
+    def cmd_auth_web(
+        self,
+        cookies: str | None = None,
+        fromBrowser: bool = True,
+        source: str = "",
+    ) -> dict[str, Any]:
         if cookies:
             parsed = parse_cookies(cookies)
+        elif source == "login-profile":
+            # The window this panel opened: a profile of its own, so the account
+            # is whichever one the user signed into there, never the one their
+            # everyday browser happens to hold.
+            parsed = login_profile_cookies()
         elif fromBrowser:
             parsed = fetch_browser_cookies()
         else:
@@ -2522,11 +2549,22 @@ class Backend:
                 "client_id": WEB_APP_ID,
             }
         )
+        user_id = profile.get("user_id") if profile else token.user_id
+        known, active = self._known_account(user_id)
         record = save_web_token(token, parsed, profile=profile)
         log(f"signed in account {record.get('user_id')} with a web token")
-        return self._account_signed_in()
+        return self._account_signed_in(known=known, active=active)
 
-    def _account_signed_in(self) -> dict[str, Any]:
+    def cmd_auth_browser_open(self) -> dict[str, Any]:
+        """Open the dedicated login window and leave it to the user."""
+        window = open_login_window()
+        log(f"login window at {window['profile']} (pid {window['pid']})")
+        return window
+
+    def cmd_auth_browser_close(self) -> dict[str, Any]:
+        return {"closed": close_login_window()}
+
+    def _account_signed_in(self, *, known: bool = False, active: bool = False) -> dict[str, Any]:
         self._radio_cache = (None, 0.0)
         self.mobile_auth = {}
         self.player.sign_in()
@@ -2535,6 +2573,11 @@ class Backend:
             "session": session_summary(self.player.record),
             "accounts": account_list(),
             "status": self.player.status(),
+            # Whether this was an existing account, and whether it was already the
+            # active one: «account added» over the account the panel is signed into
+            # reads as a bug, because nothing changed.
+            "known": known,
+            "alreadyActive": active,
         }
 
     def cmd_auth_mobile_start(self, login: str = "", password: str = "", client: str = "vk-android") -> dict[str, Any]:
@@ -2555,8 +2598,11 @@ class Backend:
                     "client_id": mobile.client_id,
                 }
             )
+            known, active = self._known_account(
+                profile.get("user_id") if profile else payload.get("user_id")
+            )
             save_mobile_token(mobile, payload, profile=profile)
-            return self._account_signed_in()
+            return self._account_signed_in(known=known, active=active)
         self.mobile_auth = {
             "login": login,
             "password": password,
@@ -2591,8 +2637,11 @@ class Backend:
                     "client_id": mobile.client_id,
                 }
             )
+            known, active = self._known_account(
+                profile.get("user_id") if profile else payload.get("user_id")
+            )
             save_mobile_token(mobile, payload, profile=profile)
-            return self._account_signed_in()
+            return self._account_signed_in(known=known, active=active)
         return self._mobile_step_result(payload, mobile)
 
     def cmd_auth_mobile_cancel(self) -> dict[str, Any]:

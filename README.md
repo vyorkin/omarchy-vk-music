@@ -59,15 +59,22 @@ the same command after changing the backend.
 ## Signing in
 
 VK's audio API has no public OAuth flow, so the default path does what a browser does: it
-takes the `p` and `remixsid` cookies from your browser profile and exchanges them for a
-token — no password is asked for and none is stored. The password path below does ask for
-one, keeps it only in the daemon's memory until VK answers, and never writes it down.
+takes the `p` and `remixsid` cookies and exchanges them for a token — no password is asked
+for and none is stored. The password path below does ask for one, keeps it only in the
+daemon's memory until VK answers, and never writes it down.
 
-1. Sign in to <https://vk.ru> in Firefox, Zen or LibreWolf.
-2. Open the panel and press **Sign in with the browser**, or run
-   `omarchy-vk-music auth web` in a terminal.
+1. Open the panel and press **Sign in with the browser**: a separate Firefox window opens on
+   the plugin's own profile (`~/.config/omarchy-vk-music/login-profile`), which has no VK
+   session in it yet.
+2. Sign in to the account you want in that window and press **Check** — the panel reads that
+   profile's cookies, exchanges them for a token and closes the window. The session comes
+   from the plugin's window, not from your browser, so the account is always the one you
+   typed in there rather than the one Firefox happens to be signed into.
 3. The session ends when VK ends it; finishing all sessions in VK's settings logs the
    plugin out too.
+
+From a terminal, `omarchy-vk-music auth web` reads your everyday browser's session — useful
+when it holds just one account.
 
 ### Several accounts
 
@@ -77,10 +84,9 @@ belong to the panel and the speakers rather than to an account.
 
 - **Settings → Accounts** lists every stored account. The active one is marked; another
   one is one click away and becomes active with its own queue restored, paused.
-- **Add an account** offers the browser path (the session Firefox, Zen or LibreWolf is
-  signed into now) and the password path (login, password, then the SMS or app code).
-  The password path is what makes a second account possible without signing out of the
-  first one in the browser.
+- **Add an account** offers the browser window (the plugin's own profile, with no session
+  in it yet — a second account without signing out of the first in the browser) and the
+  password path (login, password, then the SMS or app code).
 - **Remove** forgets the account, its token, its queue and its likes. Removing the active
   account hands the session to the next stored one; removing the last one returns the
   panel to the sign-in screen.

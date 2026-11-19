@@ -137,6 +137,9 @@ Panel {
   property var accounts: []
   property bool accountFormOpen: false
   property bool accountBusy: false
+  // Which way the card is signing in: "" (the two offers), "browser" (the login
+  // window is open and waits for «Проверить») or "password" (the fields).
+  property string accountMethod: ""
   property string accountLogin: ""
   property string accountPassword: ""
   property string accountStep: ""
@@ -2952,19 +2955,25 @@ Panel {
     root.accountFormOpen = true
     root.accountNotice = ""
     root.accountError = ""
+    root.accountMethod = ""
     root.accountStep = ""
     root.accountCode = ""
     root.accountSuccessToken = ""
   }
 
   function closeAccountForm() {
-    // The daemon may be holding a password between the login and the code step;
-    // closing the form is how the panel says it is no longer needed.
+    // The daemon may be holding a password between the login and the code step,
+    // and it may have a browser window open for this sign-in; closing the card
+    // is how the panel says neither is needed any more.
     if (root.accountStep !== "" || root.accountBusy) {
       api.request("auth_mobile_cancel", {})
     }
+    if (root.accountMethod === "browser") {
+      api.request("auth_browser_close", {})
+    }
     root.accountFormOpen = false
     root.accountBusy = false
+    root.accountMethod = ""
     root.accountLogin = ""
     root.accountPassword = ""
     root.accountCode = ""
@@ -2976,36 +2985,77 @@ Panel {
     root.accountFieldFocus = 0
   }
 
-  function toggleAccountForm() {
-    if (root.accountFormOpen) root.closeAccountForm()
-    else root.openAccountForm()
-  }
-
   function accountFailure(answer) {
     if (!answer || !answer.error) return root.t("Не удалось войти")
     var text = I18n.failure(root.language, answer.error)
     return text !== "" ? text : root.t("Не удалось войти")
   }
 
-  function accountAddedNotice(answer) {
+  function accountNameFromAnswer(answer) {
     var session = answer && answer.data ? answer.data.session : null
-    var name = session ? String(session.name || "") : ""
+    return session ? String(session.name || "") : ""
+  }
+
+  function accountAddedNotice(answer) {
+    var name = root.accountNameFromAnswer(answer)
     return name !== "" ? root.t("Аккаунт добавлен: ") + name : root.t("Аккаунт добавлен.")
   }
 
-  function addAccountFromBrowser() {
-    root.accountBusy = true
+  function accountAlreadyNotice(answer) {
+    var name = root.accountNameFromAnswer(answer)
+    return name !== ""
+      ? root.t("Вы уже вошли как: ") + name
+      : root.t("Этот аккаунт уже выбран.")
+  }
+
+  function chooseAccountMethod(method) {
     root.accountError = ""
-    api.request("auth_web", {}, function(answer) {
+    // Leaving the window step abandons the window it opened; the daemon only
+    // closes the one this panel started, never the user's own browser.
+    if (root.accountMethod === "browser" && method !== "browser") {
+      api.request("auth_browser_close", {})
+    }
+    root.accountMethod = method
+  }
+
+  // The browser path has two steps. The first opens a Firefox profile of its own:
+  // reading the everyday browser's session can only ever return the account it is
+  // signed into, which is how «add account» re-added the active one. The second
+  // step reads that profile once the user has signed in there.
+  function startBrowserLogin() {
+    root.accountError = ""
+    root.accountBusy = true
+    api.request("auth_browser_open", {}, function(answer) {
       root.accountBusy = false
       if (!answer || !answer.ok) {
         root.accountError = root.accountFailure(answer)
         return
       }
-      if (answer.data && answer.data.accounts) root.accounts = answer.data.accounts
+      root.accountMethod = "browser"
+    })
+  }
+
+  function checkBrowserLogin() {
+    root.accountError = ""
+    root.accountBusy = true
+    api.request("auth_web", { fromBrowser: false, source: "login-profile" }, function(answer) {
+      root.accountBusy = false
+      if (!answer || !answer.ok) {
+        root.accountError = root.accountFailure(answer)
+        return
+      }
+      var data = answer.data || ({})
+      if (data.alreadyActive === true) {
+        // Nothing changed: the window is still signed into the account the panel
+        // already uses, so the card says so and stays open for another try.
+        root.accountNotice = root.accountAlreadyNotice(answer)
+        return
+      }
+      if (data.accounts) root.accounts = data.accounts
       root.accountNotice = root.accountAddedNotice(answer)
+      // `closeAccountForm` stops the login window along with the card.
       root.closeAccountForm()
-      root.reloadAfterAccountChange(answer.data ? answer.data.status : null)
+      root.reloadAfterAccountChange(data.status || null)
     })
   }
 
@@ -3408,7 +3458,7 @@ Panel {
         textFormat: Text.PlainText
         elide: Text.ElideRight
         text: accountRow.account && accountRow.account.active === true
-          ? root.t("Активный") : root.t("Войти")
+          ? root.t("Активный") : root.t("Не выбран")
         color: root.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
@@ -3434,189 +3484,313 @@ Panel {
     }
   }
 
-  component AccountLoginForm: ColumnLayout {
-    id: accountForm
-    spacing: Style.spacing.controlGap
+  // The sign-in card: one surface with a heading, a sentence and one action at a
+  // time. The signed-out screen and «Добавить аккаунт» ask the same question, so
+  // they are the same block — they used to be two copies that drifted, and both
+  // were a wall of instructions over a bare, borderless button.
+  component AccountCard: BorderSurface {
+    id: accountCard
+    property string heading: ""
+    property string caption: ""
+    property bool allowCancel: true
 
-    Text {
-      Layout.fillWidth: true
-      Layout.preferredWidth: 0
-      textFormat: Text.PlainText
-      wrapMode: Text.WordWrap
-      text: root.t("Через браузер — текущая сессия VK. Или войдите по логину и паролю: второй аккаунт в браузере не нужен.")
-      color: root.dim
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-    }
+    radius: Style.cornerRadius
+    color: Util.alpha(root.textColor, 0.03)
+    borderSpec: Border.controlSpec("normal", root.textColor, Color.accent)
+    implicitHeight: cardBody.implicitHeight + Style.space(32)
 
-    Button {
-      Layout.fillWidth: true
-      text: root.accountBusy ? root.t("Вход…") : root.t("Войти через браузер")
-      foreground: root.textColor
-      enabled: !root.accountBusy
-      onClicked: root.addAccountFromBrowser()
-    }
-
-    Text {
-      Layout.fillWidth: true
-      Layout.preferredWidth: 0
-      visible: root.accountError !== ""
-      textFormat: Text.PlainText
-      wrapMode: Text.WordWrap
-      text: root.accountError
-      color: Color.urgent
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-    }
-
-    PanelSeparator { Layout.fillWidth: true; foreground: root.textColor }
-
-    TextField {
-      id: accountLoginField
-      Layout.fillWidth: true
-      placeholderTextColor: root.dim
-      placeholderText: root.t("Телефон, email или id")
-      foreground: root.textColor
-      accent: Color.accent
-      enabled: !root.accountBusy && root.accountStep === ""
-      text: root.accountLogin
-      onTextChanged: if (text !== root.accountLogin) root.accountLogin = text
-      onActiveFocusChanged: root.accountFieldFocus = Math.max(0,
-        root.accountFieldFocus + (activeFocus ? 1 : -1))
-      Keys.onEscapePressed: function(event) { root.focusList(); event.accepted = true }
-      onAccepted: root.submitAccountLogin()
-    }
-
-    TextField {
-      id: accountPasswordField
-      Layout.fillWidth: true
-      placeholderTextColor: root.dim
-      placeholderText: root.t("Пароль")
-      password: true
-      foreground: root.textColor
-      accent: Color.accent
-      enabled: !root.accountBusy && root.accountStep === ""
-      text: root.accountPassword
-      onTextChanged: if (text !== root.accountPassword) root.accountPassword = text
-      onActiveFocusChanged: root.accountFieldFocus = Math.max(0,
-        root.accountFieldFocus + (activeFocus ? 1 : -1))
-      Keys.onEscapePressed: function(event) { root.focusList(); event.accepted = true }
-      onAccepted: root.submitAccountLogin()
-    }
-
-    RowLayout {
-      Layout.fillWidth: true
-      spacing: Style.space(6)
-
-      Button {
-        text: root.t("Войти")
-        foreground: root.textColor
-        enabled: !root.accountBusy && root.accountStep === ""
-          && root.accountLogin.trim() !== "" && root.accountPassword !== ""
-        onClicked: root.submitAccountLogin()
-      }
+    ColumnLayout {
+      id: cardBody
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.leftMargin: Style.space(16)
+      anchors.rightMargin: Style.space(16)
+      spacing: Style.spacing.controlGap
 
       Text {
         Layout.fillWidth: true
         Layout.preferredWidth: 0
-        horizontalAlignment: Text.AlignRight
         textFormat: Text.PlainText
         elide: Text.ElideRight
-        visible: root.accountBusy
-        text: root.t("Вход…")
-        color: root.dim
+        text: accountCard.heading
+        color: root.textColor
         font.family: Style.font.family
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Style.font.subtitle
+        font.bold: true
       }
-    }
-
-    ColumnLayout {
-      Layout.fillWidth: true
-      spacing: Style.space(4)
-      visible: root.accountStep === "code"
 
       Text {
         Layout.fillWidth: true
         Layout.preferredWidth: 0
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
-        text: root.t("Код из SMS или приложения") + (root.accountPhoneMask !== ""
-          ? " · " + root.accountPhoneMask : "")
+        visible: accountCard.caption !== ""
+        text: accountCard.caption
         color: root.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
       }
 
-      TextField {
-        id: accountCodeField
+      // The offer: one real button, and the other way as a line under it. Two
+      // stacked fields with a third, silent button between them was what made the
+      // old screen read as broken: nothing said which of the two ways it was.
+      Button {
         Layout.fillWidth: true
-        placeholderTextColor: root.dim
-        placeholderText: root.t("Код подтверждения")
+        visible: root.accountMethod === ""
+        text: root.accountBusy ? root.t("Вход…") : root.t("Войти через браузер")
+        bordered: true
         foreground: root.textColor
-        accent: Color.accent
         enabled: !root.accountBusy
-        text: root.accountCode
-        onVisibleChanged: if (visible) forceActiveFocus()
-        onTextChanged: if (text !== root.accountCode) root.accountCode = text
-        onActiveFocusChanged: root.accountFieldFocus = Math.max(0,
-          root.accountFieldFocus + (activeFocus ? 1 : -1))
-        Keys.onEscapePressed: function(event) { root.focusList(); event.accepted = true }
-        onAccepted: root.submitAccountCode()
+        onClicked: root.startBrowserLogin()
       }
 
       Button {
-        text: root.t("Подтвердить")
-        foreground: root.textColor
-        enabled: !root.accountBusy && root.accountCode.trim() !== ""
-        onClicked: root.submitAccountCode()
+        Layout.fillWidth: true
+        visible: root.accountMethod === ""
+        text: root.t("Войти по логину и паролю")
+        foreground: root.dim
+        enabled: !root.accountBusy
+        onClicked: root.chooseAccountMethod("password")
       }
-    }
 
-    ColumnLayout {
-      Layout.fillWidth: true
-      spacing: Style.space(4)
-      visible: root.accountStep === "captcha"
+      // The window step: what to do in the browser, then one check. Reading the
+      // everyday browser can only return the account it is signed into, which is
+      // why this now opens a window of its own.
+      Text {
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
+        visible: root.accountMethod === "browser"
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        text: root.t("В отдельном окне Firefox войдите в нужный аккаунт VK, затем нажмите «Проверить».")
+        color: root.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      RowLayout {
+        Layout.fillWidth: true
+        spacing: Style.space(6)
+        visible: root.accountMethod === "browser"
+
+        Button {
+          text: root.accountBusy ? root.t("Проверяю…") : root.t("Проверить")
+          bordered: true
+          foreground: root.textColor
+          enabled: !root.accountBusy
+          onClicked: root.checkBrowserLogin()
+        }
+
+        Button {
+          text: root.t("Закрыть окно")
+          foreground: root.dim
+          enabled: !root.accountBusy
+          onClicked: root.closeAccountForm()
+        }
+      }
 
       Text {
         Layout.fillWidth: true
         Layout.preferredWidth: 0
+        visible: root.accountError !== ""
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
-        text: root.t("VK просит капчу. Откройте ссылку, решите её и вставьте success_token.")
+        text: root.accountError
+        color: Color.urgent
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      Text {
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
+        visible: root.accountNotice !== ""
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        text: root.accountNotice
         color: root.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
       }
 
-      Button {
-        text: root.t("Открыть в браузере")
+      PanelSeparator {
+        Layout.fillWidth: true
         foreground: root.textColor
-        enabled: root.accountRedirectUri !== ""
-        onClicked: if (root.accountRedirectUri !== "") Qt.openUrlExternally(root.accountRedirectUri)
+        visible: root.accountMethod === "password"
       }
 
       TextField {
-        id: accountCaptchaField
+        id: accountLoginField
         Layout.fillWidth: true
+        visible: root.accountMethod === "password"
         placeholderTextColor: root.dim
-        placeholderText: "success_token"
+        placeholderText: root.t("Телефон, email или id")
         foreground: root.textColor
         accent: Color.accent
-        enabled: !root.accountBusy
-        text: root.accountSuccessToken
-        onVisibleChanged: if (visible) forceActiveFocus()
-        onTextChanged: if (text !== root.accountSuccessToken) root.accountSuccessToken = text
+        enabled: !root.accountBusy && root.accountStep === ""
+        text: root.accountLogin
+        onTextChanged: if (text !== root.accountLogin) root.accountLogin = text
         onActiveFocusChanged: root.accountFieldFocus = Math.max(0,
           root.accountFieldFocus + (activeFocus ? 1 : -1))
         Keys.onEscapePressed: function(event) { root.focusList(); event.accepted = true }
-        onAccepted: root.submitAccountCaptcha()
+        onAccepted: root.submitAccountLogin()
+      }
+
+      TextField {
+        id: accountPasswordField
+        Layout.fillWidth: true
+        visible: root.accountMethod === "password"
+        placeholderTextColor: root.dim
+        placeholderText: root.t("Пароль")
+        password: true
+        foreground: root.textColor
+        accent: Color.accent
+        enabled: !root.accountBusy && root.accountStep === ""
+        text: root.accountPassword
+        onTextChanged: if (text !== root.accountPassword) root.accountPassword = text
+        onActiveFocusChanged: root.accountFieldFocus = Math.max(0,
+          root.accountFieldFocus + (activeFocus ? 1 : -1))
+        Keys.onEscapePressed: function(event) { root.focusList(); event.accepted = true }
+        onAccepted: root.submitAccountLogin()
+      }
+
+      RowLayout {
+        Layout.fillWidth: true
+        spacing: Style.space(6)
+        visible: root.accountMethod === "password"
+
+        Button {
+          text: root.t("Войти")
+          bordered: true
+          foreground: root.textColor
+          enabled: !root.accountBusy && root.accountStep === ""
+            && root.accountLogin.trim() !== "" && root.accountPassword !== ""
+          onClicked: root.submitAccountLogin()
+        }
+
+        Text {
+          Layout.fillWidth: true
+          Layout.preferredWidth: 0
+          horizontalAlignment: Text.AlignRight
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          visible: root.accountBusy
+          text: root.t("Вход…")
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
       }
 
       Button {
-        text: root.t("Подтвердить")
-        foreground: root.textColor
-        enabled: !root.accountBusy && root.accountSuccessToken.trim() !== ""
-        onClicked: root.submitAccountCaptcha()
+        Layout.fillWidth: true
+        visible: root.accountMethod === "password" && root.accountStep === ""
+        text: root.t("Войти через браузер")
+        foreground: root.dim
+        enabled: !root.accountBusy
+        onClicked: root.chooseAccountMethod("")
+      }
+
+      ColumnLayout {
+        Layout.fillWidth: true
+        spacing: Style.space(4)
+        visible: root.accountStep === "code"
+
+        Text {
+          Layout.fillWidth: true
+          Layout.preferredWidth: 0
+          textFormat: Text.PlainText
+          wrapMode: Text.WordWrap
+          text: root.t("Код из SMS или приложения") + (root.accountPhoneMask !== ""
+            ? " · " + root.accountPhoneMask : "")
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        TextField {
+          id: accountCodeField
+          Layout.fillWidth: true
+          placeholderTextColor: root.dim
+          placeholderText: root.t("Код подтверждения")
+          foreground: root.textColor
+          accent: Color.accent
+          enabled: !root.accountBusy
+          text: root.accountCode
+          onVisibleChanged: if (visible) forceActiveFocus()
+          onTextChanged: if (text !== root.accountCode) root.accountCode = text
+          onActiveFocusChanged: root.accountFieldFocus = Math.max(0,
+            root.accountFieldFocus + (activeFocus ? 1 : -1))
+          Keys.onEscapePressed: function(event) { root.focusList(); event.accepted = true }
+          onAccepted: root.submitAccountCode()
+        }
+
+        Button {
+          text: root.t("Подтвердить")
+          bordered: true
+          foreground: root.textColor
+          enabled: !root.accountBusy && root.accountCode.trim() !== ""
+          onClicked: root.submitAccountCode()
+        }
+      }
+
+      ColumnLayout {
+        Layout.fillWidth: true
+        spacing: Style.space(4)
+        visible: root.accountStep === "captcha"
+
+        Text {
+          Layout.fillWidth: true
+          Layout.preferredWidth: 0
+          textFormat: Text.PlainText
+          wrapMode: Text.WordWrap
+          text: root.t("VK просит капчу. Откройте ссылку, решите её и вставьте success_token.")
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        Button {
+          text: root.t("Открыть в браузере")
+          foreground: root.textColor
+          enabled: root.accountRedirectUri !== ""
+          onClicked: if (root.accountRedirectUri !== "") Qt.openUrlExternally(root.accountRedirectUri)
+        }
+
+        TextField {
+          id: accountCaptchaField
+          Layout.fillWidth: true
+          placeholderTextColor: root.dim
+          placeholderText: "success_token"
+          foreground: root.textColor
+          accent: Color.accent
+          enabled: !root.accountBusy
+          text: root.accountSuccessToken
+          onVisibleChanged: if (visible) forceActiveFocus()
+          onTextChanged: if (text !== root.accountSuccessToken) root.accountSuccessToken = text
+          onActiveFocusChanged: root.accountFieldFocus = Math.max(0,
+            root.accountFieldFocus + (activeFocus ? 1 : -1))
+          Keys.onEscapePressed: function(event) { root.focusList(); event.accepted = true }
+          onAccepted: root.submitAccountCaptcha()
+        }
+
+        Button {
+          text: root.t("Подтвердить")
+          bordered: true
+          foreground: root.textColor
+          enabled: !root.accountBusy && root.accountSuccessToken.trim() !== ""
+          onClicked: root.submitAccountCaptcha()
+        }
+      }
+
+      Button {
+        Layout.fillWidth: true
+        visible: accountCard.allowCancel && root.accountMethod !== "browser"
+        text: root.t("Отмена")
+        foreground: root.dim
+        enabled: !root.accountBusy
+        onClicked: root.closeAccountForm()
       }
     }
   }
@@ -3643,7 +3817,7 @@ Panel {
 
     Text {
       width: parent.width
-      visible: root.accountNotice !== ""
+      visible: root.accountNotice !== "" && !root.accountFormOpen
       textFormat: Text.PlainText
       wrapMode: Text.WordWrap
       text: root.accountNotice
@@ -3687,15 +3861,18 @@ Panel {
     }
 
     Button {
-      text: root.accountFormOpen ? root.t("Отмена") : root.t("Добавить аккаунт")
+      text: root.t("Добавить аккаунт")
+      bordered: true
       foreground: root.textColor
-      onClicked: root.toggleAccountForm()
+      visible: !root.accountFormOpen
+      onClicked: root.openAccountForm()
     }
 
-    // A ColumnLayout inside a plain Column needs its width said out loud.
-    AccountLoginForm {
+    AccountCard {
       width: parent.width
       visible: root.accountFormOpen
+      heading: root.t("Добавить аккаунт")
+      caption: root.t("Подойдёт любой аккаунт VK — второй тоже.")
     }
   }
 
@@ -6588,23 +6765,31 @@ Panel {
     }
   }
 
+  // The signed-out panel is one card, centered: the question is short, and a form
+  // pinned to the top of an empty popup reads as a page that failed to load.
   component SignInBlock: ColumnLayout {
     Layout.fillWidth: true
+    Layout.fillHeight: !root.signedIn
     spacing: Style.spacing.controlGap
     visible: !root.signedIn
+    // What the popup asks before it opens: a signed-out panel is this card and nothing
+    // else, so the card's own height is the panel's.
+    readonly property real cardHeight: card.implicitHeight
 
-    Text {
+    Item {
       Layout.fillWidth: true
-      Layout.preferredWidth: 0
-      wrapMode: Text.WordWrap
-      textFormat: Text.PlainText
-      text: root.t("Нужен вход в VK. Возьмите cookie из браузера или войдите по логину и паролю — подойдёт любой аккаунт.")
-      color: root.textColor
-      font.family: Style.font.family
-      font.pixelSize: Style.font.bodySmall
-    }
+      Layout.fillHeight: true
 
-    AccountLoginForm { Layout.fillWidth: true }
+      AccountCard {
+        id: card
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: parent.verticalCenter
+        width: Math.min(parent.width, Style.space(380))
+        allowCancel: false
+        heading: root.t("VK Музыка")
+        caption: root.t("Войдите, чтобы слушать свою музыку.")
+      }
+    }
   }
 
   // The names of what is playing, each one a link of its own. VK hands the artists over as
@@ -7066,6 +7251,9 @@ Panel {
   component PlayerColumn: ColumnLayout {
     id: playerColumn
     spacing: Style.spacing.controlGap
+    // Nothing of it exists signed out, and a layout that stays in the column still takes
+    // a share of the height: that share was the empty band under the sign-in card.
+    visible: root.signedIn
 
     // What is playing: cover, the three lines, and the heart at the right end. The
     // three lines are centred against the cover rather than hung from its top: the
@@ -7823,8 +8011,9 @@ Panel {
     // number that grows — the bar no longer pays for the card's top padding, so the same
     // card is 2 * cardInset taller in content terms and the list keeps its room.
     contentWidth: panel.fittedContentWidth(Style.space(root.isExtended() ? 620 : 480))
-    // Fixed height, but not one height for everything: a signed-out card holding
-    // two lines of text and one button would otherwise be mostly empty space.
+    // Fixed height, but not one height for everything. Signed out the panel is one card;
+    // its height is the card's own, so the popup closes around it instead of leaving a
+    // hand's width of empty card under a form that has nothing else to show.
     // 690 rather than 460: with the smaller card the queue showed four tracks and
     // had to be scrolled for a fifth, and the settings page was barely usable.
     //
@@ -7833,7 +8022,9 @@ Panel {
     // set from the list (`alignGallery`), not bound to it — the room the list gets comes
     // from this height, and a binding between the two is a loop.
     contentHeight: panel.fittedContentHeight(
-      (root.signedIn ? Style.space(root.isExtended() ? 760 : 690) : Style.space(460))
+      (root.signedIn
+         ? Style.space(root.isExtended() ? 760 : 690)
+         : (root.isExtended() ? extendedSignIn.cardHeight : compactSignIn.cardHeight))
         + root.galleryRoom + 2 * root.cardInset)
 
     PanelKeyCatcher {
@@ -7990,6 +8181,7 @@ Panel {
         }
         BarEdge { visible: root.signedIn }
         SignInBlock {
+          id: compactSignIn
           Layout.fillWidth: true
           Layout.leftMargin: root.cardInset
           Layout.rightMargin: root.cardInset
@@ -8025,6 +8217,7 @@ Panel {
         }
         BarEdge { visible: root.signedIn }
         SignInBlock {
+          id: extendedSignIn
           Layout.fillWidth: true
           Layout.leftMargin: root.cardInset
           Layout.rightMargin: root.cardInset
