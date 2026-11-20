@@ -27,7 +27,12 @@ from typing import Any, Callable, Mapping, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from audio_cache import AudioCache, CacheError, cleanup_stray_temp
+from audio_cache import (
+    AudioCache,
+    CacheError,
+    CacheIncompleteError,
+    cleanup_stray_temp,
+)
 from vk_api import (
     WEB_APP_ID,
     WEB_USER_AGENT,
@@ -617,7 +622,6 @@ class Player:
         # One lock for the API: the prefetch thread resolves the next track's URL
         # while the command thread may be doing anything else with the client.
         self._api_lock = threading.Lock()
-        self._ignore_events_until = 0.0
         self._ignore_pause_until = 0.0
         self.playing_from_cache = False
         self.liked_copies: dict[str, str] = {}
@@ -1338,6 +1342,12 @@ class Player:
             self._start_current()
 
     def _start_current(self) -> None:
+        # `loading` is the first thing the switch sets, before mpv is even
+        # touched: the outgoing file answers the `pause` command with its own
+        # `time-pos`, and once `loading` is false that number is written over
+        # the zero below and drawn as the new track's progress — which is what
+        # the bar did while the next track was still downloading.
+        self.loading = True
         self.position = 0.0
         self.playing = False
         self.paused = False
@@ -1355,6 +1365,7 @@ class Player:
         self._trace = {"start": time.monotonic()}
         track = self.current_track()
         if track is None:
+            self.loading = False
             self.playing = False
             return
         self.position = 0
@@ -1364,7 +1375,6 @@ class Player:
         # says the track really started. Until then the track is loading, which
         # is also what stops the `pause` event mpv emits during a file switch
         # from blinking the bar icon.
-        self.loading = True
         self.playing = False
         self.paused = False
         self._publish_mpris()
@@ -1476,7 +1486,7 @@ class Player:
         if cancel.is_set() or not url:
             return
         try:
-            path = self.cache.download(url, track.key)
+            path = self.cache.download(url, track.key, expected_seconds=track.duration)
         except CacheError as exc:
             log(f"prefetch failed for {track.key}: {exc}")
             return
@@ -1509,11 +1519,37 @@ class Player:
                 self.buffer_seconds = seconds
                 self.buffer_percent = percent
 
+        def fetch() -> Path:
+            """Download the track, re-resolving the URL once if it stops short.
+
+            VK's CDN sometimes cuts the stream, and a second connection to a
+            fresh URL usually delivers the whole file. The player would rather
+            spend that one retry than queue a track that will be missing its
+            second half.
+            """
+            stream = url
+            for attempt in (0, 1):
+                try:
+                    return self.cache.download(
+                        stream,
+                        track.key,
+                        on_progress=report,
+                        expected_seconds=track.duration,
+                    )
+                except CacheIncompleteError as exc:
+                    if attempt or cancel.is_set():
+                        raise
+                    log(f"cache stopped short for {track.key}: {exc}; resolving again")
+                    stream = self.resolve_url(track)
+                    if not stream:
+                        raise CacheError("the track has no stream url") from exc
+            raise CacheError("could not download the track")
+
         def worker() -> None:
             try:
-                path = self.cache.download(url, track.key, on_progress=report)
+                path = fetch()
                 self._trace["downloaded"] = time.monotonic()
-            except CacheError as exc:
+            except (CacheError, VkApiError, VkHaltError) as exc:
                 log(f"cache failed for {track.key}: {exc}")
                 with self.lock:
                     if not cancel.is_set():
@@ -1572,12 +1608,19 @@ class Player:
         self._publish_mpris()
 
     def _begin_load(self) -> None:
-        """Mark a file switch, so events from the previous file are ignored."""
+        """Mark a file switch, so events from the previous file are ignored.
+
+        `loading` is the whole guard: mpv keeps answering with the old file
+        until `file-loaded` arrives, and that event is what ends the window.
+        A fixed timeout here used to swallow the new file's own `duration`,
+        leaving the player with VK's metadata length — which is longer than the
+        file whenever a download was cut, and a seek anywhere past the cut then
+        ended the track.
+        """
         self.position = 0
         self.paused = False
         self.loading = True
         self.buffer_seconds = 0.0
-        self._ignore_events_until = time.monotonic() + 1.0
 
     def _mark_unplayable(self, track: Track, reason: str) -> None:
         self.unplayable.add(track.key)
@@ -1777,6 +1820,13 @@ class Player:
                 # A live stream has no timeline to move along.
                 return
             position = max(0, int(position))
+            if self.duration > 0:
+                # The bar's slider can still be carrying a length from before mpv
+                # named the file (a drag while the track loads), and VK's metadata
+                # is longer than the file whenever a download came back cut. mpv
+                # treats a position past the end as the end of the track, and the
+                # queue would move on instead of playing where the user asked.
+                position = min(position, self.duration)
             try:
                 self.mpv.ensure()
                 self.mpv.command("set_property", "time-pos", position)
@@ -1883,16 +1933,23 @@ class Player:
                     self.paused = False
                     self._publish_mpris()
                 return
-            # Property changes from before a file switch arrive after the
-            # switch; they would drag the position back to the old track.
-            if time.monotonic() < self._ignore_events_until:
+            # Until mpv says `file-loaded`, it is still the outgoing file that
+            # answers: its last `time-pos` (and its length) sit in the same
+            # stream as the new file's, and both used to be written over the
+            # values `_start_current` had just reset. `loading` is the line
+            # between them — everything after `file-loaded` belongs to the
+            # track on screen. The new file's own `duration` arrives after that
+            # event, so this guard is also what lets the real length replace
+            # VK's metadata, even when the two disagree.
+            if self.loading:
                 return
             if name == "time-pos" and isinstance(data, (int, float)):
                 self.position = int(data)
             elif name == "duration" and isinstance(data, (int, float)):
                 self.duration = int(data)
+                self._drop_truncated_cache_copy(int(data))
             elif name == "pause" and isinstance(data, bool):
-                if data and (self.loading or time.monotonic() < self._ignore_pause_until):
+                if data and time.monotonic() < self._ignore_pause_until:
                     return
                 self.paused = data
                 self._publish_mpris()
@@ -2006,6 +2063,26 @@ class Player:
             parts.append(f"total {loaded - start:.2f} s")
         if parts:
             log("track start: " + ", ".join(parts))
+
+    def _drop_truncated_cache_copy(self, actual_seconds: int) -> None:
+        """Forget a cached file that turned out to be a prefix of its track.
+
+        A download cut by the CDN used to be stored as if it were whole, and
+        those files stay on disk from before the download check existed. mpv
+        just named the real length: if it is far short of VK's, the copy is
+        dropped so the next play fetches it again — the download check keeps
+        the short version from coming back.
+        """
+        track = self.current_track()
+        if not track or not self.playing_from_cache or track.duration <= 0:
+            return
+        if not self.cache.stops_short(actual_seconds, track.duration):
+            return
+        if not self.cache.remove(track.key):
+            return
+        log(
+            f"cache dropped for {track.key}: {actual_seconds} s of {track.duration} s on disk"
+        )
 
     def _publish_mpris(self, seeked: bool = False) -> None:
         if self._mpris:

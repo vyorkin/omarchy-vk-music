@@ -35,10 +35,28 @@ TMP_SUFFIX = ".part"
 # What the concat demuxer may open on behalf of a track: the playlist it is
 # pointed at, a plain stream, and an HLS stream with its AES-128 keys.
 CONCAT_PROTOCOLS = "file,crypto,data,http,https,tcp,tls"
+# A download that stops this far short of the length VK reported is a stream
+# that was cut, not a track that is shorter than its own metadata: VK counts
+# whole seconds of the very file it serves, so the two agree to a second or
+# two. Both bounds apply; the ratio keeps a long mix from being rejected over
+# an intro that ffmpeg trimmed.
+SHORT_TOLERANCE_S = 10.0
+SHORT_TOLERANCE_RATIO = 0.01
 
 
 class CacheError(RuntimeError):
     """Downloading or storing a track failed."""
+
+
+class CacheIncompleteError(CacheError):
+    """The stream ended before the track did.
+
+    VK's CDN sometimes closes the connection mid-file and ffmpeg reports that
+    as a clean end of stream, so the download "succeeds" with a prefix of the
+    track. Stored like that, such a file plays until the cut and stops, and a
+    seek into the missing part is a seek past the end: mpv ends the file and
+    the queue moves on. So a short download is a failed one.
+    """
 
 
 @dataclass(frozen=True)
@@ -98,11 +116,17 @@ class AudioCache:
 
     # -- writing -----------------------------------------------------------
 
-    def download(self, url: str, key: str, on_progress=None) -> Path:
+    def download(
+        self, url: str, key: str, on_progress=None, expected_seconds: float = 0.0
+    ) -> Path:
         """Fetch a whole track into the cache and return its path.
 
         Safe to call twice for the same track: the second caller waits for the
         download already running instead of starting its own.
+
+        `expected_seconds` is the length VK reports for the track. When it is
+        known, a download that ends well before it is refused rather than
+        stored: see `CacheIncompleteError`.
         """
         if not url:
             raise CacheError("track has no stream url")
@@ -126,13 +150,15 @@ class AudioCache:
                 return cached
             raise CacheError("a parallel download did not produce the file")
         try:
-            return self._download_fresh(url, key, on_progress)
+            return self._download_fresh(url, key, on_progress, expected_seconds)
         finally:
             with self._lock:
                 self._inflight.pop(key, None)
             waiter.set()
 
-    def _download_fresh(self, url: str, key: str, on_progress=None) -> Path:
+    def _download_fresh(
+        self, url: str, key: str, on_progress=None, expected_seconds: float = 0.0
+    ) -> Path:
         """Run ffmpeg and, when asked, report progress in audio seconds.
 
         The URL is handed to ffmpeg through a one-entry playlist, never as an
@@ -143,7 +169,8 @@ class AudioCache:
 
         `-progress pipe:1` makes ffmpeg print `out_time_us=` lines, which is the
         position inside the *audio*, not the download: for a track of a known
-        duration that is exactly the percentage the interface wants to show.
+        duration that is exactly the percentage the interface wants to show —
+        and its last value is how long the file actually turned out to be.
         """
         final = self.tracks_dir / f"{_safe(key)}.mp3"
         tmp = final.with_suffix(final.suffix + TMP_SUFFIX)
@@ -151,6 +178,7 @@ class AudioCache:
         playlist = tmp.with_name(f"{_safe(key)}.concat")
 
         last_error = ""
+        short = 0.0
         try:
             _write_private(playlist, _concat_entry(url))
             for codec_args in (["-c:a", "copy"], ["-c:a", "libmp3lame", "-q:a", "2"]):
@@ -178,7 +206,22 @@ class AudioCache:
                     "mp3",
                     str(tmp),
                 ]
-                ok, last_error = self._run_ffmpeg(command, tmp, on_progress)
+                # ffmpeg's last `out_time_us` is the file's real length, and it is
+                # already being parsed for the progress ring: no second probe of
+                # the finished file is needed to tell a whole download from a cut.
+                seconds = [0.0]
+
+                def record(value: float) -> None:
+                    seconds[0] = float(value)
+                    if on_progress is not None:
+                        on_progress(value)
+
+                ok, last_error = self._run_ffmpeg(command, tmp, record)
+                if ok and self.stops_short(seconds[0], expected_seconds):
+                    tmp.unlink(missing_ok=True)
+                    short = seconds[0]
+                    last_error = f"the stream ended after {int(seconds[0])} s"
+                    continue
                 if ok:
                     break
                 tmp.unlink(missing_ok=True)
@@ -188,6 +231,10 @@ class AudioCache:
                 # reason, not for a link that has already expired by the time
                 # anyone reads it.
                 detail = last_error.replace(url, "the stream") if url else last_error
+                if short:
+                    raise CacheIncompleteError(
+                        f"the track download stopped early: {detail}"
+                    )
                 raise CacheError(f"could not download the track: {detail}")
         finally:
             playlist.unlink(missing_ok=True)
@@ -203,6 +250,19 @@ class AudioCache:
             self._save_index()
             self._evict_locked()
         return final
+
+    @staticmethod
+    def stops_short(actual_seconds: float, expected_seconds: float) -> bool:
+        """Is this file shorter than the track by more than a rounding error?
+
+        Zero on either side means the length is not known (no progress came
+        out of ffmpeg, or the caller passed no expectation), and an unknown
+        length is not a short file.
+        """
+        if actual_seconds <= 0 or expected_seconds <= 0:
+            return False
+        missing = expected_seconds - actual_seconds
+        return missing > max(SHORT_TOLERANCE_S, expected_seconds * SHORT_TOLERANCE_RATIO)
 
     def _run_ffmpeg(self, command: list[str], tmp: Path, on_progress) -> tuple[bool, str]:
         """Run one ffmpeg attempt, streaming progress out of its stdout.

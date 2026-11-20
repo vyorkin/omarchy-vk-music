@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
 
 import audio_cache  # noqa: E402
-from audio_cache import AudioCache, CacheError  # noqa: E402
+from audio_cache import AudioCache, CacheError, CacheIncompleteError  # noqa: E402
 
 SIGNED = "https://cs1-3.vk.com/audio/abc/def.mp3?extra=base64&sig=deadbeef0123"
 
@@ -28,8 +28,11 @@ SIGNED = "https://cs1-3.vk.com/audio/abc/def.mp3?extra=base64&sig=deadbeef0123"
 class FakeFfmpeg:
     """Stands in for the process, recording what it was asked to open."""
 
-    def __init__(self, succeed: bool = True) -> None:
+    def __init__(self, succeed: bool = True, progress: tuple[float, ...] = ()) -> None:
         self.succeed = succeed
+        # What `-progress` would print, in audio seconds: the last value is the
+        # length the download turned out to have.
+        self.progress = progress
         self.calls: list[list[str]] = []
         self.playlists: list[tuple[Path, str, int]] = []
 
@@ -39,6 +42,9 @@ class FakeFfmpeg:
         self.playlists.append(
             (playlist, playlist.read_text(encoding="utf-8"), playlist.stat().st_mode & 0o777)
         )
+        if on_progress is not None:
+            for seconds in self.progress:
+                on_progress(seconds)
         if self.succeed:
             tmp.write_bytes(b"ID3 fake audio")
             return True, ""
@@ -120,6 +126,51 @@ class ConcatenatedInputTest(unittest.TestCase):
         self.assertEqual(len(ffmpeg.calls), 2)
         self.assertEqual(ffmpeg.calls[1][ffmpeg.calls[1].index("-c:a") + 1], "libmp3lame")
         self.assertEqual(ffmpeg.playlists[0][0], ffmpeg.playlists[1][0])
+
+
+class ShortDownloadTest(unittest.TestCase):
+    """A stream cut mid-track is refused, not stored as if it were whole.
+
+    A stored prefix plays until the cut and then ends, and a seek into the part
+    that is missing is a seek past the end, which is what made the player jump
+    to the next queue entry in the middle of a long track.
+    """
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.cache = AudioCache(Path(self.directory.name))
+
+    def tearDown(self) -> None:
+        self.directory.cleanup()
+
+    def test_a_download_that_stops_short_is_refused(self) -> None:
+        ffmpeg = FakeFfmpeg(progress=(10.0, 60.0))
+        self.cache._run_ffmpeg = ffmpeg
+
+        with self.assertRaises(CacheIncompleteError):
+            self.cache.download(SIGNED, "1_42", expected_seconds=3600)
+
+        self.assertIsNone(self.cache.get("1_42"))
+        self.assertFalse(any(self.cache.tracks_dir.iterdir()))
+
+    def test_a_whole_download_is_stored(self) -> None:
+        ffmpeg = FakeFfmpeg(progress=(10.0, 3598.0))
+        self.cache._run_ffmpeg = ffmpeg
+
+        path = self.cache.download(SIGNED, "1_42", expected_seconds=3600)
+
+        self.assertTrue(path.exists())
+        self.assertIsNotNone(self.cache.get("1_42"))
+
+    def test_a_length_that_could_not_be_measured_is_not_short(self) -> None:
+        # No `out_time` lines: ffmpeg said nothing about the length, and silence
+        # is not evidence that the file was cut.
+        ffmpeg = FakeFfmpeg()
+        self.cache._run_ffmpeg = ffmpeg
+
+        self.cache.download(SIGNED, "1_42", expected_seconds=3600)
+
+        self.assertIsNotNone(self.cache.get("1_42"))
 
 
 if __name__ == "__main__":
