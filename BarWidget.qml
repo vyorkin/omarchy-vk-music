@@ -4074,9 +4074,9 @@ Panel {
         // portrait, which reads as a white gap in a light theme.
         inset: 0
         mark: "󰀄"
-        borderSpec: personCardArea.containsMouse && !personCard.selected
-          ? Border.controlSpec("hover", Color.foreground, Color.accent, Color.urgent)
-          : Border.none()
+        // No hover border: the frame is a circle and the picture a square that fills it,
+        // so the border of the frame is drawn across the portrait as a faint ring. The
+        // card's own step back is the pointer's mark.
         decodeSize: personCard.cellWidth
         source: personCard.item ? String(personCard.item.photo || "") : ""
         title: personCard.item ? String(personCard.item.name || "") : ""

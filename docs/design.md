@@ -1475,7 +1475,9 @@ The cursor's mark is the same in both views: a selected fill. A row takes it beh
 everything, and so does a card — cover and captions together, with a few pixels of rim
 showing around the picture, which is what makes a card read as one thing rather than a
 picture with a label under it. The cover keeps only the hover border, so the two states
-say two different things instead of overlapping.
+say two different things instead of overlapping. A person's card is the exception: its
+frame is a circle and the picture a square that fills it, so that border is drawn across
+the portrait as a faint ring — the card keeps only its step back under the pointer.
 
 People follow the same switch as playlists, because choosing a person is picking a
 face: in the gallery they are cards — the picture in a circle, the name under it, two
