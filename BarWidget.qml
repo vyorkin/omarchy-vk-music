@@ -4351,7 +4351,10 @@ Panel {
       id: durationText
       width: Style.space(42)
       anchors.right: parent.right
-      anchors.rightMargin: Style.space(28)
+      // Twelve pixels to the heart's box, not six: at six a length and a heart read as
+      // one cluster, and the eye could not tell whether the heart belonged to the number
+      // or to the row.
+      anchors.rightMargin: Style.space(34)
       anchors.verticalCenter: parent.verticalCenter
       horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
@@ -6745,35 +6748,71 @@ Panel {
         width: hintsPanel.width - 2 * root.cardInset
         spacing: Style.space(10)
 
-        Repeater {
-          model: root.keyHelpRows
-          delegate: RowLayout {
-            required property var modelData
-            width: parent.width
-            spacing: Style.space(12)
+        // Two columns, not one: nine short rows in a single column read as a manual page
+        // and leave the card's lower half empty, while a pair of columns fills the sheet's
+        // width and keeps every row on a line of its own. The table is short enough that
+        // the eye takes both halves in at once.
+        Grid {
+          id: hintsGrid
+          width: parent.width
+          columns: 2
+          columnSpacing: Style.space(20)
+          rowSpacing: Style.space(9)
 
-            // The key column is a fixed width, so the descriptions line up under each
-            // other instead of following the length of each key.
-            Text {
-              Layout.preferredWidth: Style.space(90)
-              Layout.alignment: Qt.AlignTop
-              textFormat: Text.PlainText
-              text: modelData.keys
-              color: root.textColor
-              font.family: Style.font.family
-              font.pixelSize: Style.font.bodySmall
-              font.bold: true
-            }
+          Repeater {
+            model: root.keyHelpRows
+            delegate: RowLayout {
+              required property var modelData
+              // Half the sheet, minus the gutter between the two columns.
+              width: (hintsGrid.width - hintsGrid.columnSpacing) / 2
+              spacing: Style.space(12)
 
-            Text {
-              Layout.fillWidth: true
-              Layout.preferredWidth: 0
-              textFormat: Text.PlainText
-              wrapMode: Text.WordWrap
-              text: modelData.what
-              color: root.dim
-              font.family: Style.font.family
-              font.pixelSize: Style.font.bodySmall
+              // The keys as keys: a cap is read before the sentence beside it, and a pair
+              // («j k», «[ ]») keeps two caps with a gap between them, so it says «either
+              // of these» rather than one strange key. The column is a fixed width, so
+              // the descriptions line up under each other instead of after each key.
+              Row {
+                Layout.preferredWidth: Style.space(96)
+                Layout.alignment: Qt.AlignTop
+                spacing: Style.space(4)
+
+                Repeater {
+                  model: String(modelData.keys || "").split(" ")
+                  delegate: Rectangle {
+                    id: keyCap
+                    required property string modelData
+                    width: keyCapLabel.implicitWidth + 2 * Style.space(6)
+                    height: keyCapLabel.implicitHeight + 2 * Style.space(3)
+                    radius: Style.space(4)
+                    color: Style.normalFillFor(root.textColor, Color.accent)
+                    border.width: 1
+                    border.color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.28)
+
+                    Text {
+                      id: keyCapLabel
+                      anchors.centerIn: parent
+                      textFormat: Text.PlainText
+                      text: keyCap.modelData
+                      color: root.textColor
+                      font.family: Style.font.family
+                      font.pixelSize: Style.font.caption
+                      font.bold: true
+                    }
+                  }
+                }
+              }
+
+              Text {
+                Layout.fillWidth: true
+                Layout.preferredWidth: 0
+                Layout.alignment: Qt.AlignTop
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+                text: modelData.what
+                color: root.dim
+                font.family: Style.font.family
+                font.pixelSize: Style.font.bodySmall
+              }
             }
           }
         }
