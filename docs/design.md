@@ -692,6 +692,30 @@ another column; a component can be instantiated in either one. Only the visible
 shape takes keys, so `activeList()`, `activeField()` and `activeBody()` pick the
 one in use.
 
+### Where the popup is allowed to take the hand
+
+The card sits in the shell's keyboard panel: a full-screen layer surface whose
+input region is the whole screen, which is how a click outside dismisses it. That
+region and the shell's `WlrKeyboardFocus.Exclusive` prime are right for a card
+that is up, and wrong for the two moments in which the window exists without one.
+The first is the map: the surface is committed before the card's first frame is
+laid out, and on a cold first open that layout costs seconds — a stock panel pays
+the same for its surface, so this is not the list's size. The window is mapped,
+empty, and swallowing every click on every application, and the prime's 75-ms
+timer cannot fire while the GUI thread is busy, so the compositor keeps routing
+every pointer event to it for the whole stall. The second is the fade-out: the
+logical close has happened, but `visible` stays true while the card's opacity
+falls, and for that 140 ms every click still lands on a card on its way out.
+
+So input follows the painted card. `mask` is empty until `_popupPainted` — set by
+the first `FrameAnimation` frame, with `afterOpen` as a fallback — the screen
+while the card is up, and empty again the moment `opened` goes false. The
+keyboard prime is ours, gated the same way: `OnDemand` until the first frame, a
+75-ms `Exclusive` prime after it (the shell's own mechanism, moved to where the
+card actually exists), then `OnDemand`. A close is therefore instant to the
+pointer, whatever the fade or the next layout is doing, and an open holds
+nothing until there is something to hold it for.
+
 ### The ink that is not speaking
 
 The panel draws text in two strengths, and the second one was wrong in a way only a light

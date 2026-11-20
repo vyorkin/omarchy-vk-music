@@ -10,6 +10,7 @@ import QtQuick.Layouts
 import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
+import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 // Aliased, so that the kit's Button and TextField keep the names in this file: the popup
@@ -484,6 +485,11 @@ Panel {
   // be checked with numbers instead of a screenshot. It fires once per session
   // for the bar row and once per popup opening.
   property bool _reportedBarLayout: false
+  // Whether the card has been drawn at least once since it opened. Until then the popup
+  // window is mapped but empty, and the screen-wide input region the shell gives that
+  // window is a blanket: every click on every other application is swallowed while the
+  // first frame is laid out. The mask below waits for this flag; see the `panel` instance.
+  property bool _popupPainted: false
   property bool _watching: false
   property string _loggedTrack: ""
   property int _queueIndex: -2
@@ -3240,6 +3246,7 @@ Panel {
     labelWidth: root.barInformationWidth
     marqueePause: root.marqueePause
     marqueeSpeed: root.marqueeSpeed
+    marqueeHold: root.opened
 
     barItem: root.bar
     foreground: root.fg
@@ -3275,6 +3282,7 @@ Panel {
 
   onOpenedChanged: {
     if (root.opened) {
+      root._popupPainted = false
       root.refresh()
       root.loadPreferences()
       root._queueIndex = -2
@@ -3286,6 +3294,7 @@ Panel {
       return
     }
     // A password must not outlive the popup that asked for it.
+    primeTimer.stop()
     root.accountPassword = ""
     root.accountFieldFocus = 0
     // The player's menu row is not put away here: its state is a preference, and a card
@@ -3299,6 +3308,13 @@ Panel {
   // item. Opening the search view hands the keyboard straight to the field, so
   // typing works without a click.
   function afterOpen() {
+    // A fallback for the first-frame flag the mask waits on: if the frame animation missed
+    // its frame for any reason, the screen-wide dismissal region still comes up with the
+    // card, a hair later.
+    if (!root._popupPainted) {
+      root._popupPainted = true
+      primeTimer.restart()
+    }
     console.log("[vk-music] popup layout", JSON.stringify({
       card: [panel.contentWidth, panel.contentHeight],
       body: root.activeBody().implicitHeight,
@@ -7433,9 +7449,24 @@ Panel {
           Layout.topMargin: -Style.space(2)
           spacing: Style.space(4)
 
+          // The elapsed time is a clock that changes every second, and a text whose width
+          // changes re-lays out this row and every layout above it — once a second, for a
+          // digit. The width is the one the track's own clock needs, measured off the track
+          // that does not move, and the two texts share it so the line between them never
+          // shifts either.
+          Text {
+            id: clockProbe
+            visible: false
+            text: I18n.clock(root.duration)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+          }
+
           Text {
             id: elapsedText
             Layout.alignment: Qt.AlignLeft
+            Layout.preferredWidth: clockProbe.implicitWidth
+            horizontalAlignment: Text.AlignLeft
             textFormat: Text.PlainText
             text: I18n.clock(root.displayPosition)
             color: root.textColor
@@ -7448,6 +7479,8 @@ Panel {
           Text {
             id: totalText
             Layout.alignment: Qt.AlignRight
+            Layout.preferredWidth: clockProbe.implicitWidth
+            horizontalAlignment: Text.AlignRight
             textFormat: Text.PlainText
             text: I18n.clock(root.duration)
             color: root.textColor
@@ -7996,12 +8029,55 @@ Panel {
     font.pixelSize: Style.font.body
   }
 
+  // Started by hand, not from a binding on `running`: a Timer drops its own `running`
+  // binding when it expires, and this one has to arm again on the next open. It lives
+  // outside the panel because the panel's default property holds items only.
+  Timer {
+    id: primeTimer
+    interval: 75
+  }
+
   KeyboardPanel {
     id: panel
     anchorItem: barRow
     owner: root
     bar: root.bar
     open: root.opened
+    // The shell's own mask is the whole screen for as long as this window exists. That is
+    // how a click outside dismisses the card, but the window exists in two states where no
+    // card is there to dismiss: while its first frame is still being laid out after the map
+    // (seconds, on a cold first open), and while the card fades out after the logical close.
+    // In both, a full-screen input region swallows every click on every other application,
+    // and the hand waits on an animation it cannot see. So input follows the painted card:
+    // nothing at all until the first frame lands, the full screen while the card is up, and
+    // nothing again from the moment it closes.
+    mask: Region {
+      width: root.opened && root._popupPainted ? panel.screenW : 0
+      height: root.opened && root._popupPainted ? panel.screenH : 0
+    }
+    // The shell primes keyboard focus with `WlrKeyboardFocus.Exclusive`, which makes
+    // Hyprland route every pointer event on every output to this surface until the prime's
+    // 75 ms timer fires — and that timer, like every other, waits for the GUI thread. The
+    // first open spends seconds laying the card out (the shell's full-screen surface costs
+    // the same on a stock panel), so the Exclusive phase lasted as long as the stall and
+    // clicks on other applications went to a card nobody had drawn. The prime therefore
+    // starts at the first painted frame, and the surface stays OnDemand — no compositor-wide
+    // routing — until then. Once the card is up, a click outside dismisses it anyway.
+    WlrLayershell.keyboardFocus: !root.opened
+      ? WlrKeyboardFocus.None
+      : (primeTimer.running ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.OnDemand)
+    // The first rendered frame is what flips `_popupPainted`: a timer would fire while the
+    // GUI thread is still busy laying the card out, which is exactly the stall this mask
+    // has to stay out of the way of. `afterOpen` sets the flag too, as a fallback.
+    Item {
+      FrameAnimation {
+        running: !root._popupPainted
+        onTriggered: {
+          root._popupPainted = true
+          primeTimer.restart()
+        }
+      }
+    }
     // The card carries no padding: `cardInset` is applied by the blocks inside it, so the
     // bar and the rows can reach the card's edges without anything hanging out.
     padding: 0

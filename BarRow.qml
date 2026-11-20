@@ -53,6 +53,10 @@ Item {
   property int labelWidth: 180
   property int marqueePause: 1600
   property int marqueeSpeed: 70
+  // The popup is open over the bar: the label keeps its place and stops walking. A marquee
+  // is a 60 fps repaint of the whole bar window for as long as a long title shows, and
+  // nobody is reading it while the card has the hand.
+  property bool marqueeHold: false
 
   // ------------------------------------------------------------- the paint ---
   property var barItem: null
@@ -178,6 +182,18 @@ Item {
     }
   }
 
+  // The time in the row is a clock that changes every second, and a text that grows a digit
+  // wider re-lays out the row — and the bar item with it — once a second. The probe
+  // measures the width the track's own clock needs, once per track, and lives outside the
+  // row so it adds nothing to it.
+  Text {
+    id: barTimeProbe
+    visible: false
+    text: I18n.clock(row.duration) + " / " + I18n.clock(row.duration)
+    font.family: row.barItem ? row.barItem.fontFamily : Style.font.family
+    font.pixelSize: Style.font.caption
+  }
+
   Row {
     id: rowContent
     anchors.centerIn: parent
@@ -281,7 +297,7 @@ Item {
         // once it has arrived. With the text stopping inside the label instead of past it,
         // the field is never empty and neither end is missed.
         SequentialAnimation on scrollOffset {
-          running: row.longTitleMode === "scroll" && labelText.needsScroll
+          running: row.longTitleMode === "scroll" && labelText.needsScroll && !row.marqueeHold
           loops: Animation.Infinite
 
           PauseAnimation { duration: row.marqueePause }
@@ -306,6 +322,7 @@ Item {
     Text {
       id: barTime
       visible: row.showTime && row.hasTrack && !row.onAir
+      width: barTimeProbe.implicitWidth
       textFormat: Text.PlainText
       text: I18n.clock(row.position) + " / " + I18n.clock(row.duration)
       color: Qt.rgba(row.foreground.r, row.foreground.g, row.foreground.b, 0.55)
