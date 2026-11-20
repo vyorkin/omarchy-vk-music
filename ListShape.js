@@ -34,8 +34,10 @@
 //
 // The answers below that are not obviously shape-shaped are preserved on purpose, and each
 // one cost a commit to learn:
-//   * «Моя музыка» (`browseSlug === "all"`) is a hundred tracks and never a playlist, so it
-//     is never a gallery and the representation switch has nothing to say there;
+//   * «Моя музыка» (`browseSlug === "all"`) holds the user's playlists and the liked
+//     tracks as two bands, and its tab shows one: the playlists tab is a gallery when the
+//     gallery is on, the tracks tab never is, and the representation switch goes with the
+//     band it describes;
 //   * one friend is not a wall (`friendsGallery` needs more than one card), so a section of
 //     one is drawn as the row it would be with the gallery off;
 //   * while a search is shorter than two characters the list on screen is the recent
@@ -137,6 +139,10 @@ function plan(state) {
   var searchState = String(s.searchState || "typing")
   var browseSlug = String(s.browseSlug || "")
   var artistTab = String(s.artistTab || "tracks")
+  // «Моя музыка» holds two bands as well — the playlists the user made and the liked
+  // tracks — and its tab decides which one is on screen. The tracks are the page's own
+  // reason for existing, so that is where it opens.
+  var myMusicTab = String(s.myMusicTab || "tracks") === "playlists" ? "playlists" : "tracks"
   var searchMode = String(s.searchMode || "tracks")
   // The artists box answers in songs or in artist cards. The songs scope is a track search
   // that resolved to an artist, so it draws the track vocabulary: results, recent queries
@@ -255,6 +261,20 @@ function plan(state) {
         lists.playlists = []
         append(built, "section", "tracks", KINDS.tracks, lists.tracks, 1)
       }
+    } else if (browseSlug === "all") {
+      // «Моя музыка» is the same choice as an artist page's: two bands, one on screen, and
+      // the one that is off is emptied here rather than hidden in the widget — the
+      // delegates, the cursor and the counts read `lists`, and an empty band is the only
+      // answer that cannot disagree with itself. Nothing is fetched on a switch: both
+      // arrays arrive with the section.
+      if (myMusicTab === "playlists") {
+        lists.tracks = []
+        append(built, "section", "playlists", KINDS.playlists, lists.playlists, columns)
+        gallery = gridView && lists.playlists.length > 0
+      } else {
+        lists.playlists = []
+        append(built, "section", "tracks", KINDS.tracks, lists.tracks, 1)
+      }
     } else {
       // A section is its playlists and then its tracks under them, in one cursor order:
       // the cards above, the rows below.
@@ -272,11 +292,17 @@ function plan(state) {
         // two cells that flip a wall nobody can see are dead controls, not a choice.
         showsPlaylists = artistTab === "albums"
           && (browseLoading || lists.playlists.length > 0)
-      } else if (browseSlug !== "all") {
-        // «Моя музыка» is the one section that is a hundred tracks and never a playlist, so
-        // the switch has nothing to say there and says it without waiting for an answer. A
-        // section that is still loading has no playlists to count yet: asked on the rows
-        // alone, the two cells vanished for as long as the request took.
+      } else if (browseSlug === "all") {
+        // The two cells say how the playlists are drawn, so they belong to the playlists
+        // band: on the tracks tab they would flip a wall nobody can see. On their own
+        // band they follow the same rule as a section's — a page still loading has no
+        // playlists to count yet, and the cells must not vanish for the length of the
+        // request.
+        showsPlaylists = myMusicTab === "playlists"
+          && (browseLoading || lists.playlists.length > 0)
+      } else {
+        // A section that is still loading has no playlists to count yet: asked on the
+        // rows alone, the two cells vanished for as long as the request took.
         showsPlaylists = browseLoading || lists.playlists.length > 0
       }
     }

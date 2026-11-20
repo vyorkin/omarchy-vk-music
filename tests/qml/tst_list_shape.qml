@@ -92,17 +92,52 @@ TestCase {
   }
 
   // With the gallery on the playlists stand across the card, and a band of one column is the
-  // rows under them. «Моя музыка» is never a gallery: it is a hundred tracks and no playlist.
+  // rows under them. «Моя музыка» holds both bands, and its tab shows one.
   function test_a_gallery_stands_the_playlists_across() {
     var planned = ListShape.plan(sectionState({ gridView: true }))
     compare(columnsOf(planned), "3,1")
     compare(planned.gallery, true)
-    // «Моя музыка» answers no playlists, so both the wall and the switch are absent — and
-    // the switch is absent without waiting for the answer, which is why it is not `browseLoading`.
-    var mine = ListShape.plan(sectionState({ gridView: true, browseSlug: "all", playlists: [] }))
-    compare(mine.gallery, false)
-    compare(mine.showsPlaylists, false)
-    compare(mine.segments.length, 1)
+
+    // The tracks tab is the page's default and holds rows alone: no wall, no switch.
+    var tracksTab = ListShape.plan(sectionState({ gridView: true, browseSlug: "all" }))
+    compare(kinds(tracksTab), "tracks")
+    compare(tracksTab.gallery, false)
+    compare(tracksTab.showsPlaylists, false)
+    compare(tracksTab.items.length, 10)
+  }
+
+  // «Моя музыка»'s other band: the playlists, as the wall or the rows the switch asks
+  // for, and the switch is there to ask. The liked tracks are out of the cursor while
+  // the cards are on screen, so Enter on a card can never play a track the reader is not
+  // looking at.
+  function test_my_music_switches_between_its_two_bands() {
+    var wall = ListShape.plan(sectionState({ browseSlug: "all", myMusicTab: "playlists",
+      gridView: true }))
+    compare(kinds(wall), "playlists")
+    compare(columnsOf(wall), "3")
+    compare(wall.gallery, true)
+    compare(wall.showsPlaylists, true)
+    compare(ListShape.offsetOf(wall, "tracks"), -1)
+
+    // With the gallery off the cards are rows, and the segment still carries the width a
+    // wall would take — the same answer an artist's albums tab gives.
+    var rows = ListShape.plan(sectionState({ browseSlug: "all", myMusicTab: "playlists" }))
+    compare(kinds(rows), "playlists")
+    compare(columnsOf(rows), "3")
+    compare(rows.gallery, false)
+    compare(rows.showsPlaylists, true)
+
+    // The switch waits for the playlists band to load, then leaves with it: on the tracks
+    // tab it would flip a wall nobody can see.
+    var loading = ListShape.plan(sectionState({ browseSlug: "all", myMusicTab: "playlists",
+      playlists: [], browseLoading: true }))
+    compare(loading.showsPlaylists, true)
+    compare(loading.segments.length, 0)
+
+    // An old answer, not a spent switch: the tracks tab never asks for the wall.
+    var tracks = ListShape.plan(sectionState({ browseSlug: "all", myMusicTab: "tracks",
+      gridView: true, browseLoading: true }))
+    compare(tracks.showsPlaylists, false)
   }
 
   // The friends page is two walls with their own answers: one friend is a row, two are a

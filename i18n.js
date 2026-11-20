@@ -59,6 +59,7 @@ T["Плейлисты"] = { en: "Playlists", de: "Playlists", es: "Listas", fr: 
 T["Плейлист"] = { en: "Playlist", de: "Playlist", es: "Lista", fr: "Playlist", ja: "プレイリスト", zh: "歌单", uk: "Плейлист", ru: "Плейлист" }
 T["Сортировка"] = { en: "Sort", de: "Sortieren", es: "Ordenar", fr: "Trier", ja: "並べ替え", zh: "排序", uk: "Сортування", ru: "Сортировка" }
 T["сортировка"] = { en: "sort", de: "Sortieren", es: "ordenar", fr: "trier", ja: "並べ替え", zh: "排序", uk: "сортування", ru: "сортировка" }
+T["плейлисты / треки"] = { en: "playlists / tracks", de: "Playlists / Titel", es: "listas / pistas", fr: "playlists / titres", ja: "プレイリスト / 曲", zh: "歌单 / 曲目", uk: "плейлисти / треки", ru: "плейлисты / треки" }
 T["Порядок VK"] = { en: "VK order", de: "VK-Reihenfolge", es: "Orden de VK", fr: "Ordre VK", ja: "VK の順", zh: "VK 顺序", uk: "Порядок VK", ru: "Порядок VK" }
 T["Сначала большие"] = { en: "Most tracks first", de: "Meiste Titel zuerst", es: "Con más pistas primero", fr: "Plus de titres d'abord", ja: "曲数が多い順", zh: "曲数从多到少", uk: "Спочатку більші", ru: "Сначала большие" }
 T["Сначала маленькие"] = { en: "Fewest tracks first", de: "Wenigste Titel zuerst", es: "Con menos pistas primero", fr: "Moins de titres d'abord", ja: "曲数が少ない順", zh: "曲数从少到多", uk: "Спочатку менші", ru: "Сначала маленькие" }
@@ -442,6 +443,7 @@ var KEYS = [
   { keys: ["[", "]"], what: "вкладки" },
   { keys: ["⇧H", "⇧L"], what: "раздел" },
   { keys: ["s"], what: "сортировка" },
+  { keys: ["t"], what: "плейлисты / треки" },
   { keys: ["Esc"], what: "закрыть" }
 ]
 

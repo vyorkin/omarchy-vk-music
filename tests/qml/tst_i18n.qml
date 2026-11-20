@@ -88,8 +88,12 @@ TestCase {
     // The brackets stay apart, because they are a pair the reader presses twice.
     compare(rows[5].keys, "[ ]")
     compare(rows[7].what, "sort")
-    compare(rows[8].what, "close")
-    compare(I18n.hintRows("ru")[8].what, "закрыть")
+    // The band key sits between the sort and the way out: the sheet reads in the order
+    // the keys are pressed through a page, and Esc closes what the rest opened.
+    compare(rows[8].keys, "t")
+    compare(rows[8].what, "playlists / tracks")
+    compare(rows[9].what, "close")
+    compare(I18n.hintRows("ru")[9].what, "закрыть")
   }
 
   // Every word in the table is a key, so a language that is missing one shows the key and

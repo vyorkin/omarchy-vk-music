@@ -68,6 +68,11 @@ Panel {
   // switch — only the band on screen is the list the cursor walks. The page opens on the
   // tracks, because a visit to an artist is a visit for listening.
   property string artistTab: "tracks"
+  // «Моя музыка» holds two bands — the user's playlists and the liked tracks — and one is
+  // on screen at a time. The tracks are the page's reason for existing, so that is where
+  // it opens; the choice is kept for the session, like the artist page's own tab, and
+  // switching it needs no request: the section arrives with both arrays.
+  property string myMusicTab: "tracks"
   // Where an artist page was opened from: a search keeps its query and results, and a
   // section is asked for again, because its rows are cheap and its cursor is not worth
   // carrying across a page.
@@ -109,7 +114,10 @@ Panel {
     // Which of the artist page's two bands is on screen. A tab is a page as far as the
     // list is concerned: the scroll offset the other band had belongs to rows that are
     // no longer there.
-    root.artist ? root.artistTab : ""
+    root.artist ? root.artistTab : "",
+    // The same for «Моя музыка»'s playlists and tracks: the playlists band is short and
+    // the tracks band long, and a kept offset means one of them opens at its end.
+    root.browseSlug === "all" ? root.myMusicTab : ""
   ].join("|")
   property alias tracks: session.tracks
   property alias playlists: session.playlists
@@ -1849,6 +1857,7 @@ Panel {
     state.gridView = root.gridView
     state.browseLoading = session.loading("browse") || session.loading("favorites")
     state.artistTab = root.artistTab
+    state.myMusicTab = root.myMusicTab
     state.filter = root.filter
     // The recent queries and the recent people arrive with the status rather than from a
     // fetch, so they are not the store's to keep.
@@ -2263,6 +2272,13 @@ Panel {
     }
     var title = root.browseTitle !== "" ? root.browseTitle : (root.sectionTitle(root.browseSlug) || root.t("Раздел"))
     if (session.loading("browse") || session.loading("favorites")) return title + root.t(" · загрузка…")
+    // «Моя музыка»'s two bands, each with its own count: the playlists tab must not
+    // report the hundred tracks the other tab holds.
+    if (root.browseSlug === "all" && root.myMusicTab === "playlists") {
+      var mine = root.playlists.length
+      return title + (mine === 0 ? root.t(" · пусто") : " · " + mine + " "
+        + I18n.plural(root.language, mine, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов")))
+    }
     var tracks = root.tracks.length
     var lists = root.playlists.length
     if (tracks === 0 && lists === 0) return title + root.t(" · пусто")
@@ -2711,6 +2727,27 @@ Panel {
     if (root.artistTab === next) return
     root.artistTab = next
     root.cursor = -1
+  }
+
+  // «Моя музыка»'s two bands, by the same rule: the plan draws one, so the cursor leaves
+  // the band that just went out of sight, and `pageKey` carries the choice to the scroll.
+  // The counts need no request — an artist page fetches per tab, a section arrives with
+  // both of its arrays.
+  function setMyMusicTab(tab) {
+    var next = tab === "playlists" ? "playlists" : "tracks"
+    if (root.myMusicTab === next) return
+    root.myMusicTab = next
+    root.cursor = -1
+  }
+
+  // A band's name with what it holds, when it holds anything: «Плейлисты · 3». A count of
+  // zero is left off rather than printed, because while the section is on its way there is
+  // nothing to count yet and a made-up number is worse than none.
+  function myMusicTabLabel(tab) {
+    var name = root.t(tab === "playlists" ? "Плейлисты" : "Треки")
+    var list = tab === "playlists" ? root.playlists : root.tracks
+    var count = list ? list.length : 0
+    return count > 0 ? name + " · " + count : name
   }
 
   // «Все треки» and the «Ещё» under the list: the track band opens on the popular
@@ -5313,6 +5350,48 @@ Panel {
         }
       }
 
+      // «Моя музыка» holds two bands — the user's playlists and the liked tracks — and
+      // these two cells choose which one the list below shows. They sit in the band rather
+      // than in the scroll for the reason the sections do: the choice is how this list is
+      // drawn, and it stays where it is while the rows move. Equal widths, the way the
+      // artist page's two tabs and the settings' three are drawn.
+      PanelSeparator {
+        Layout.fillWidth: true
+        foreground: root.textColor
+        visible: myMusicBar.visible
+      }
+
+      RowLayout {
+        id: myMusicBar
+        Layout.fillWidth: true
+        spacing: 0
+        // Only on the page's own band, and only when no playlist is open over it: an
+        // opened playlist replaces this list, and a tab for a band that is not there is a
+        // control that does nothing.
+        visible: root.view === "browse" && root.browseSlug === "all"
+          && root.openPlaylist === null
+
+        BarCell {
+          Layout.fillWidth: true
+          Layout.preferredWidth: 0
+          Layout.minimumWidth: 0
+          Layout.preferredHeight: root.barCellHeight
+          text: root.myMusicTabLabel("playlists")
+          selected: root.myMusicTab === "playlists"
+          onClicked: root.setMyMusicTab("playlists")
+        }
+
+        BarCell {
+          Layout.fillWidth: true
+          Layout.preferredWidth: 0
+          Layout.minimumWidth: 0
+          Layout.preferredHeight: root.barCellHeight
+          text: root.myMusicTabLabel("tracks")
+          selected: root.myMusicTab === "tracks"
+          onClicked: root.setMyMusicTab("tracks")
+        }
+      }
+
       // Closing the band, and only when the cells are there to close:
       // the rule above is the player's own edge in every other view.
       PanelSeparator {
@@ -5903,11 +5982,15 @@ Panel {
           // offset of the audio it already holds, and the counts say whether a page is
           // left. A person's playlists arrive whole, so this button never speaks for them.
           // An artist's whole list pages here too: under the last row it belongs to, not
-          // in the header above a band it does not describe.
+          // in the header above a band it does not describe. So does «Моя музыка»'s track
+          // page — but only on the tracks band: pressed on the playlists, it would fetch
+          // rows nobody asked for and that the plan then hides.
           visible: root.browseSlug === "person" ? root.personTracksMore
             : (root.browseSlug === "artist"
               ? (root.artistTab === "tracks" && root.artistAllTracks && root.artistTracksMore)
-              : root.browseNext !== "")
+              : (root.browseSlug === "all" && root.myMusicTab !== "tracks"
+                ? false
+                : root.browseNext !== ""))
           enabled: root.browseSlug === "person"
             ? !session.loading("personTracksMore")
             : (root.browseSlug === "artist"
@@ -8256,6 +8339,15 @@ Panel {
         // and the list wherever both exist.
         if (character === "m") {
           if (root.listPlan().showsPlaylists) root.setPlaylistView(root.gridView ? "list" : "grid")
+          return
+        }
+        // The two bands of «Моя музыка», because a page that needs a mouse to reach half of
+        // what it holds is a page whose keys stop at the first half. Every other page has
+        // one band, so the key does nothing there.
+        if (character === "t") {
+          if (root.view === "browse" && root.browseSlug === "all" && root.openPlaylist === null) {
+            root.setMyMusicTab(root.myMusicTab === "playlists" ? "tracks" : "playlists")
+          }
           return
         }
         if (character === "L") { root.cycleSource(1); return }
