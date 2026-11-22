@@ -1866,6 +1866,14 @@ Panel {
     return ListShape.plan(state)
   }
 
+  // The list models a body draws. The plan answers what the page draws; the card has two
+  // bodies and only one of them is on screen, so the hidden shape gets the empty answer.
+  // Every model inside a `TrackList` reads this helper, which is why no repeater carries
+  // a view guard of its own and the shape that is not showing builds no rows.
+  function listsFor(list) {
+    return ListShape.listsFor(root.listPlan(), list === root.activeList())
+  }
+
   // The list the keyboard walks through: the plan's segments joined, so an index the cursor
   // holds and a row the panel draws are the same array's element.
   function cursorItems() {
@@ -4924,6 +4932,10 @@ Panel {
     // of rows fits the room. Nothing is cut by the bottom edge, and no strip of
     // background is left over to be filled with nothing.
     property bool isTrackList: true
+    // The lists this body draws: the plan's while it is the shape on screen, the empty
+    // answer while it is the hidden one. Every model below reads this, so the hidden body
+    // builds no rows and the visible body is not built twice.
+    readonly property var lists: root.listsFor(view)
     // What sits in the scroll above the grid: the air under the heading. The grid's own
     // `y` is its parent's, not a scroll position, so it is mapped into the content item
     // — the same mapping the cursor reveal does. The sections used to stand here, and
@@ -5678,7 +5690,7 @@ Panel {
 
         Repeater {
           id: queueRepeater
-          model: root.listPlan().lists.queue
+          model: lists.queue
           delegate: TrackRow {
             track: modelData
             // The number of a row is its place in the queue, not its place in what is
@@ -5831,14 +5843,14 @@ Panel {
         // section holds, so the gallery's first row is the list's first row.
         PlaylistGrid {
           id: browseGrid
-          items: root.listPlan().lists.playlists
+          items: lists.playlists
           visible: root.gridView && items.length > 0
           onPicked: function(index) { root.rowAction("playlists", index) }
         }
 
         PlaylistRows {
           id: browsePlaylistRows
-          items: root.gridView ? [] : root.listPlan().lists.playlists
+          items: root.gridView ? [] : lists.playlists
           onPicked: function(index) { root.rowAction("playlists", index) }
         }
 
@@ -5875,14 +5887,14 @@ Panel {
           // the cards that are drawn, so a card that is not drawn must not be in the list.
           PeopleGrid {
             id: friendsGrid
-            items: root.listPlan().friendsGallery ? root.listPlan().lists.friends : []
+            items: root.listPlan().friendsGallery ? lists.friends : []
             visible: items.length > 0
             onPicked: function(index) { root.rowAction("friends", index) }
           }
 
           Repeater {
             id: friendRepeater
-            model: root.listPlan().friendsGallery ? [] : root.listPlan().lists.friends
+            model: root.listPlan().friendsGallery ? [] : lists.friends
             delegate: PersonRow {
               item: modelData
               selected: index === root.cursor
@@ -5898,18 +5910,18 @@ Panel {
 
           PeopleGrid {
             id: recentGrid
-            baseOffset: root.listPlan().lists.friends.length
-            items: root.listPlan().recentGallery ? root.listPlan().lists.people : []
+            baseOffset: lists.friends.length
+            items: root.listPlan().recentGallery ? lists.people : []
             visible: items.length > 0
             onPicked: function(index) { root.rowAction("people", index) }
           }
 
           Repeater {
             id: recentPeopleRepeater
-            model: root.listPlan().recentGallery ? [] : root.listPlan().lists.people
+            model: root.listPlan().recentGallery ? [] : lists.people
             delegate: PersonRow {
               item: modelData
-              selected: (root.listPlan().lists.friends.length + index) === root.cursor
+              selected: (lists.friends.length + index) === root.cursor
               onActivated: root.rowAction("people", index)
             }
           }
@@ -5930,7 +5942,7 @@ Panel {
           id: stationRepeater
           // The cursor walks the filtered list, so the rows must be the same list: a raw
           // model under a filtered cursor plays the station above the one that was clicked.
-          model: root.browseSlug === "radiostations" ? root.listPlan().lists.stations : []
+          model: lists.stations
           delegate: Button {
             width: listColumn.width
             leftAlign: true
@@ -5963,7 +5975,7 @@ Panel {
 
         Repeater {
           id: browseTrackRepeater
-          model: root.browseSlug === "radiostations" ? [] : root.listPlan().lists.tracks
+          model: lists.tracks
           delegate: TrackRow {
             track: modelData
             selected: (root.browseCursorOffset() + index) === root.cursor
@@ -6016,7 +6028,7 @@ Panel {
         // The tracks are a list, not more controls: the line says so.
         Repeater {
           id: playlistTrackRepeater
-          model: root.listPlan().lists.playlistTracks
+          model: lists.playlistTracks
           delegate: TrackRow {
             track: modelData
             position: index + 1
@@ -6056,7 +6068,7 @@ Panel {
 
         Repeater {
           id: historyRepeater
-          model: root.listPlan().lists.history
+          model: lists.history
           delegate: SuggestionRow {
             text: modelData ? String(modelData) : ""
             selected: index === root.cursor
@@ -6072,14 +6084,14 @@ Panel {
 
         PlaylistGrid {
           id: searchGrid
-          items: root.searchMode === "playlists" ? root.listPlan().lists.foundPlaylists : []
+          items: lists.foundPlaylists
           visible: root.gridView && items.length > 0
           onPicked: function(index) { root.rowAction("foundPlaylists", index) }
         }
 
         PlaylistRows {
           id: searchPlaylistRows
-          items: (root.searchMode === "playlists" && !root.gridView) ? root.listPlan().lists.foundPlaylists : []
+          items: root.gridView ? [] : lists.foundPlaylists
           onPicked: function(index) { root.rowAction("foundPlaylists", index) }
         }
 
@@ -6087,16 +6099,14 @@ Panel {
         // same reason - choosing an artist is picking a portrait.
         PeopleGrid {
           id: searchArtistGrid
-          items: (root.searchMode === "artists" && root.gridView)
-            ? root.listPlan().lists.artists : []
+          items: root.gridView ? lists.artists : []
           visible: items.length > 0
           onPicked: function(index) { root.rowAction("artists", index) }
         }
 
         Repeater {
           id: searchArtistRows
-          model: (root.searchMode === "artists" && !root.gridView)
-            ? root.listPlan().lists.artists : []
+          model: root.gridView ? [] : lists.artists
           delegate: PersonRow {
             item: modelData
             selected: index === root.cursor
@@ -6118,7 +6128,7 @@ Panel {
 
         Repeater {
           id: suggestionRepeater
-          model: root.listPlan().lists.suggestions
+          model: lists.suggestions
           delegate: SuggestionRow {
             text: modelData ? String(modelData) : ""
             selected: index === root.cursor
@@ -6128,7 +6138,7 @@ Panel {
 
         Repeater {
           id: resultRepeater
-          model: root.listPlan().lists.results
+          model: lists.results
           delegate: TrackRow {
             track: modelData
             selected: index === root.cursor

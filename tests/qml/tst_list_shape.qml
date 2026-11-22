@@ -197,20 +197,20 @@ TestCase {
   // was opened from.
   function test_a_person_and_an_open_playlist_are_one_band_each() {
     var person = ListShape.plan({ view: "browse", browseSlug: "person", gridView: true,
-      columns: 3, personPlaylists: cards(5) })
+      columns: 3, playlists: cards(5) })
     compare(kinds(person), "playlists")
     compare(columnsOf(person), "3")
     compare(person.gallery, true)
     compare(person.showsPlaylists, true)
 
     var withAudio = ListShape.plan({ view: "browse", browseSlug: "person", gridView: true,
-      columns: 3, personPlaylists: cards(5), tracks: tracks(4, "p") })
+      columns: 3, playlists: cards(5), tracks: tracks(4, "p") })
     compare(kinds(withAudio), "playlists,tracks")
     compare(columnsOf(withAudio), "3,1")
     compare(withAudio.items.length, 9)
     compare(ListShape.offsetOf(withAudio, "tracks"), 5)
     compare(ListShape.slotAt(withAudio, 5).kind, "tracks")
-    compare(ListShape.slotAt(withAudio, 4).list, "personPlaylists")
+    compare(ListShape.slotAt(withAudio, 4).list, "playlists")
 
     var opened = ListShape.plan({ view: "search", searchMode: "playlists", gridView: true,
       columns: 3, openPlaylist: { id: 7 }, playlistTracks: tracks(6),
@@ -361,6 +361,150 @@ TestCase {
     compare(settings.items.length, 0)
   }
 
+  // Every list is emptied while the view, page or band on screen does not draw it. The
+  // table fills every array on purpose: a list that survives a view it does not belong to
+  // is exactly what the rule is about, and a state with only the right array set would
+  // hide it. `raw` is asserted separately, because "not drawn" is not "gone".
+  function filledState(extra) {
+    var state = {
+      view: "queue", columns: 3,
+      queue: tracks(2, "q"), playlistTracks: tracks(2, "p"), playlists: cards(2),
+      tracks: tracks(2, "t"), friends: cards(2),
+      people: cards(2), stations: [{ id: 1, name: "Джаз" }], foundPlaylists: cards(2),
+      artists: cards(2), results: tracks(2, "r"), history: ["kino"],
+      suggestions: ["kino mix"], queryLength: 3, searchState: "results"
+    }
+    for (var key in extra) state[key] = extra[key]
+    return state
+  }
+
+  function listNames(lists) {
+    var out = []
+    for (var name in lists) {
+      if (lists[name].length > 0) out.push(name)
+    }
+    out.sort()
+    return out.join(",")
+  }
+
+  function drawnLists(planned) {
+    return listNames(planned.lists)
+  }
+
+  function test_the_view_page_or_band_decides_which_lists_are_drawn() {
+    var cases = [
+      { state: {}, lists: "queue" },
+      { state: { view: "browse", browseSlug: "main" }, lists: "playlists,tracks" },
+      { state: { view: "browse", browseSlug: "person" }, lists: "playlists,tracks" },
+      { state: { view: "browse", browseSlug: "friends" }, lists: "friends,people" },
+      { state: { view: "browse", browseSlug: "radiostations" }, lists: "stations" },
+      { state: { view: "browse", browseSlug: "artist", artistTab: "albums" }, lists: "playlists" },
+      { state: { view: "browse", browseSlug: "artist", artistTab: "tracks" }, lists: "tracks" },
+      { state: { view: "browse", browseSlug: "all", myMusicTab: "playlists" }, lists: "playlists" },
+      { state: { view: "browse", browseSlug: "all", myMusicTab: "tracks" }, lists: "tracks" },
+      { state: { view: "search", searchMode: "playlists" }, lists: "foundPlaylists" },
+      { state: { view: "search", searchMode: "artists", artistScope: "artists" }, lists: "artists" },
+      { state: { view: "search", searchMode: "artists", artistScope: "tracks" }, lists: "results" },
+      { state: { view: "search" }, lists: "results" },
+      { state: { view: "search", searchState: "typing", queryLength: 1 }, lists: "history" },
+      { state: { view: "search", results: [] }, lists: "suggestions" },
+      { state: { view: "settings" }, lists: "" }
+    ]
+    for (var i = 0; i < cases.length; i++) {
+      compare(drawnLists(ListShape.plan(filledState(cases[i].state))), cases[i].lists)
+    }
+  }
+
+  // An off-screen list is empty in `lists` and untouched in `raw`: the session still has
+  // every track, so returning to the view needs no request and the order is the same one.
+  function test_an_off_screen_list_keeps_its_raw_array() {
+    var queue = tracks(100, "q")
+    var planned = ListShape.plan(sectionState({ queue: queue }))
+    compare(planned.lists.queue.length, 0)
+    compare(planned.raw.queue.length, 100)
+    compare(planned.raw.queue[0].key, "q0")
+    compare(planned.raw.queue[99].key, "q99")
+
+    var away = ListShape.plan({ view: "search", searchState: "typing", queryLength: 0,
+      queue: queue, history: ["kino"] })
+    compare(away.lists.queue.length, 0)
+    compare(away.raw.queue.length, 100)
+
+    var back = ListShape.plan({ view: "queue", queue: queue })
+    compare(back.lists.queue.length, 100)
+    compare(back.lists.queue[0].key, "q0")
+    compare(back.lists.queue[99].key, "q99")
+  }
+
+  // The filter is reapplied to the same raw array on the way back, not left behind with
+  // the view that had it: the restored list is the one the reader left.
+  function test_returning_to_a_view_restores_its_filter() {
+    var queue = [track("b"), track("a"), track("c")]
+    var away = ListShape.plan({ view: "browse", browseSlug: "main", queue: queue,
+      filter: "Track a" })
+    compare(away.lists.queue.length, 0)
+
+    var back = ListShape.plan({ view: "queue", queue: queue, filter: "Track a" })
+    compare(back.lists.queue.length, 1)
+    compare(back.lists.queue[0].key, "a")
+
+    var whole = ListShape.plan({ view: "queue", queue: queue })
+    compare(whole.lists.queue.length, 3)
+    compare(whole.lists.queue[0].key, "b")
+    compare(whole.lists.queue[2].key, "c")
+  }
+
+  // A playlist opened over Search or Browse is the list on screen, whatever view it was
+  // opened from. The view's own lists are emptied, so a stale result or section cannot
+  // stand under the drawn tracks.
+  function test_an_open_playlist_draws_over_any_view() {
+    var state = filledState({
+      view: "search", searchMode: "playlists", openPlaylist: { id: 9 },
+      playlistTracks: tracks(5, "p")
+    })
+    var planned = ListShape.plan(state)
+    compare(kinds(planned), "playlistTracks")
+    compare(planned.items.length, 5)
+    compare(drawnLists(planned), "playlistTracks")
+    compare(planned.raw.foundPlaylists.length, 2)
+    compare(planned.raw.playlistTracks.length, 5)
+
+    var fromBrowse = ListShape.plan(filledState({ view: "browse", browseSlug: "main",
+      openPlaylist: { id: 9 }, playlistTracks: tracks(2, "p") }))
+    compare(kinds(fromBrowse), "playlistTracks")
+    compare(drawnLists(fromBrowse), "playlistTracks")
+  }
+
+  // A filter or a sort belongs to the list it was applied to. Asking the plan for another
+  // view must not rewrite the off-screen array: its length and order stay the session's.
+  function test_a_filter_does_not_rewrite_an_off_screen_list() {
+    var queue = [track("c"), track("a"), track("b")]
+    var planned = ListShape.plan({ view: "browse", browseSlug: "main",
+      queue: queue, filter: "a" })
+    compare(planned.lists.queue.length, 0)
+    compare(planned.raw.queue.length, 3)
+    compare(planned.raw.queue[0].key, "c")
+    compare(planned.raw.queue[1].key, "a")
+    compare(planned.raw.queue[2].key, "b")
+  }
+
+  // The card has two bodies and one plan. The body that is not the popup's shape gets
+  // every list empty, so its repeaters build nothing; the shape on screen gets the plan's
+  // lists unchanged. One helper answers both, so no repeater guards its own model.
+  function test_only_the_shape_on_screen_draws_a_list() {
+    var planned = ListShape.plan(filledState({ view: "queue" }))
+    var hidden = ListShape.listsFor(planned, false)
+    compare(listNames(hidden), "")
+    compare(hidden.queue.length, 0)
+    compare(hidden.results.length, 0)
+
+    var shown = ListShape.listsFor(planned, true)
+    compare(listNames(shown), "queue")
+    compare(shown.queue.length, 2)
+    compare(shown.queue[0].key, "q0")
+    compare(planned.raw.queue.length, 2)
+  }
+
   // -- the invariants every page keeps -----------------------------------------
 
   // The property that makes the two halves unable to disagree: `items` is exactly the
@@ -372,7 +516,7 @@ TestCase {
       sectionState({ filter: "Track" }),
       { view: "queue", queue: tracks(4, "q") },
       { view: "browse", browseSlug: "friends", friends: cards(2), people: cards(3), gridView: true, columns: 4 },
-      { view: "browse", browseSlug: "person", personPlaylists: cards(2), tracks: tracks(3, "p"), gridView: true, columns: 3 },
+      { view: "browse", browseSlug: "person", playlists: cards(2), tracks: tracks(3, "p"), gridView: true, columns: 3 },
       { view: "browse", browseSlug: "radiostations", stations: [{ id: 1, name: "Джаз" }] },
       { view: "search", searchState: "results", queryLength: 3, results: tracks(3, "r") },
       { view: "search", searchMode: "artists", searchState: "results", queryLength: 3,
@@ -455,8 +599,8 @@ TestCase {
       { state: { view: "queue", queue: tracks(2) }, lists: "queue" },
       { state: { view: "browse", browseSlug: "main", playlists: cards(2), tracks: tracks(2) },
         lists: "playlists,tracks" },
-      { state: { view: "browse", browseSlug: "person", personPlaylists: cards(2) },
-        lists: "personPlaylists" },
+      { state: { view: "browse", browseSlug: "person", playlists: cards(2) },
+        lists: "playlists" },
       { state: { view: "browse", browseSlug: "friends", friends: cards(1), people: cards(2) },
         lists: "friends,people" },
       { state: { view: "browse", browseSlug: "radiostations", stations: [{ id: 1, name: "Jazz" }] },

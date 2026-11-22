@@ -73,14 +73,15 @@ QtObject {
   property var _arrivals: ({})
 
   // The lists, under the names `plan()` reads. `history` and `people` arrive with the
-  // status, so the panel adds them to what this returns.
+  // status, so the panel adds them to what this returns. A person's page draws the
+  // `playlists` band (the name the card's grid reads); `personPlaylists` is kept for the
+  // header count and its own arrival ranks, not handed to the plan.
   function state() {
     return {
       queue: session.queue,
       tracks: session.tracks,
       playlists: session.playlists,
       playlistTracks: session.playlistTracks,
-      personPlaylists: session.personPlaylists,
       friends: session.friends,
       stations: session.stations,
       foundPlaylists: session.foundPlaylists,

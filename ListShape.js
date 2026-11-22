@@ -104,6 +104,16 @@ function array(value) {
   return value && value.length !== undefined ? value : []
 }
 
+// What the plan draws is decided by the view, page or band, never by a repeater: every
+// list the drawn segments do not name is empty here. `raw` is not touched, so a list that
+// leaves the screen keeps its order and a return to it needs no request.
+function keepOnly(lists, names) {
+  for (var name in lists) {
+    if (names.indexOf(name) < 0) lists[name] = []
+  }
+  return lists
+}
+
 // One segment, appended to `segments` and to `items` together, so the two can never drift.
 // `scope` says where the segment came from — a section's playlists and a search's playlists
 // are the same kind of thing drawn by two different repeaters, and a segment that named only
@@ -163,7 +173,6 @@ function plan(state) {
     playlistTracks: array(s.playlistTracks),
     playlists: array(s.playlists),
     tracks: array(s.tracks),
-    personPlaylists: array(s.personPlaylists),
     friends: array(s.friends),
     people: array(s.people),
     stations: array(s.stations),
@@ -181,7 +190,6 @@ function plan(state) {
     playlistTracks: filtered(raw.playlistTracks, filter),
     playlists: filtered(raw.playlists, filter),
     tracks: filtered(raw.tracks, filter),
-    personPlaylists: filtered(raw.personPlaylists, filter),
     friends: filtered(raw.friends, filter),
     people: filtered(raw.people, filter),
     stations: filtered(raw.stations, filter),
@@ -212,13 +220,6 @@ function plan(state) {
     : (resultsShowing
       ? (raw.results.length === 0 ? raw.suggestions : [])
       : raw.suggestions)
-  // The artist cards belong to the other scope, and that scope is not a band this page
-  // shows: emptied here, the way an artist page empties the tab that just left, so the
-  // wall's own switch and the delegates read one answer.
-  if (view === "search" && searchMode === "artists" && artistScope !== "artists") {
-    lists.artists = []
-  }
-
   // One wall of friends and one wall of recently opened people are two bands with two
   // answers, because a section of one is a row: each counts its own cards.
   var friendsGallery = gridView && lists.friends.length > 1
@@ -236,11 +237,11 @@ function plan(state) {
     append(built, "queue", "queue", KINDS.queue, lists.queue, 1)
   } else if (view === "browse") {
     if (browseSlug === "person") {
-      append(built, "person", "personPlaylists", KINDS.playlists, lists.personPlaylists, columns)
+      append(built, "person", "playlists", KINDS.playlists, lists.playlists, columns)
       // A person's own audio stands under their playlists the way a section's tracks
       // stand under its playlists: cards first, rows after them, one cursor order.
       append(built, "person", "tracks", KINDS.tracks, lists.tracks, 1)
-      gallery = gridView && lists.personPlaylists.length > 0
+      gallery = gridView && lists.playlists.length > 0
     } else if (browseSlug === "friends") {
       append(built, "friends", "friends", KINDS.friends, lists.friends, friendsGallery ? columns : 1)
       append(built, "friends", "people", KINDS.people, lists.people, recentGallery ? columns : 1)
@@ -248,31 +249,23 @@ function plan(state) {
     } else if (browseSlug === "radiostations") {
       append(built, "radio", "stations", KINDS.stations, lists.stations, 1)
     } else if (browseSlug === "artist") {
-      // An artist's page shows one of two bands, and the tab decides which. The band that
-      // is not on screen is emptied here rather than hidden in the widget: the delegates,
-      // the cursor and the counts read `lists`, so an empty band is the only answer that
-      // cannot disagree with itself. The raw arrays keep both, so switching tabs needs no
-      // request.
+      // An artist's page shows one of two bands, and the tab decided which one `lists`
+      // kept above: the delegates, the cursor and the counts read that answer. The raw
+      // arrays keep both, so switching tabs needs no request.
       if (artistTab === "albums") {
-        lists.tracks = []
         append(built, "section", "playlists", KINDS.playlists, lists.playlists, columns)
         gallery = gridView && lists.playlists.length > 0
       } else {
-        lists.playlists = []
         append(built, "section", "tracks", KINDS.tracks, lists.tracks, 1)
       }
     } else if (browseSlug === "all") {
-      // «Моя музыка» is the same choice as an artist page's: two bands, one on screen, and
-      // the one that is off is emptied here rather than hidden in the widget — the
-      // delegates, the cursor and the counts read `lists`, and an empty band is the only
-      // answer that cannot disagree with itself. Nothing is fetched on a switch: both
-      // arrays arrive with the section.
+      // «Моя музыка» is the same choice as an artist page's: two bands, and the tab on
+      // screen chose which one `lists` kept. Nothing is fetched on a switch: both arrays
+      // arrive with the section.
       if (myMusicTab === "playlists") {
-        lists.tracks = []
         append(built, "section", "playlists", KINDS.playlists, lists.playlists, columns)
         gallery = gridView && lists.playlists.length > 0
       } else {
-        lists.playlists = []
         append(built, "section", "tracks", KINDS.tracks, lists.tracks, 1)
       }
     } else {
@@ -326,6 +319,22 @@ function plan(state) {
     }
   }
 
+  // What the card draws is exactly what the segments hold: a list no segment names is
+  // off screen, so it is empty here while `raw` keeps it whole. Deriving the answer from
+  // the segments is what stops this rule and the segment build from disagreeing about a
+  // page — the bug that would empty a person's playlists while their segment still drew
+  // them, or the other way round.
+  var drawn = []
+  for (var i = 0; i < built.segments.length; i++) {
+    var drawnName = built.segments[i].list
+    if (drawn.indexOf(drawnName) < 0) drawn.push(drawnName)
+  }
+  keepOnly(lists, drawn)
+  // The two walls are read after the trim as well: a page that does not draw people
+  // must not answer with a gallery switch for them.
+  friendsGallery = gridView && lists.friends.length > 1
+  recentGallery = gridView && lists.people.length > 1
+
   return {
     lists: lists,
     // The same twelve arrays before the filter, which is what a command positions into.
@@ -342,6 +351,19 @@ function plan(state) {
     recentGallery: recentGallery,
     extended: extended
   }
+}
+
+// The lists a card body draws when it is not the shape on screen: the same names
+// `plan()` files, every one empty. The card has two bodies and only one of them is on
+// screen; the hidden one reads this shared answer, so it builds no rows at all. The
+// arrays are never written — a model that wants content reads the plan instead.
+var EMPTY_LISTS = plan({}).lists
+
+// The lists a body draws. `drawn` says whether this body is the shape on screen; the
+// hidden one gets the empty answer so its repeaters create no delegates at all. The
+// card asks this once per body, which is why no repeater carries a view guard.
+function listsFor(planned, drawn) {
+  return drawn && planned ? planned.lists : EMPTY_LISTS
 }
 
 // Which segment an index falls in, and where it falls inside it. This is the half of the
@@ -383,7 +405,6 @@ var INTENTS = {
   tracks: "playSection",
   results: "playSearch",
   playlists: "openPlaylist",
-  personPlaylists: "openPlaylist",
   foundPlaylists: "openPlaylist",
   friends: "openPerson",
   people: "openPerson",

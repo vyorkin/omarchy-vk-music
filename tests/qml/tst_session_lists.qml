@@ -82,15 +82,17 @@ TestCase {
   function test_state_speaks_the_plans_names() {
     var lists = loaded()
     var state = lists.state()
-    var expected = ["queue", "tracks", "playlists", "playlistTracks", "personPlaylists",
+    var expected = ["queue", "tracks", "playlists", "playlistTracks",
       "friends", "stations", "foundPlaylists", "results", "suggestions"]
     for (var i = 0; i < expected.length; i++) {
       verify(state[expected[i]] !== undefined, expected[i])
     }
     compare(state.queue.length, 2)
     compare(state.tracks.length, 1)
-    // `sources` is the bar's chips, not a list the plan draws.
+    // `sources` is the bar's chips, not a list the plan draws. A person's page draws the
+    // `playlists` band, so `personPlaylists` is storage for the header, not a plan name.
     compare(state.sources, undefined)
+    compare(state.personPlaylists, undefined)
   }
 
   // A heart is one fact about every list holding a copy of the track — not about the four

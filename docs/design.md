@@ -690,7 +690,9 @@ a component of its own (`TopRow`, `SignInBlock`, `PlayerColumn`, `SearchFieldRow
 `LoadingLine`, `TrackList`, `HintRow`). A layout cannot move a block into
 another column; a component can be instantiated in either one. Only the visible
 shape takes keys, so `activeList()`, `activeField()` and `activeBody()` pick the
-one in use.
+one in use. The hidden shape also builds no rows: `ListShape.listsFor()` gives it
+every list empty, so its `TrackList`'s repeaters create no delegates, and the
+visible shape's rows are not built a second time.
 
 ### Where the popup is allowed to take the hand
 
@@ -1749,8 +1751,11 @@ section because `rowAt` returned a track row for a playlist index.
 state (the view, the browse slug, an open playlist, the search mode and the gallery
 preference) plus the lists themselves. It returns:
 
-* `lists` — every list, filtered. The rows and the cursor read the same arrays here,
-  which is the property that makes them unable to disagree;
+* `lists` — every list the view, page or band draws, filtered. A list that is off
+  screen is empty here while `raw` keeps its array, so no repeater builds rows for a
+  list the reader cannot see and returning to it needs no request. The rows and the
+  cursor read the same arrays here, which is the property that makes them unable to
+  disagree;
 * `segments` — the walls and columns in cursor order, each with the kind of thing it
   holds, where it starts and how many stand across it. `GalleryWalk.step` walks
   these; a segment of one column is the rows under a wall;
