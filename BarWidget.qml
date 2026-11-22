@@ -44,6 +44,12 @@ Panel {
 
   property var status: ({})
 
+  // A signed-in status is the moment the plugin can warm the catalog's sections, so the
+  // first Browse open does not wait on them. The warm-up itself is under `warmSources`.
+  onStatusChanged: {
+    if (root.status && root.status.authenticated === true) root.warmSources()
+  }
+
   // What the session fetched lives in one module; these names are its interface, and the
   // widget reads them in a hundred places. Everything that maintains them — the reset, the
   // like, the stale-answer rule, the loading flags — is the store's, not this file's.
@@ -123,6 +129,9 @@ Panel {
   // showed root.t("Пусто") and root.t("Очередь пуста") while the answer was still on its way.
   property double sourcesLoadedAt: 0
   property double sourcesAskedAt: 0
+  // Whether this plugin lifetime has already warmed the sections. The flag records the
+  // attempt, not the answer: a failed warm-up stays silent and the open path still asks.
+  property bool _sectionsWarmed: false
   // How many times this session has asked again for a section that came back empty: a
   // section can be empty on purpose, and a panel that keeps asking is a panel that keeps
   // flickering.
@@ -833,7 +842,17 @@ Panel {
     })
   }
 
-  function loadSources() {
+  // The first Browse open after login should not wait on the sections: ask for them once
+  // per plugin lifetime, as soon as the status says there is an account, and let the
+  // ten-minute cache under `loadSources` serve the open. Called from `onStatusChanged`.
+  // The warm-up is silent: a failure leaves the error line alone.
+  function warmSources() {
+    if (root._sectionsWarmed) return
+    root._sectionsWarmed = true
+    root.loadSources(true)
+  }
+
+  function loadSources(silent) {
     // Opening the popup used to ask for these every time, and each answer queued behind the
     // others; they barely change, so one answer serves ten minutes.
     //
@@ -848,15 +867,10 @@ Panel {
     if (root.sources.length > 0 && now - session.sourcesLoadedAt < 600000) return
     if (now - session.sourcesAskedAt < 4000) return
     session.sourcesAskedAt = now
-    api.request("sections", {}, function(answer) {
+    api.request("sections", silent === true ? { silent: true } : {}, function(answer) {
       if (answer && answer.ok) {
         root.sources = answer.data || []
         session.sourcesLoadedAt = Date.now()
-      }
-    })
-    api.request("home", {}, function(answer) {
-      if (answer && answer.ok) {
-        root.queue = root.queue
       }
     })
   }

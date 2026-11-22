@@ -36,14 +36,19 @@ QtObject {
   readonly property bool busy: client.inflight > 0
 
   // One command. `params` is the command's own payload (`query`, `index`, `keys`, …) plus
-  // `quiet` as a request option; `onDone` receives the parsed answer, or null when the
-  // service answered with something that is not JSON.
+  // the request options `quiet` and `silent`; `onDone` receives the parsed answer, or null
+  // when the service answered with something that is not JSON.
+  //
+  // `quiet` is about the busy count, `silent` about the error line: an unattended request
+  // (the sections warmed at plugin load) must not light the bar when it fails, because the
+  // reader did not ask for it. Neither option reaches the daemon.
   function request(command, params, onDone) {
     var payload = { command: String(command) }
     var settings = params || {}
     var quiet = settings.quiet === true
+    var silent = settings.silent === true
     for (var name in settings) {
-      if (name === "quiet") continue
+      if (name === "quiet" || name === "silent") continue
       payload[name] = settings[name]
     }
     var exchange = client.transport.createObject(client, {
@@ -52,6 +57,7 @@ QtObject {
       command: [client.cli, "request"],
       payload: JSON.stringify(payload),
       quiet: quiet,
+      silent: silent,
       onDone: onDone
     })
     if (!exchange) return
@@ -72,6 +78,7 @@ QtObject {
       property string payload: ""
       property var onDone
       property bool quiet: false
+      property bool silent: false
       stdinEnabled: true
       stderr: StdioCollector { id: complaint; waitForEnd: true }
       stdout: StdioCollector {
@@ -97,7 +104,10 @@ QtObject {
       answer = null
     }
     if (exchange.quiet !== true) client.inflight = Math.max(0, client.inflight - 1)
-    if (answer && answer.ok) {
+    if (exchange.silent === true) {
+      // An unattended request says nothing about the error line, in either direction:
+      // whatever the last attended command said is still the truth of the line.
+    } else if (answer && answer.ok) {
       client.errorText = ""
     } else if (answer && answer.error) {
       // The envelope's code and params, never its sentence: the sentence belongs to the
