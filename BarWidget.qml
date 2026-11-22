@@ -1929,10 +1929,12 @@ Panel {
   // changes this table and nothing else.
   function repeaterForSlot(planned, slot) {
     var list = root.activeList()
-    if (slot.scope === "playlist") return list.playlistTrackRepeater
-    if (slot.scope === "queue") return list.queueRepeater
+    // The four track bands are the scroller's own model, not a repeater: they have no
+    // delegate to hand out, and the reveal finds them by index instead.
+    if (root.virtualTrack(slot.kind)) return null
+    if (slot.scope === "playlist") return null
+    if (slot.scope === "queue") return null
     if (slot.scope === "person") {
-      if (slot.kind === "tracks") return list.browseTrackRepeater
       return root.gridView ? list.browseGrid : list.browsePlaylistRows
     }
     if (slot.scope === "friends") {
@@ -1943,17 +1945,22 @@ Panel {
     }
     if (slot.scope === "radio") return list.stationRepeater
     if (slot.scope === "section") {
-      if (slot.kind === "tracks") return list.browseTrackRepeater
       return root.gridView ? list.browseGrid : list.browsePlaylistRows
     }
     if (slot.scope === "search") {
       if (slot.kind === "playlists") return root.gridView ? list.searchGrid : list.searchPlaylistRows
       if (slot.kind === "artists") return root.gridView ? list.searchArtistGrid : list.searchArtistRows
-      if (slot.kind === "results") return list.resultRepeater
       if (slot.kind === "history") return list.historyRepeater
       return list.suggestionRepeater
     }
     return null
+  }
+
+  // The four bands a page hands to the scroller as its model. They are the only rows
+  // the card does not build whole, so they are also the only ones whose reveal is an
+  // index into that model.
+  function virtualTrack(kind) {
+    return ListShape.isTrackKind(kind)
   }
 
   // The delegate item the cursor sits on, so the list can be scrolled to it: rows
@@ -1971,35 +1978,47 @@ Panel {
     return repeater ? repeater.itemAt(slot.index) : null
   }
 
-  function cursorRow() {
-    return root.rowAt(root.cursor)
-  }
-
   // The first row of the cursor's list that is inside the viewport: where the eye
   // already is, and the honest place to start from.
   function firstVisibleIndex() {
     var list = root.activeList()
-    var count = root.cursorCount()
-    for (var i = 0; i < count; i++) {
+    // The page's rows are the scroller's model; the bands above them are the header and
+    // still have a delegate each. Walk the header first, then let the model answer: the
+    // first visible row of a thousand-track band is arithmetic, not a scan.
+    var track = ListShape.trackSegment(root.listPlan())
+    var start = track ? track.offset : -1
+    var end = start >= 0 ? start : root.cursorCount()
+    for (var i = 0; i < end; i++) {
       var row = root.rowAt(i)
       if (row && row.mapToItem(list.contentRoot, 0, 0).y + row.height > list.contentY) return i
     }
-    return 0
+    return start >= 0 ? start + list.firstVisibleTrack() : 0
+  }
+
+  // The row of a model index, in the scroller that owns that model, or nothing when the
+  // row is a header band drawn by its own repeater.
+  function revealIndex(index) {
+    var planned = root.listPlan()
+    var slot = ListShape.slotAt(planned, index)
+    if (slot === null) return
+    if (root.virtualTrack(slot.kind)) {
+      root.activeList().revealTrack(slot.index)
+      return
+    }
+    root.revealRow(root.rowAt(index))
   }
 
   function revealCursor() {
-    var row = root.cursorRow()
-    if (!row) return
-    root.revealRow(row)
+    root.revealIndex(root.cursor)
     // Again once the layout has settled: the list's height is still changing while
     // the panel opens, and a scroll computed against the old height lands short.
     Qt.callLater(root.revealCursor)
   }
 
-  // The queue is drawn whole, so the row that is playing can be far below the fold:
-  // the list is scrolled to it when the queue comes into view and when the track
-  // changes, and never between those, because a list that moves while it is being read
-  // is exactly what drawing it whole was meant to stop.
+  // The queue that is playing can be far below the fold: the list is scrolled to it when
+  // the queue comes into view and when the track changes, and never between those,
+  // because a list that moves while it is being read is exactly what a list that drew
+  // every row was meant to avoid.
   function revealPlayingRow() {
     if (root.view !== "queue" || !root.hasTrack) return
     var key = root.trackValue("key", "")
@@ -2007,9 +2026,8 @@ Panel {
     var items = root.cursorItems()
     for (var i = 0; i < items.length; i++) {
       if (items[i] && String(items[i].key) === key) {
-        var row = root.rowAt(i)
-        root.revealRow(row)
-        Qt.callLater(root.revealRow, row)
+        root.revealIndex(i)
+        Qt.callLater(root.revealIndex, i)
         return
       }
     }
@@ -2024,26 +2042,27 @@ Panel {
     // in; using the raw y landed the reveal short by every block above the row, which
     // is why the last card of a gallery kept its caption below the bottom edge.
     var top = row.mapToItem(list.contentRoot, 0, 0).y
-    // The mapped position is clamped into the scrollable range: unclamped, the last
-    // row of a long list asked for a scroll past the end, the flickable refused it,
-    // and the row stayed half under the bottom edge.
-    var maxScroll = Math.max(0, list.contentHeight - list.viewHeight)
     if (root.listPlan().gallery) {
       // A gallery puts the cursor's row on the row boundary the viewport ends with,
       // not at the nearest edge of it: the viewport is a whole number of rows tall,
       // and the content above the grid is what those rows start after. Scrolling just
       // far enough instead cut the row above the cursor in half, which is what the
       // gallery kept showing.
-      var rowsAbove = root.activeList() ? root.activeList().galleryRowOffset : 0
-      list.contentY = Math.max(0, Math.min(maxScroll, top - rowsAbove))
+      var rowsAbove = list.galleryRowOffset
+      list.scrollTo(top - rowsAbove)
       return
     }
     var margin = Style.space(6)
     var bottom = top + row.height
+    // The reveal compares what the eye sees: `contentY` counts from the first row, and
+    // the header above it is at negative y, so the row's screen y is its mapped
+    // position minus the scroll.
+    var screenTop = top - list.contentY
     var target = list.contentY
-    if (top - margin < target) target = top - margin
-    else if (bottom + margin > target + list.viewHeight) target = bottom + margin - list.viewHeight
-    list.contentY = Math.max(0, Math.min(maxScroll, target))
+    if (screenTop < margin) target = top - margin
+    else if (screenTop + row.height + margin > list.viewHeight)
+      target = bottom + margin - list.viewHeight
+    list.scrollTo(target)
   }
 
   // What a row means, as a table: the plan names the list and the intent, and each entry
@@ -4885,24 +4904,29 @@ Panel {
 
     // The keyboard cursor scrolls the selected row into view, and a component
     // cannot see the ids of the file around it: the delegates are handed out here.
-    property alias queueRepeater: queueRepeater
-    property alias stationRepeater: stationRepeater
-    property alias browseTrackRepeater: browseTrackRepeater
-    property alias suggestionRepeater: suggestionRepeater
-    property alias resultRepeater: resultRepeater
-    property alias historyRepeater: historyRepeater
-    property alias browseGrid: browseGrid
-    property alias friendsGrid: friendsGrid
-    property alias recentGrid: recentGrid
+    // The four track bands are not handed out: their rows are the scroller's own
+    // delegates, and the reveal reaches them by index.
+    // These ids live in the scroller's header now, so they are reached through it rather
+    // than through an alias, which the header's own scope does not let a component see.
+    readonly property var stationRepeater: headerPart("stations")
+    readonly property var suggestionRepeater: headerPart("suggestions")
+    readonly property var historyRepeater: headerPart("history")
+    readonly property var browseGrid: headerPart("browseGrid")
+    readonly property var friendsGrid: headerPart("friendsGrid")
+    readonly property var recentGrid: headerPart("recentGrid")
     // The rows as well as the cards: with the gallery off the people are rows, and
-    // the cursor needs to find them by index. Without these two the lookup threw and
-    // took the whole movement with it.
-    property alias friendRepeater: friendRepeater
-    property alias recentPeopleRepeater: recentPeopleRepeater
-    property alias browsePlaylistRows: browsePlaylistRows
-    property alias playlistTrackRepeater: playlistTrackRepeater
-    property alias searchGrid: searchGrid
-    property alias searchPlaylistRows: searchPlaylistRows
+    // the cursor needs to find them by index.
+    readonly property var friendRepeater: headerPart("friends")
+    readonly property var recentPeopleRepeater: headerPart("recentPeople")
+    readonly property var browsePlaylistRows: headerPart("browsePlaylistRows")
+    readonly property var searchGrid: headerPart("searchGrid")
+    readonly property var searchPlaylistRows: headerPart("searchPlaylistRows")
+    readonly property var searchArtistGrid: headerPart("searchArtistGrid")
+    readonly property var searchArtistRows: headerPart("searchArtistRows")
+
+    function headerPart(name) {
+      return scroller.headerItem ? scroller.headerItem.parts[name] : null
+    }
     // The two fields of the status bar, which is this component's own bottom edge: the
     // panel reaches them through `activeList()`, because two bodies exist and only the
     // visible one may hold the keyboard.
@@ -4936,6 +4960,55 @@ Panel {
     // answer while it is the hidden one. Every model below reads this, so the hidden body
     // builds no rows and the visible body is not built twice.
     readonly property var lists: root.listsFor(view)
+    // The one band of rows a page hands to the scroller: the queue on the queue page,
+    // the catalog page's tracks, an open playlist's tracks, or the search's results.
+    // Everything else on the page is the scroller's header, so the list builds only the
+    // rows the viewport shows and a thousand-track queue costs the same as ten.
+    readonly property string trackKind: ListShape.trackKindOf(root.listPlan())
+    readonly property var trackModel: view.trackKind === ""
+      ? []
+      : (view.lists[view.trackKind] || [])
+    // The first row the viewport shows, asked of the list itself: the header's height and
+    // the row's pitch are the list's business, and a partially visible top row is still
+    // visible. Arithmetic skipped that row and had to know the gap between header and rows.
+    function firstVisibleTrack() {
+      if (scroller.count <= 0 || scroller.contentY <= 0) return 0
+      var index = scroller.indexAt(0, scroller.contentY + 0.5)
+      // A viewport that starts inside the gap between two rows has no item at that
+      // point, and the row that is actually visible is the one after the gap.
+      if (index < 0) index = scroller.indexAt(0, scroller.contentY + scroller.spacing + 0.5)
+      return index < 0 ? 0 : index
+    }
+    // Where the list can scroll: contentY is the header's top at its lowest, negative
+    // by the header's height — the view lays the header out above the content origin,
+    // so the top of the page is `-headerHeight`, not zero. Clamping at zero scrolled
+    // the header off on the first wheel notch upwards; Qt's own bounds stop at that
+    // negative end, and so does this.
+    function scrollTo(y) {
+      // `originY` is the header's top — negative by the header's height; the content
+      // ends a viewport above `contentHeight`, measured from that same origin, so the
+      // bottom is `contentHeight - height + originY`, and anything past it is a strip of
+      // background under the last row.
+      var minY = scroller.originY
+      var maxY = Math.max(minY, scroller.contentHeight - scroller.height + minY)
+      scroller.contentY = Math.max(minY, Math.min(maxY, y))
+    }
+    // A row of the model, not a delegate built by a repeater: the scroller is asked to
+    // show it, the row it built is nudged inside the margin, and the scroll is clamped
+    // into the range the header gives it.
+    function revealTrack(index) {
+      if (index < 0 || index >= scroller.count) return
+      scroller.positionViewAtIndex(index, ListView.Contain)
+      var row = scroller.itemAtIndex(index)
+      if (!row) return
+      var margin = Style.space(6)
+      var target = scroller.contentY
+      var screenTop = row.y - target
+      if (screenTop < margin) target = row.y - margin
+      else if (screenTop + row.height + margin > scroller.height)
+        target = row.y + row.height + margin - scroller.height
+      scrollTo(target)
+    }
     // What sits in the scroll above the grid: the air under the heading. The grid's own
     // `y` is its parent's, not a scroll position, so it is mapped into the content item
     // — the same mapping the cursor reveal does. The sections used to stand here, and
@@ -4944,6 +5017,10 @@ Panel {
     readonly property real galleryRowOffset: {
       var gallery = activeGallery()
       if (!gallery) return 0
+      // From the header's own top: the air under the heading is the distance down
+      // from there to the grid. Not the content item — the header sits at a negative
+      // y inside it, so every band in the header maps below zero there and this answer
+      // would be a constant zero.
       var top = gallery.mapToItem(listColumn, 0, 0).y
       return top > 0 ? top : 0
     }
@@ -4988,7 +5065,10 @@ Panel {
         if (!root.tracksSearch() || root.searchState !== "results") return
         if (!root.resultsMore || session.loading("searchMore")) return
       }
-      var limit = Math.max(0, scroller.contentHeight - scroller.height)
+      // The end of the scroll, in the same origin `contentY` counts from: the header
+      // sits above it, so a limit that ignored `originY` was a header too far away and
+      // a page with a tall gallery never came within half a screen of it.
+      var limit = scroller.contentHeight - scroller.height + scroller.originY
       if (limit > 0 && limit - scroller.contentY > Math.max(Style.space(48), scroller.height / 2)) return
       if (person) {
         root.loadPersonTracks()
@@ -5627,20 +5707,53 @@ Panel {
       }
     }
 
-    Flickable {
+    ListView {
       id: scroller
       Layout.fillWidth: true
       Layout.fillHeight: true
       clip: true
-      contentWidth: width
-      contentHeight: listColumn.implicitHeight
       boundsBehavior: Flickable.StopAtBounds
+      spacing: Style.space(4)
+      // One band of rows per page is the model; every other band of that page —
+      // headings, the playlist wall, an artist card, the friends — is the header. The
+      // pages used to instantiate every row of their track band through a repeater, so
+      // a 200-track playlist built 200 covers before the first one was looked at.
+      model: view.trackModel
+      // The view owns a delegate's x and pins it to its own left edge: a row that
+      // insets itself through `x` ends up flush left and short on the right, because
+      // the fill's bleed is clipped at the left edge but not at the right one. So the
+      // delegate spans the viewport and the row is inset inside it.
+      delegate: Item {
+        width: scroller.width
+        height: row.height
+        TrackRow {
+          id: row
+          width: scroller.width - 2 * root.cardInset
+          x: root.cardInset
+          track: modelData
+          // The number of a row is its place in the queue, not in what is left of it
+          // after a filter; an open playlist numbers its tracks.
+          position: view.trackKind === "queue"
+            ? root.indexOfItem(root.queue, modelData) + 1
+            : (view.trackKind === "playlistTracks" ? index + 1 : 0)
+          selected: view.trackKind === "tracks"
+            ? (root.browseCursorOffset() + index) === root.cursor
+            : index === root.cursor
+          onActivated: root.rowAction(view.trackKind, index)
+          onContextRequested: function(source, x, y) {
+            var point = root.menuPoint(source, x, y)
+            root.openRowMenu(modelData,
+              view.trackKind === "queue" ? root.indexOfItem(root.queue, modelData) : -1,
+              point.x, point.y)
+          }
+        }
+      }
       // The wheel and the cursor both reach the end through `contentY`; a row appended
       // while the viewport is still near the end reaches it through `contentHeight`.
       onContentYChanged: view.maybeLoadMore()
       onContentHeightChanged: view.maybeLoadMore()
 
-      // The wheel scrolls the list, a row a notch. A bare Flickable takes the wheel with a
+      // The wheel scrolls the list, a row a notch. A bare view takes the wheel with a
       // one-or-two-pixel default, which is indistinguishable from a list that does not
       // scroll at all — and the handler has to be its direct child, or Qt keeps that
       // default and never calls this one.
@@ -5651,24 +5764,41 @@ Panel {
         onWheel: function(event) {
           var notches = Number(event.angleDelta.y) / 120
           if (!notches) return
-          var limit = Math.max(0, scroller.contentHeight - scroller.height)
-          scroller.contentY = Math.max(0, Math.min(limit, scroller.contentY - notches * Style.space(48)))
+          view.scrollTo(scroller.contentY - notches * Style.space(48))
           event.accepted = true
         }
       }
 
-      // A page opens at the top of its own list. The Flickable keeps its scroll offset
-      // when the content under it is replaced, and Qt clamps that offset to the bottom as
-      // soon as the new page is shorter than the old one — a person's page of 73 playlists
+      // A page opens at the top of its own list. The view keeps its scroll offset when
+      // the content under it is replaced, and Qt clamps that offset to the bottom as soon
+      // as the new page is shorter than the old one — a person's page of 73 playlists
       // opened on its last rows, which read as a list with eight. The cursor reveal still
       // wins when it has a row to show: it runs after the page has changed.
       Connections {
         target: root
-        function onPageKeyChanged() { scroller.contentY = 0 }
+        function onPageKeyChanged() { scroller.positionViewAtBeginning() }
       }
 
-    Column {
+      header: Column {
       id: listColumn
+      // The header's parts by slot name, for the cursor: repeaters and grids, the
+      // delegates and the cards, handed out from here because a component cannot alias
+      // an id it does not own.
+      property var parts: ({
+        stations: stationRepeater,
+        suggestions: suggestionRepeater,
+        history: historyRepeater,
+        browseGrid: browseGrid,
+        friendsGrid: friendsGrid,
+        recentGrid: recentGrid,
+        friends: friendRepeater,
+        recentPeople: recentPeopleRepeater,
+        browsePlaylistRows: browsePlaylistRows,
+        searchGrid: searchGrid,
+        searchPlaylistRows: searchPlaylistRows,
+        searchArtistGrid: searchArtistGrid,
+        searchArtistRows: searchArtistRows
+      })
       // Air above the first row even when the heading above is empty: otherwise a
       // selected row's fill touches the selected tab's fill and the two read as one.
       Item { width: 1; height: Style.space(10) }
@@ -5682,29 +5812,11 @@ Panel {
       width: scroller.width - 2 * root.cardInset
       spacing: Style.space(4)
 
-      // Queue: the sources that fill it, then the next few tracks.
+      // Queue: its rows are the scroller's model; only the empty answer is a band.
       Column {
         width: parent.width
         spacing: Style.space(4)
         visible: root.view === "queue"
-
-        Repeater {
-          id: queueRepeater
-          model: lists.queue
-          delegate: TrackRow {
-            track: modelData
-            // The number of a row is its place in the queue, not its place in what is
-            // left of it after a filter: a row that says 8 is the eighth track of the
-            // queue whether the other 99 are shown or not.
-            position: root.indexOfItem(root.queue, modelData) + 1
-            selected: index === root.cursor
-            onActivated: root.rowAction("queue", index)
-            onContextRequested: function(source, x, y) {
-              var point = root.menuPoint(source, x, y)
-              root.openRowMenu(modelData, root.indexOfItem(root.queue, modelData), point.x, point.y)
-            }
-          }
-        }
 
         Text {
           visible: root.queue.length === 0 && !session.loading("queue")
@@ -5973,47 +6085,6 @@ Panel {
             && root.tracks.length > 0
         }
 
-        Repeater {
-          id: browseTrackRepeater
-          model: lists.tracks
-          delegate: TrackRow {
-            track: modelData
-            selected: (root.browseCursorOffset() + index) === root.cursor
-            onActivated: root.rowAction("tracks", index)
-            onContextRequested: function(source, x, y) {
-              var point = root.menuPoint(source, x, y)
-              root.openRowMenu(modelData, -1, point.x, point.y)
-            }
-          }
-        }
-
-        Button {
-          width: listColumn.width
-          leftAlign: true
-          // A section pages by the cursor VK handed back; a person's page pages by the
-          // offset of the audio it already holds, and the counts say whether a page is
-          // left. A person's playlists arrive whole, so this button never speaks for them.
-          // An artist's whole list pages here too: under the last row it belongs to, not
-          // in the header above a band it does not describe. So does «Моя музыка»'s track
-          // page — but only on the tracks band: pressed on the playlists, it would fetch
-          // rows nobody asked for and that the plan then hides.
-          visible: root.browseSlug === "person" ? root.personTracksMore
-            : (root.browseSlug === "artist"
-              ? (root.artistTab === "tracks" && root.artistAllTracks && root.artistTracksMore)
-              : (root.browseSlug === "all" && root.myMusicTab !== "tracks"
-                ? false
-                : root.browseNext !== ""))
-          enabled: root.browseSlug === "person"
-            ? !session.loading("personTracksMore")
-            : (root.browseSlug === "artist"
-              ? !session.loading("artistTracks")
-              : !session.loading("browseMore"))
-          opacity: enabled ? 1.0 : 0.5
-          text: root.t("Ещё")
-          foreground: root.textColor
-          onClicked: root.browseSlug === "person" ? root.loadPersonTracks()
-            : (root.browseSlug === "artist" ? root.loadArtistTracks() : root.browseMore())
-        }
       }
 
       // One playlist, opened: its tracks, with a way back and a way to play the
@@ -6024,22 +6095,6 @@ Panel {
         // Opened from a search or from a section: the tracks replace whatever the
         // view was showing, so a click always has something to show for itself.
         visible: (root.view === "browse" || root.view === "search") && root.openPlaylist !== null
-
-        // The tracks are a list, not more controls: the line says so.
-        Repeater {
-          id: playlistTrackRepeater
-          model: lists.playlistTracks
-          delegate: TrackRow {
-            track: modelData
-            position: index + 1
-            selected: index === root.cursor
-            onActivated: root.rowAction("playlistTracks", index)
-            onContextRequested: function(source, x, y) {
-              var point = root.menuPoint(source, x, y)
-              root.openRowMenu(modelData, -1, point.x, point.y)
-            }
-          }
-        }
 
         Text {
           width: parent.width
@@ -6136,33 +6191,6 @@ Panel {
           }
         }
 
-        Repeater {
-          id: resultRepeater
-          model: lists.results
-          delegate: TrackRow {
-            track: modelData
-            selected: index === root.cursor
-            onActivated: root.rowAction("results", index)
-            onContextRequested: function(source, x, y) {
-              var point = root.menuPoint(source, x, y)
-              root.openRowMenu(modelData, -1, point.x, point.y)
-            }
-          }
-        }
-
-        // VK hands out 300 search results per page. When one came back full this
-        // asks for the next, and appends it rather than replacing the rows on screen.
-        Button {
-          width: listColumn.width
-          leftAlign: true
-          visible: root.tracksSearch() && root.searchState === "results"
-            && root.resultsMore
-          enabled: !session.loading("searchMore")
-          opacity: enabled ? 1.0 : 0.5
-          text: root.t("Ещё")
-          foreground: root.textColor
-          onClicked: root.searchMoreTracks()
-        }
       }
 
       // Settings. Every preference here lives in the backend: the widget only
@@ -6576,6 +6604,60 @@ Panel {
         }
       }
 
+    }
+
+    // The page's last row: the way to the next page of the band the scroller holds. It
+    // belongs under the rows it describes, not in the header above them.
+    footer: Column {
+      width: scroller.width
+      spacing: Style.space(4)
+
+      Button {
+        x: root.cardInset
+        width: scroller.width - 2 * root.cardInset
+        leftAlign: true
+        // A section pages by the cursor VK handed back; a person's page pages by the
+        // offset of the audio it already holds, and the counts say whether a page is
+        // left. A person's playlists arrive whole, so this button never speaks for them.
+        // An artist's whole list pages here too: under the last row it belongs to, not
+        // in the header above a band it does not describe. So does «Моя музыка»'s track
+        // page — but not while its playlists tab is on: pressed there, it would fetch
+        // rows nobody asked for and that the plan then hides. A section whose page came
+        // back with playlists and no rows yet still pages, so the button is the browse
+        // page's, not the row band's: an open playlist covers the page and has its own.
+        visible: root.view === "browse" && root.openPlaylist === null
+          && (root.browseSlug === "person" ? root.personTracksMore
+            : (root.browseSlug === "artist"
+              ? (root.artistTab === "tracks" && root.artistAllTracks && root.artistTracksMore)
+              : (root.browseSlug === "all" && root.myMusicTab !== "tracks"
+                ? false
+                : root.browseNext !== "")))
+        enabled: root.browseSlug === "person"
+          ? !session.loading("personTracksMore")
+          : (root.browseSlug === "artist"
+            ? !session.loading("artistTracks")
+            : !session.loading("browseMore"))
+        opacity: enabled ? 1.0 : 0.5
+        text: root.t("Ещё")
+        foreground: root.textColor
+        onClicked: root.browseSlug === "person" ? root.loadPersonTracks()
+          : (root.browseSlug === "artist" ? root.loadArtistTracks() : root.browseMore())
+      }
+
+      // VK hands out 300 search results per page. When one came back full this asks
+      // for the next, and appends it rather than replacing the rows on screen.
+      Button {
+        x: root.cardInset
+        width: scroller.width - 2 * root.cardInset
+        leftAlign: true
+        visible: view.trackKind === "results" && root.tracksSearch()
+          && root.searchState === "results" && root.resultsMore
+        enabled: !session.loading("searchMore")
+        opacity: enabled ? 1.0 : 0.5
+        text: root.t("Ещё")
+        foreground: root.textColor
+        onClicked: root.searchMoreTracks()
+      }
     }
     }
 

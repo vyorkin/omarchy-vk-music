@@ -366,6 +366,36 @@ function listsFor(planned, drawn) {
   return drawn && planned ? planned.lists : EMPTY_LISTS
 }
 
+// The four lists whose rows the card's virtualized list builds. Every other segment is a
+// header band, and a page draws at most one of these: the plan's branches are exclusive,
+// and an open playlist outranks the tab it was opened from. Asked of the plan rather than
+// of the view, so the band and the rows cannot disagree — pressing «Очередь» with a
+// playlist open keeps the playlist on the card, rows included.
+var TRACK_LISTS = ["queue", "playlistTracks", "tracks", "results"]
+
+// The kind a track band's segment carries — the same four names today, kept apart from
+// the list names above because a kind says what a row means and a list says which array
+// it was cut from; the widget's reveal asks this one.
+function isTrackKind(kind) {
+  return TRACK_LISTS.indexOf(String(kind)) >= 0
+}
+
+// The segment that hands its rows to the scroller, or null. `offset` is where its rows
+// start in the cursor's list, which is what the reveal counts from; `.list` names the
+// array the model reads.
+function trackSegment(planned) {
+  if (!planned || !planned.segments) return null
+  for (var i = 0; i < planned.segments.length; i++) {
+    if (TRACK_LISTS.indexOf(planned.segments[i].list) >= 0) return planned.segments[i]
+  }
+  return null
+}
+
+function trackKindOf(planned) {
+  var segment = trackSegment(planned)
+  return segment ? segment.list : ""
+}
+
 // Which segment an index falls in, and where it falls inside it. This is the half of the
 // old `rowAt` that described the list; the other half — asking a repeater for its delegate
 // — stays in the widget, because a delegate's id is QML's business and not this file's.

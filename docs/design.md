@@ -933,12 +933,16 @@ time round. The divider between a tool and the views is 30 % rather than the
 separator's 12 % for the same reason: the bar's line has to win against a filled cell
 by a margin, or it reads as that cell's border.
 
-Three things learned in the move:
+Four things learned in the move:
 
-* A component cannot see the ids of the file around it, so the delegate repeaters
-  are handed out through `property alias` — the keyboard cursor uses them to
-  scroll the selected row into view — and the search field is reached the same
-  way, since two of them exist now.
+* A component cannot see the ids of the file around it, and the header's ids sit
+  inside the scroller's `header` component, which the card does not own either.
+  The header hands them out by name — a map of repeaters and grids under the
+  slot names the plan uses, read back as `scroller.headerItem.parts[name]` — and
+  the keyboard cursor uses them to scroll the selected row into view. The search
+  field is reached the same way, since two of them exist now. The track rows need
+  no hand-out: they are the delegates of the virtualized list, which reveals them
+  itself.
 * An exception in a QML function kills the whole handler silently. The people list
   moved nothing at all because `rowAt` called `itemAt` on a repeater the component had
   not handed out — the missing alias threw, `moveCursor` died with it, and the panel
@@ -950,7 +954,9 @@ Three things learned in the move:
   `browseTrackRepeater`'s row 0 is the first track: resolving a playlist index against
   the track repeater sent the reveal to a row far below the viewport, and the row the
   cursor had actually moved to stayed off-screen — the keys looked dead because
-  nothing visible changed. `rowAt` now picks the repeater by where the index falls.
+  nothing visible changed. `rowAt` now picks the header's repeater by where the
+  index falls; the track rows are the virtualized list's delegates and are asked
+  of the list itself.
 * Running through the tabs must not cost a request per tab: that is a burst that looks
   like a robot and spends traffic nobody asked for. A section load from a tab or from
   ⇧H/⇧L goes through `scheduleBrowse`, which waits 350 ms and then checks that the
@@ -1087,7 +1093,7 @@ A delayed load also means the section's SLUG is still the old one for those 600 
   tiny print is either in the way of the list or in the way of the controls, and the only
   place it fits is somewhere nobody has to look at it until they want to.
 * One column of rows is one cursor. A section shows its playlists and then its
-  tracks as two Repeaters in one column, and the cursor used to cover only the tracks
+  tracks in one column, and the cursor used to cover only the tracks
   — so k from the first track stopped there instead of reaching the playlist above
   it. The cursor list is the playlists followed by the tracks, and everything that
   resolves a row accounts for the offset. The gallery is the exception, because there
@@ -1758,7 +1764,7 @@ state (the view, the browse slug, an open playlist, the search mode and the gall
 preference) plus the lists themselves. It returns:
 
 * `lists` — every list the view, page or band draws, filtered. A list that is off
-  screen is empty here while `raw` keeps its array, so no repeater builds rows for a
+  screen is empty here while `raw` keeps its array, so nothing builds rows for a
   list the reader cannot see and returning to it needs no request. The rows and the
   cursor read the same arrays here, which is the property that makes them unable to
   disagree;
@@ -1766,42 +1772,60 @@ preference) plus the lists themselves. It returns:
   holds, where it starts and how many stand across it. `GalleryWalk.step` walks
   these; a segment of one column is the rows under a wall;
 * `items` — the segments joined, which is the cursor's list;
+* `trackKindOf(plan)` — the name of the one track list the body's `ListView` draws,
+  or `""` when the page has no rows. It is read from the segments, not from the
+  tab, so an open playlist still draws over «Очередь», and a page of cards builds
+  no rows at all;
 * `gallery`, `showsPlaylists`, `friendsGallery`, `recentGallery` — the four shape
   questions the controls ask;
 * `slotAt(index)` — which segment an index falls in and where, so a row's delegate
   can be found without re-deriving the shape. The delegate lookup itself stays in
-  the widget: `repeaterForSlot` maps a segment's `scope` and `kind` to a repeater,
-  because a repeater's id is QML's business and not the module's.
+  the widget: `repeaterForSlot` maps a non-row segment's `scope` and `kind` to a
+  repeater in the list's header, and the track bands are the virtualized list's own
+  delegates, so the list is asked for them by index.
 
 The module is `ListShape.js`, a `.pragma library` like `GalleryWalk.js`, so
 `tests/qml/tst_list_shape.qml` crosses the same interface the widget does: a table
 of pages, and the invariants every page keeps — `items` is the segments joined, no
 segment is empty, and every index falls in exactly one segment.
 
-The plan is read through a function (`listPlan()`) and never cached in a property.
+The rows themselves are one `ListView` per body (`TrackList`). Its `model` is the
+band `trackKindOf` names, and the page's non-row bands — its headings, a gallery, an
+artist card — are the list's `header`, so they scroll away with the rows and take no
+height of their own. The section chips stay outside the scroll: they are a way
+around the catalog, and they were kept reachable when the list scrolls.
+Only the rows the viewport shows, plus a reuse buffer, are instantiated: opening a
+1000-track list no longer builds a thousand items, and a cover is requested only for
+a row that exists. The header is the only part that repeats every band it carries,
+and a page of cards builds no row at all.
+
+The plan is read through a function (`listPlan()`) and never stored in a property.
 The file already learned that lesson twice: a `readonly property` whose binding digs
 into a field of a `var` keeps its first value, and a stale plan is a panel whose
 keys act on the page before last.
 
-Three details that were not obvious:
+Five details that were not obvious:
 
 * **The wheel scrolls the list, one row a notch.** A bare `Flickable` takes the wheel
   with a one-or-two-pixel default, which is indistinguishable from a list that does not
   scroll at all; a `WheelHandler` that must be the Flickable's direct child replaces that
   distance with a row's.
-* **Scrolling to the selection uses the delegate item, not arithmetic.**
-  `Repeater.itemAt(index)` gives the row, and its `height` and its position in the
-  content decide how far `contentY` has to move. Rows are not a fixed height, so
-  index arithmetic drifts.
+* **Scrolling to the selection uses a delegate item, not arithmetic.**
+  `Repeater.itemAt(index)` gives a header band's row, and `ListView.itemAtIndex`
+  gives a track row; the item's `height` and its position in the content decide how
+  far `contentY` has to move. Rows are not a fixed height, so index arithmetic
+  drifts.
 * **The row's `y` is not a scroll position.** It is the y its parent block gave
   it: a gallery card sits in a `Grid`, the grid in a column, and the column under
   the section chips, so the card's own `y` started near zero while the card was
   hundreds of pixels down the content. The reveal used it directly and every
   block above the row shortened the scroll — worst in the gallery, where the last
   card's caption stayed below the bottom edge, then got clamped away by the end of
-  the content. Both the reveal and the first-visible-row lookup now map the row
-  into `scroller.contentItem` (`TrackList.contentRoot`) first, which is the space
-  `contentY` counts in.
+  the content. A header band's reveal still maps the row into `scroller.contentItem`
+  (`TrackList.contentRoot`) first, which is the space `contentY` counts in; a
+  virtualized row's reveal is the list's own `positionViewAtIndex`, and the first
+  visible row is `ListView.indexAt` on the list, so neither has to know the gap
+  between the header and the rows.
 * **A new page starts at its top.** The `Flickable` keeps its `contentY` when the
   content under it is replaced, and Qt clamps that offset to the bottom as soon as
   the new page is shorter than the old one. A person's page — opened from a longer
@@ -1833,10 +1857,10 @@ What replaced them:
   from the section list, not from the answer. A Russian count needs all three
   forms, so a small `plural()` picks «трек / трека / треков».
 * **A line that runs.** `ProgressLine` is the frame's language for an unknown
-  length: a bright piece travelling along a faint track. It is placed where the
-  missing rows will appear — at the top of an empty list, and above the «Ещё» row
-  when a further page is on its way — so it marks a place rather than pretending
-  to be content.
+  length: a bright piece travelling along a faint track. It is drawn over the
+  card's own bottom edge, on the status bar's last pixels — the jitter it used to
+  cause in a layout is the note above — so it reports the wait without moving the
+  bar or pretending to be content.
 * The same treatment in search (the header already said «Ищу…») and in the queue
   on the first open.
 

@@ -1,6 +1,8 @@
 # ADR-0002: a row's action comes from the plan, and its index is a position in the raw list
 
-Status: accepted, 2026-10-25.
+Status: accepted, 2026-10-25. Partly superseded by ADR-0007 (2026-11-22): the
+track rows are the virtualized list's delegates now, so `repeaterForSlot()` and
+`rowAt()` no longer resolve them; the list is asked for a row by index.
 
 ## Context
 
@@ -56,7 +58,8 @@ ADR-0001 fixed *which rows are on screen*, not *which position a command receive
   delegate that draws it. The tests in `tests/qml/tst_list_shape.qml` assert that every
   list the plan files has an intent, and that a play intent's index is the raw position.
 * `repeaterForSlot()` and `rowAt()` are unchanged and still in the widget: which QML item
-  draws a row is the widget's business, not the plan's.
+  draws a row is the widget's business, not the plan's. (Superseded by ADR-0007 for the
+  track rows: they are the virtualized list's delegates, and the list answers by index.)
 
 ## Alternatives rejected
 

@@ -475,6 +475,24 @@ TestCase {
     compare(drawnLists(fromBrowse), "playlistTracks")
   }
 
+  // The band the card's virtualized list draws is the plan's answer, not the tab's: an
+  // open playlist outranks the view, so «Очередь» pressed over one must not empty it, and
+  // a page with no track band has no rows to virtualize.
+  function test_the_track_band_follows_the_plan_not_the_view() {
+    compare(ListShape.trackKindOf(ListShape.plan(filledState({ view: "queue" }))), "queue")
+    compare(ListShape.trackKindOf(ListShape.plan(filledState({
+      view: "search", searchMode: "tracks", searchState: "results" }))), "results")
+    compare(ListShape.trackKindOf(ListShape.plan(filledState({
+      view: "browse", browseSlug: "main" }))), "tracks")
+
+    var opened = ListShape.plan(filledState({ view: "queue", openPlaylist: { id: 9 } }))
+    compare(ListShape.trackKindOf(opened), "playlistTracks")
+    compare(opened.lists.playlistTracks.length, 2)
+
+    compare(ListShape.trackKindOf(ListShape.plan(filledState({
+      view: "browse", browseSlug: "friends", gridView: true }))), "")
+  }
+
   // A filter or a sort belongs to the list it was applied to. Asking the plan for another
   // view must not rewrite the off-screen array: its length and order stay the session's.
   function test_a_filter_does_not_rewrite_an_off_screen_list() {

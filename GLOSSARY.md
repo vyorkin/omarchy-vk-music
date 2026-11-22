@@ -42,6 +42,14 @@ An item's place among the rows as drawn, after the filter. A delegate holds a
 drawn position; the cursor walks drawn positions.
 _Avoid_: filtered index
 
+**Virtualized list**:
+The `ListView` that draws a page's track rows. It builds only the rows the
+viewport shows plus a reuse buffer; every non-row band on the page is its
+header, and the «Ещё» row is its footer. The loading line is not in the list at
+all: it is drawn over the card's bottom edge. Which band it draws comes from
+the plan, not from the tab.
+_Avoid_: scroller (when the band is meant, not the viewport)
+
 **Off-screen list**:
 A list the current view, page or band does not draw, while the session still holds
 it. Its items are not built into rows.
