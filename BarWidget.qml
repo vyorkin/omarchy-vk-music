@@ -8128,20 +8128,17 @@ Panel {
     color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.3)
   }
 
-  component LoadingLine: Item {
-    Layout.fillWidth: true
-    Layout.preferredHeight: Math.max(2, Style.space(2))
-    // Only while something is loading, and clipped to its own two pixels: a line
-    // that holds a place for itself in the layout is a line that can sit on the last
-    // row of whatever list is above it.
+  // The line that says a list is being fetched. It runs along the card's own bottom
+  // edge, over the last pixels of the status bar, and is not a block in the body's
+  // column: a block there changed the column's height, and the status bar above it
+  // moved by the block's height and the column's gap every time a request started —
+  // the bar twitched under the pointer while the list was being fetched. The card's
+  // height is fixed, so an overlay moves nothing; and an idle card carries no strip of
+  // empty band under a bar that is meant to close it.
+  component LoadingLine: ProgressLine {
     visible: root.signedIn && root.anyLoading()
-    clip: true
-
-    ProgressLine {
-      anchors.fill: parent
-      thickness: Math.max(2, Style.space(2))
-      color: Color.accent
-    }
+    thickness: Math.max(2, Style.space(2))
+    color: Color.accent
   }
 
   // -------------------------------------------------------------- popup ---
@@ -8411,12 +8408,6 @@ Panel {
         // The rule that ends the player is the top of the band above the list now, so
         // that the first cell under it sits flush against it.
         TrackList { id: compactList }
-        LoadingLine {
-          Layout.fillWidth: true
-          Layout.leftMargin: root.cardInset
-          Layout.rightMargin: root.cardInset
-          Layout.preferredHeight: Math.max(2, Style.space(2))
-        }
       }
 
       // Extended: the player on the left, the list on the right. Two columns need
@@ -8450,12 +8441,16 @@ Panel {
         // The band over the list carries the rule that ends the player: see the
         // compact body.
         TrackList { id: extendedList; Layout.topMargin: Style.space(14) }
-        LoadingLine {
-          Layout.fillWidth: true
-          Layout.leftMargin: root.cardInset
-          Layout.rightMargin: root.cardInset
-          Layout.preferredHeight: Math.max(2, Style.space(2))
-        }
+      }
+
+      // The card's bottom edge, over the status bar rather than under it, and one
+      // instance for both shapes: the hidden body draws no line of its own either way.
+      LoadingLine {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: root.cardInset
+        anchors.rightMargin: root.cardInset
       }
 
       // Last inside the key catcher, so they float over whichever body is showing.

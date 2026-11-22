@@ -687,8 +687,10 @@ The popup comes in two shapes, chosen in the settings:
 
 They are not two popups: they are two arrangements of the same blocks, each block
 a component of its own (`TopRow`, `SignInBlock`, `PlayerColumn`, `SearchFieldRow`,
-`LoadingLine`, `TrackList`, `HintRow`). A layout cannot move a block into
-another column; a component can be instantiated in either one. Only the visible
+`TrackList`, `HintRow`). A layout cannot move a block into
+another column; a component can be instantiated in either one. `LoadingLine` is
+the exception and belongs to neither: one overlay on the key catcher, across the
+card's bottom edge, so the status bar above it never moves. Only the visible
 shape takes keys, so `activeList()`, `activeField()` and `activeBody()` pick the
 one in use. The hidden shape also builds no rows: `ListShape.listsFor()` gives it
 every list empty, so its `TrackList`'s repeaters create no delegates, and the
@@ -1067,13 +1069,17 @@ A delayed load also means the section's SLUG is still the old one for those 600 
   one. The reveal now clamps to `contentHeight - viewHeight` with `viewHeight` aliased
   from the Flickable itself, and repeats once with `Qt.callLater`, because the list's
   height is still settling while the panel opens.
-* A loading line that reserves its place is a line that can sit on the last row of
-  the list above it. The panel's indicator held two pixels in the layout whether or
-  not anything was loading, and the row of a list ended up looking cut by a dark
-  stripe. It is only in the layout while it is loading now, and it clips to its own
-  height, so an idle panel has nothing below the last row. The same one line serves
-  every view — the queue, a playlist, a section, a person's playlists, the search —
-  so the fix holds wherever a list is.
+* A loading line in the layout is a status bar that moves. The panel's indicator
+  first held two pixels in the layout whether or not anything was loading, and a
+  list's last row ended up looking cut by a dark stripe. Then it was in the layout
+  only while loading, clipped to its own height — and every request grew the body's
+  column by the line and its gap, so the status bar above it jumped up for as long
+  as the fetch took and dropped back when the answer arrived. It is not in a layout
+  at all now: one line, a direct child of the key catcher, drawn over the card's own
+  bottom edge on the status bar's last pixels. The card's height is fixed, so
+  appearing and vanishing moves nothing, and an idle card has no strip under a bar
+  that is meant to close it. The same one line serves both shapes and every view —
+  the queue, a playlist, a section, a person's playlists, the search.
 * A hint at the bottom of the card is a hint on top of the last row of every list, and
   the key hints moved to the top for exactly that reason; then back down when the top
   became a bar of views and switches; and finally out of the card altogether, into a sheet
