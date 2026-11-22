@@ -82,10 +82,6 @@ Panel {
   property string searchState: "typing"
   // Guards against a slow reply for an older query overwriting newer results.
   property string _searchedQuery: ""
-  // The artist id a «Треки» search resolved its query to, or empty when the query names no
-  // artist and the answer came from the plain track search. «Ещё» reads it to know which
-  // of the two lists it is extending.
-  property string _artistSearchId: ""
   property string view: "queue" // queue | browse | search
   // Browsing a catalog section: which one, what came back, and where the next
   // page starts.
@@ -226,7 +222,7 @@ Panel {
       return root.t("Найдено ") + found + " " + I18n.plural(root.language, found, root.t("плейлист"), root.t("плейлиста"), root.t("плейлистов"))
     }
     // The artist cards are the heading's business only in their own scope: the tracks scope
-    // answers in songs, and the track heading below counts them, resolved artist or not.
+    // answers in songs, and the track heading below counts them.
     if (root.searchMode === "artists" && root.artistSearchScope === "artists") {
       if (root.searchState === "searching") return root.t("Ищу…")
       if (root.searchState !== "results") return ""
@@ -920,7 +916,7 @@ Panel {
         root.loadArtistSearch()
         return
       }
-      root.loadArtistTrackSearch(text)
+      root.loadTrackSearch(text, true)
       return
     }
     // Typing a letter and deleting it again should not cost a second search, and
@@ -929,15 +925,13 @@ Panel {
     // retried by typing again.
     if (!force && text === root._searchedQuery && root.searchState !== "typing") return
     root._searchedQuery = text
-    root._artistSearchId = ""
     // A page still on its way belongs to the query being replaced, and its flag has
     // to go with it: it would otherwise leave «Ещё» disabled for the new list.
     session.setLoading("searchMore", false)
     root.loadTrackSearch(text, true)
   }
 
-  // The plain track search, shared by the track mode and by the artists box's tracks scope
-  // when the query names no artist.
+  // The track search, shared by the track mode and by the artists box's songs scope.
   function loadTrackSearch(text, remember) {
     var token = session.begin("search")
     api.request("search", { query: text, remember: remember === true }, function(answer) {
@@ -952,50 +946,6 @@ Panel {
     })
   }
 
-  // The artists box's tracks scope. `audio.searchArtists` is asked first only to learn
-  // whether the query names an artist exactly; when it does, `audio.getAudiosByArtist`
-  // answers with that artist's whole list in its own order, which relevance cannot beat.
-  // A name no card matches — a credit line like «HOJI | CWH» is one — goes to
-  // `audio.search` unchanged: it is not an artist, but it is exactly how its uploads are
-  // credited, and the track search is what finds them.
-  function loadArtistTrackSearch(text) {
-    var token = session.begin("search")
-    api.request("artist_search", { query: text }, function(answer) {
-      if (!session.accept(token)) return
-      var wanted = text.toLowerCase()
-      var cards = (answer && answer.ok && answer.data && answer.data.artists) || []
-      var exact = ""
-      for (var i = 0; i < cards.length; i++) {
-        var item = cards[i]
-        if (!item) continue
-        if (String(item.id || "") !== ""
-            && String(item.name || "").trim().toLowerCase() === wanted) {
-          exact = String(item.id)
-          break
-        }
-      }
-      if (exact === "") {
-        root._artistSearchId = ""
-        root.loadTrackSearch(text, true)
-        return
-      }
-      root._artistSearchId = exact
-      // The guard is begun again: the answer above retired its token, and an accepted token
-      // is spent by design (see SessionLists.accept).
-      var pageToken = session.begin("search")
-      api.request("artist_tracks", { artistId: exact, offset: 0 }, function(page) {
-        if (!session.accept(pageToken)) return
-        if (page && page.ok && page.data) {
-          session.put("results", page.data.tracks || [])
-          root.resultsMore = page.data.more === true
-          root.searchState = "results"
-        } else {
-          root.searchState = "typing"
-        }
-      })
-    })
-  }
-
   // «Ещё»: VK answers 300 results per search page (its maximum), and a page that came
   // back full is the only sign that another one is worth asking for. The rows append
   // to the list the user is already looking at, as a section page does.
@@ -1007,19 +957,12 @@ Panel {
     // answer cancels nothing else, because only one of the two is in flight with a
     // list on screen.
     var token = session.begin("search", "searchMore")
-    var done = function(answer) {
+    api.request("search", { query: text, offset: offset }, function(answer) {
       if (!session.accept(token)) return
       if (!answer || !answer.ok) return
       session.append("results", answer.data.tracks || [])
       root.resultsMore = answer.data.more === true
-    }
-    // A resolved artist's list pages through `getAudiosByArtist`, whose `more` is exact; a
-    // name with no card behind it pages through the search that found it.
-    if (root._artistSearchId !== "") {
-      api.request("artist_tracks", { artistId: root._artistSearchId, offset: offset }, done)
-    } else {
-      api.request("search", { query: text, offset: offset }, done)
-    }
+    })
   }
 
   // The artist search. `audio.searchArtists` answers with no total — its `count` is the
@@ -1118,9 +1061,9 @@ Panel {
   // «Треки», «Плейлисты» or «Исполнители»: one search box, three kinds of answer.
   property string searchMode: "tracks"
   // The «Исполнители» box answers in two scopes: `tracks` searches the songs of that name
-  // (`audio.search`, or the artist's whole list when the name resolves to an artist card),
-  // `artists` searches the artist cards themselves. A name typed here is usually a wish to
-  // hear the songs, so the songs are the default; the credit on a track opens this scope.
+  // with `audio.search`, `artists` searches the artist cards themselves. A name typed here
+  // is usually a wish to hear the songs, so the songs are the default; the credit on a
+  // track opens this scope.
   property string artistSearchScope: "tracks"
   // Which page of the settings is open. Three pages instead of one column with rules
   // between its groups: the rules were the only thing telling a reader where one group
@@ -1791,7 +1734,6 @@ Panel {
     session.setLoading("searchMore", false)
     root.resultsMore = false
     root.artistsMore = false
-    root._artistSearchId = ""
     root.searchMode = mode
     // The query is the same text but the answer is a different kind of thing: the next
     // run must not be skipped as «already searched».
@@ -1812,7 +1754,6 @@ Panel {
     session.setLoading("searchMore", false)
     root.resultsMore = false
     root.artistsMore = false
-    root._artistSearchId = ""
     root._searchedQuery = ""
     if (root.query.trim().length >= 2) root.runSearch(true)
   }
@@ -1826,7 +1767,6 @@ Panel {
     root.artistsMore = false
     root.searchState = "typing"
     root._searchedQuery = ""
-    root._artistSearchId = ""
     session.cancel("search")
     session.cancel("artists")
     session.setLoading("searchMore", false)

@@ -306,14 +306,18 @@ songs of that name — and «Исполнители» — the cards. A name type
 hear the songs, so the songs are the default, and the credit on a track opens the box in
 that scope.
 
-The songs scope asks `audio.searchArtists` first only to learn whether an artist with
-exactly that name exists. When one does, `audio.getAudiosByArtist` answers with that
-artist's whole list in its own order, paged by `offset` with the exact total in `count`, so
-**Ещё** never makes an empty round trip. When no card matches — `HOJI | CWH` and other
-credit lines on personal uploads are the common case, and VK links none of them to an
-artist — the query goes to `audio.search` unchanged: it is not an artist, but it is exactly
-how those uploads are credited. The list is a track list either way, and **Ещё** pages
-through whichever of the two calls answered.
+The songs scope is `audio.search`, the same call the track mode makes: the query is a name,
+and the list is what VK's search returns for it, paged by `offset` with **Ещё** at the end.
+It deliberately does not swap in `audio.getAudiosByArtist` for an exact artist match. That
+call answers with the artist's *official catalog*, which can be a thin licensed subset:
+«Arch Enemy» has thirteen tracks there while the search has hundreds of uploads, and the
+songs scope showed those thirteen under «Найдено 13» — a count that reads as "VK has
+nothing more by this artist". The official list is not lost: the artist card in the other
+scope opens the artist page, whose «Все треки» tab is exactly that call.
+
+Whether the query names an artist is not checked at all: `HOJI | CWH` and other credit
+lines on personal uploads are common, and VK links none of them to an artist — they are
+exactly what the search is for.
 
 The cards scope draws no track vocabulary (recent queries, suggestions) and the songs
 scope draws no cards: the scope that is off screen is emptied in `lists`, the same rule
