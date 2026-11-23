@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# The Qt 6 test runner. `qmltestrunner` on PATH is the Qt 5 binary on this
+# machine: it exits 1 without a word on a Qt 6 test, which reads as a broken
+# test rather than a wrong runner. Always use the absolute Qt 6 path.
+#
+#   scripts/qml-test -import tests/qml -input tests/qml
+#   scripts/qml-test -import tests/qml -input tests/qml/tst_list_shape.qml
+set -euo pipefail
+
+RUNNER=/usr/lib/qt6/bin/qmltestrunner
+if [[ ! -x "$RUNNER" ]]; then
+  echo "scripts/qml-test: missing $RUNNER (install qt6-declarative)" >&2
+  exit 2
+fi
+exec "$RUNNER" "$@"

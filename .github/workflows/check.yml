@@ -1,0 +1,21 @@
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install git, Python, Qt 6 and ffmpeg
+        run: pacman -Syu --noconfirm --needed ca-certificates ffmpeg git python python-pip qt6-declarative
+      - uses: actions/checkout@v4
+      - name: Install Python dependencies
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install -r requirements.txt
+      - name: Run the checks
+        run: PATH="/tmp/venv/bin:$PATH" scripts/check.sh

@@ -147,6 +147,22 @@ omarchy-vk-music unfollow -137360741 84612405 KEY
 
 Every command prints one line of JSON. `--pretty` formats it.
 
+## Tests
+
+Run every check from the repository root:
+
+```bash
+scripts/check.sh
+```
+
+It runs the widget-source guard, the QML suite in `tests/qml`, the pixel checks
+on the rendered progress frame and line when `ffmpeg` is installed, and the
+Python suite in `tests/python`. To run one QML file:
+
+```bash
+scripts/qml-test -import tests/qml -input tests/qml/tst_list_shape.qml
+```
+
 ## Troubleshooting
 
 ```bash
