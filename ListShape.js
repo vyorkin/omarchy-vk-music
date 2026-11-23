@@ -44,6 +44,11 @@
 //     queries, and when a search found nothing it is the suggestions.
 .pragma library
 
+// The ordering module owns which List is sorted as which family (ADR-0005). A plan answers
+// the menu in the same vocabulary, so the two cannot disagree about a name: a List the
+// store would not sort is a List the menu must not offer.
+.import "Sort.js" as Sort
+
 // The lists the panel can put the cursor on. `kind` names the *thing* a segment holds, not
 // the QML item that draws it: the widget keeps a kind-to-repeater table, so a test of this
 // file never has to know a delegate's id.
@@ -63,6 +68,12 @@ var KINDS = {
 
 function trimmed(text) {
   return String(text === undefined || text === null ? "" : text).trim()
+}
+
+// The family a List is ordered by, asked of the table `SessionLists` sorts with. A List the
+// store does not order — the queue above all — answers "".
+function familyOf(name) {
+  return Sort.family(trimmed(name))
 }
 
 // A row matches when the filter appears in its title, its artist or its name. Stations
@@ -248,6 +259,11 @@ function plan(state) {
       gallery = friendsGallery || recentGallery
     } else if (browseSlug === "radiostations") {
       append(built, "radio", "stations", KINDS.stations, lists.stations, 1)
+    } else if (browseSlug === "favorites") {
+      // «Избранное» is the saved playlists and nothing else: the section's tracks are not
+      // part of the page even when a stray array is still in the session.
+      append(built, "section", "playlists", KINDS.playlists, lists.playlists, columns)
+      gallery = gridView && lists.playlists.length > 0
     } else if (browseSlug === "artist") {
       // An artist's page shows one of two bands, and the tab decided which one `lists`
       // kept above: the delegates, the cursor and the counts read that answer. The raw
@@ -335,11 +351,24 @@ function plan(state) {
   friendsGallery = gridView && lists.friends.length > 1
   recentGallery = gridView && lists.people.length > 1
 
+  // The sort menu's question, answered by the same segments the rows are built from:
+  // every drawn non-empty List is classified, and the families come out in cursor order
+  // without duplicates. A family with no drawn segment is a family with nothing to order,
+  // and a page that draws two bands offers both.
+  var families = []
+  for (var f = 0; f < drawn.length; f++) {
+    var family = familyOf(drawn[f])
+    if (family !== "" && families.indexOf(family) < 0) families.push(family)
+  }
+
   return {
     lists: lists,
     // The same twelve arrays before the filter, which is what a command positions into.
     raw: raw,
     segments: built.segments,
+    // The List families the drawn segments belong to, in cursor order: what the sort menu
+    // offers and the only answer to "which sortable families are on screen".
+    families: families,
     items: built.items,
     // The bands `GalleryWalk.step` walks: the same segments, and a segment of one column is
     // the rows under a wall. A list with no wall in it is still one segment, so a step that

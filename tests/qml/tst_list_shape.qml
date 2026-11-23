@@ -19,6 +19,7 @@
 import QtQuick
 import QtTest
 import "../../ListShape.js" as ListShape
+import "../../Sort.js" as Sort
 
 TestCase {
   name: "ListShape"
@@ -387,6 +388,10 @@ TestCase {
     return out.join(",")
   }
 
+  function familiesOf(planned) {
+    return planned.families ? planned.families.join(",") : ""
+  }
+
   function drawnLists(planned) {
     return listNames(planned.lists)
   }
@@ -413,6 +418,125 @@ TestCase {
     for (var i = 0; i < cases.length; i++) {
       compare(drawnLists(ListShape.plan(filledState(cases[i].state))), cases[i].lists)
     }
+  }
+
+  // The sort menu's only question is "which sortable families are drawn". The answer is
+  // read from the segments, in cursor order and without duplicates, so a page that draws
+  // two bands offers both and a band the page keeps off screen offers nothing.
+  function test_the_plan_answers_the_sortable_families_of_the_drawn_lists() {
+    var cases = [
+      { name: "a section", state: { view: "browse", browseSlug: "main" }, families: "playlists,tracks" },
+      { name: "a person", state: { view: "browse", browseSlug: "person" }, families: "playlists,tracks" },
+      { name: "an artist's albums", state: { view: "browse", browseSlug: "artist", artistTab: "albums" }, families: "playlists" },
+      { name: "an artist's tracks", state: { view: "browse", browseSlug: "artist", artistTab: "tracks" }, families: "tracks" },
+      { name: "My Music's playlists", state: { view: "browse", browseSlug: "all", myMusicTab: "playlists" }, families: "playlists" },
+      { name: "My Music's tracks", state: { view: "browse", browseSlug: "all", myMusicTab: "tracks" }, families: "tracks" },
+      { name: "Favorites", state: { view: "browse", browseSlug: "favorites" }, families: "playlists" },
+      { name: "an open playlist", state: { view: "browse", browseSlug: "main", openPlaylist: { id: 9 } }, families: "tracks" },
+      { name: "the queue", state: { view: "queue" }, families: "" },
+      { name: "Settings", state: { view: "settings" }, families: "" },
+      { name: "Friends", state: { view: "browse", browseSlug: "friends" }, families: "" },
+      { name: "Radio", state: { view: "browse", browseSlug: "radiostations" }, families: "" },
+      { name: "a playlist search", state: { view: "search", searchMode: "playlists" }, families: "playlists" },
+      { name: "a track search", state: { view: "search", searchMode: "tracks" }, families: "tracks" },
+      { name: "an artist-card search", state: { view: "search", searchMode: "artists", artistScope: "artists" }, families: "" }
+    ]
+    for (var i = 0; i < cases.length; i++) {
+      compare(familiesOf(ListShape.plan(filledState(cases[i].state))), cases[i].families,
+        cases[i].name)
+    }
+  }
+
+  // A family whose List is empty is not a family the page can order: a menu row that
+  // reorders nothing is a row to read past. The rule is the segment's, so a filter that
+  // empties one band takes that family with it.
+  function test_a_family_with_no_drawn_segment_is_not_offered() {
+    compare(familiesOf(ListShape.plan(sectionState({ playlists: [] }))), "tracks")
+    compare(familiesOf(ListShape.plan(sectionState({ tracks: [] }))), "playlists")
+    compare(familiesOf(ListShape.plan(sectionState({ playlists: [], tracks: [] }))), "")
+    compare(familiesOf(ListShape.plan(sectionState({ filter: "Track t" }))), "tracks")
+    compare(familiesOf(ListShape.plan(sectionState({ filter: "no-such-thing" }))), "")
+    // The raw arrays still hold both lists: the answer is about what is drawn, not what
+    // the session remembers.
+    var filtered = ListShape.plan(sectionState({ filter: "Track t", playlists: cards(4) }))
+    compare(filtered.raw.playlists.length, 4)
+  }
+
+  // Both directions of the menu's claim, on every page shape: an offered family is drawn,
+  // and a drawn segment's family is offered. A family the plan classified as sortable but
+  // did not offer — or offered without a segment — would make the menu disagree with the
+  // rows it describes.
+  function test_every_offered_family_has_a_segment_and_every_segment_family_is_offered() {
+    var states = [
+      sectionState(),
+      sectionState({ gridView: true }),
+      sectionState({ filter: "Track" }),
+      { view: "queue", queue: tracks(4, "q") },
+      { view: "browse", browseSlug: "friends", friends: cards(2), people: cards(3), gridView: true },
+      { view: "browse", browseSlug: "person", playlists: cards(2), tracks: tracks(3, "p") },
+      { view: "browse", browseSlug: "radiostations", stations: [{ id: 1, name: "Да" }] },
+      { view: "browse", browseSlug: "artist", artistTab: "albums", playlists: cards(2), tracks: tracks(3, "a") },
+      { view: "browse", browseSlug: "artist", artistTab: "tracks", playlists: cards(2), tracks: tracks(3, "a") },
+      { view: "browse", browseSlug: "all", myMusicTab: "playlists", playlists: cards(2), tracks: tracks(3, "m") },
+      { view: "browse", browseSlug: "all", myMusicTab: "tracks", playlists: cards(2), tracks: tracks(3, "m") },
+      { view: "browse", browseSlug: "favorites", playlists: cards(2) },
+      { view: "search", searchMode: "playlists", searchState: "results", queryLength: 3,
+        foundPlaylists: cards(2) },
+      { view: "search", searchState: "results", queryLength: 3, results: tracks(3, "r") },
+      { view: "search", searchMode: "artists", artistScope: "artists",
+        searchState: "results", queryLength: 3, artists: cards(2) },
+      { view: "settings" }
+    ]
+    for (var i = 0; i < states.length; i++) {
+      var planned = ListShape.plan(states[i])
+      var expected = []
+      for (var s = 0; s < planned.segments.length; s++) {
+        var family = Sort.family(planned.segments[s].list)
+        if (family !== "" && expected.indexOf(family) < 0) expected.push(family)
+      }
+      compare(familiesOf(planned), expected.join(","))
+      for (var f = 0; f < planned.families.length; f++) {
+        var offered = planned.families[f]
+        var drawn = false
+        for (var t = 0; t < planned.segments.length; t++) {
+          if (Sort.family(planned.segments[t].list) === offered) drawn = true
+        }
+        verify(drawn, offered)
+      }
+      for (var u = 0; u < planned.segments.length; u++) {
+        var segmentFamily = Sort.family(planned.segments[u].list)
+        if (segmentFamily !== "") verify(planned.families.indexOf(segmentFamily) >= 0, segmentFamily)
+      }
+    }
+  }
+
+  // The Plan classifies a List through the ordering module, not through a second table:
+  // every name the Plan files has one answer, and that answer is `Sort.family`'s.
+  function test_the_plan_and_the_store_name_the_same_families() {
+    var expected = {
+      playlistTracks: "tracks",
+      playlists: "playlists",
+      foundPlaylists: "playlists",
+      tracks: "tracks",
+      results: "tracks",
+      queue: "",
+      friends: "",
+      people: "",
+      stations: "",
+      artists: "",
+      history: "",
+      suggestions: ""
+    }
+    for (var name in expected) {
+      compare(ListShape.familyOf(name), expected[name], name)
+      compare(Sort.family(name), expected[name], name)
+    }
+    var planned = ListShape.plan(filledState())
+    var missing = []
+    for (var listName in planned.lists) {
+      if (expected[listName] === undefined) missing.push(listName)
+    }
+    compare(missing.join(","), "")
   }
 
   // An off-screen list is empty in `lists` and untouched in `raw`: the session still has

@@ -1260,42 +1260,11 @@ Panel {
   property real sortMenuX: 0
   property real sortMenuY: 0
 
-  // What this page can order, as list families. A family whose list is empty is not
-  // offered: a row that would reorder nothing is a row to read past. Both are offered on a
-  // person's page, where the gallery and the rows are two lists in one scroll.
+  // What this page can order: the Plan's own answer. A family is offered exactly when a
+  // non-empty segment of it is drawn, so the menu cannot re-derive the page from the View,
+  // the Page slug, the artist tab, the My Music tab or the search mode the rows left behind.
   function sortScopes() {
-    var out = []
-    if (root.openPlaylist !== null) {
-      if (root.playlistTracks.length > 0) out.push("tracks")
-      return out
-    }
-    if (root.view === "queue" || root.view === "settings") return out
-    if (root.view === "search") {
-      if (root.searchMode === "playlists") {
-        if (root.foundPlaylists.length > 0) out.push("playlists")
-        return out
-      }
-      if (root.searchMode === "artists" && root.artistSearchScope === "artists") return out
-      if (root.results.length > 0) out.push("tracks")
-      return out
-    }
-    if (root.view !== "browse") return out
-    if (root.browseSlug === "favorites") {
-      if (root.playlists.length > 0) out.push("playlists")
-      return out
-    }
-    if (root.browseSlug === "friends" || root.browseSlug === "radiostations") return out
-    if (root.browseSlug === "artist") {
-      if (root.artistTab === "albums") {
-        if (root.playlists.length > 0) out.push("playlists")
-      } else if (root.tracks.length > 0) {
-        out.push("tracks")
-      }
-      return out
-    }
-    if (root.playlists.length > 0) out.push("playlists")
-    if (root.tracks.length > 0) out.push("tracks")
-    return out
+    return root.listPlan().families
   }
 
   function sortMode(family) {
