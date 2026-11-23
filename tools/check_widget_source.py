@@ -11,7 +11,10 @@ Fails when BarWidget.qml contains:
   * a `root.rowAction("name", …)` whose name is not a list `ListShape` knows. A delegate
     names the array it drew, and a misspelt name is not a crash: `actionAt` answers null
     and the row quietly stops doing anything, which is the kind of failure this file exists
-    to catch before the shell is restarted.
+    to catch before the shell is restarted;
+  * a `sortScopes()` that re-derives the page from the View, the Page slug, a tab or the
+    search mode. The Plan's `families` is the only answer to which sortable families are
+    drawn, and a second answer is exactly the menu that can disagree with the rows.
 
 Run it before deploying: python3 tools/check_widget_source.py
 """
@@ -33,6 +36,13 @@ ROW_ACTION = re.compile(r'root\.rowAction\(\s*"([a-zA-Z]+)"')
 ARGV = re.compile(r'root\.cli,\s*"')
 # `queue: "playQueue",` inside `var INTENTS` — the lists a row can be started from.
 INTENT = re.compile(r'^\s{2}([a-zA-Z]+):\s*"[a-zA-Z]+",?$', re.MULTILINE)
+# The fields `sortScopes()` used to read to decide which families a page offers. The Plan
+# already answers that question from the drawn segments, so any of these is a second answer.
+SORT_INPUTS = (
+    "root.view", "root.browseSlug", "root.artistTab", "root.myMusicTab", "root.searchMode",
+    "root.artistSearchScope", "root.openPlaylist", "root.playlists", "root.tracks",
+    "root.playlistTracks", "root.foundPlaylists", "root.results",
+)
 
 
 def intents() -> set[str]:
@@ -62,6 +72,25 @@ def timer_blocks(text):
             j += 1
         yield i, j + 1, text[i:j + 1]
         start = j + 1
+
+
+def function_body(text, name):
+    """The braced body of `name`, or None when the function is absent or unclosed."""
+    start = text.find("function " + name + "(")
+    if start == -1:
+        return None
+    brace = text.find("{", start)
+    if brace == -1:
+        return None
+    depth = 0
+    for j in range(brace, len(text)):
+        if text[j] == "{":
+            depth += 1
+        elif text[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[brace:j + 1]
+    return None
 
 
 def main():
@@ -103,12 +132,31 @@ def main():
         line = text[: match.start()].count("\n") + 1
         failures.append(f"BarWidget.qml:{line}: an argv is built again — commands go through api.request")
 
+    # The sort menu asks the Plan which families are drawn. A function that reads the View,
+    # a Page slug, a tab or a search mode again is the disagreement this ticket removed.
+    start = text.find("function sortScopes(")
+    body = function_body(text, "sortScopes")
+    line = text[: max(start, 0)].count("\n") + 1
+    if body is None:
+        failures.append("BarWidget.qml: sortScopes() is gone — the sort menu has no source")
+    else:
+        if "listPlan().families" not in body:
+            failures.append(
+                f"BarWidget.qml:{line}: sortScopes() does not read the Plan's families"
+            )
+        for field_name in SORT_INPUTS:
+            if field_name in body:
+                failures.append(
+                    f"BarWidget.qml:{line}: sortScopes() reads {field_name!r} — "
+                    "the Plan's families already answer which families are drawn"
+                )
+
     for failure in failures:
         print(f"FAIL {failure}")
     if failures:
         return 1
     print(f"ok {SOURCE.name}: no probe timers, no temporary markers, every row names a known list,"
-          " no argv")
+          " no argv, the sort menu reads the Plan")
     return 0
 
 
