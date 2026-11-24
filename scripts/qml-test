@@ -12,4 +12,11 @@ if [[ ! -x "$RUNNER" ]]; then
   echo "scripts/qml-test: missing $RUNNER (install qt6-declarative)" >&2
   exit 2
 fi
+
+# The suite renders into images and needs no screen. The desktop session exports
+# QT_QPA_PLATFORM='wayland;xcb', so a `${QT_QPA_PLATFORM:-offscreen}` default kept the
+# session's value and qmltestrunner put a blank window on the user's monitor for the
+# length of every run. Forced, not defaulted: a window is never what a test wants.
+export QT_QPA_PLATFORM=offscreen
+
 exec "$RUNNER" "$@"

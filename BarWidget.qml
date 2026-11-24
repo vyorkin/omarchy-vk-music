@@ -606,7 +606,42 @@ Panel {
     return Math.min(upper, root.reportedPosition + (now - root.reportedAt) / 1000)
   }
 
-  // Advances the interpolated position while music plays.
+  // Advances the interpolated position while music plays. The poll reports a position
+  // once a second, so without this the bar only steps when an answer lands: a late poll
+  // and the bar sits still, a track change watched at 250 ms and it jerks forward by
+  // four seconds at a time. `displayPosition` reads it, which is why they are neighbours.
+  Timer {
+    interval: 250
+    running: root.playing && !root.paused
+    repeat: true
+    onTriggered: root.tick++
+  }
+
+  // Every status document the panel takes — the poll, or the answer to a command that
+  // returns one (`next`, `previous`, a like, an account switch) — carries a position, and
+  // the bar's position has to come from the same snapshot as its title. A document that
+  // moved the track while the position stayed at the previous poll's value is a bar that
+  // shows the new title over the old track's elapsed time; worse, a command's answer
+  // applied while a poll was in flight could leave that mismatch standing for seconds.
+  // One function, so the two never come from different snapshots.
+  function applyStatus(doc) {
+    if (!doc) return
+    // The poll hands back a whole document each time, and a document that repeats the
+    // last one is not a change: the panel plans the visible list from `history` and
+    // `people`, so a new array identity rebuilds every row on screen — once a poll,
+    // under a pointer that then waits for the rows it was over to exist again.
+    var adopted = StatusShape.adopt(root.status, doc)
+    if (adopted !== root.status) root.status = adopted
+    root.reportedPosition = Number(doc.position || 0)
+    root.reportedAt = Date.now()
+    root.tick++
+    if (root.seekTarget >= 0 && Math.abs(root.reportedPosition - root.seekTarget) < 2) {
+      root.seekTarget = -1
+    }
+  }
+
+  // A drag asks the backend to follow the hand, but not on every mouse move: one seek
+  // per 150 ms is enough to hear the position and cheap for a local file.
   Timer {
     id: liveSeek
     interval: 150
@@ -724,7 +759,7 @@ Panel {
     api.request("like", { key: key, liked: !liked }, function(answer) {
       if (!answer || !answer.ok || !answer.data) return
       root.markLiked(key, answer.data.liked === true)
-      if (answer.data.status) root.status = answer.data.status
+      root.applyStatus(answer.data.status)
       root.refreshMyMusic()
     })
   }
@@ -737,7 +772,7 @@ Panel {
       if (!answer || !answer.ok || !answer.data) return
       // The answer carries the refreshed status, so the heart flips in one round
       // trip instead of waiting for the next poll.
-      if (answer.data.status) root.status = answer.data.status
+      root.applyStatus(answer.data.status)
       // Every list holds its own copy of the track, and this key is in one of them:
       // the player's heart and the row of the very same track are one fact, so the
       // row flips with it instead of waiting for the list to be fetched again.
@@ -779,19 +814,8 @@ Panel {
     // Quiet: the poll is the widget breathing, not a command the reader gave it.
     api.request("status", { quiet: true }, function(answer) {
       if (!answer || !answer.ok) return
-      // The poll hands back a whole document each time, and a document that repeats the
-      // last one is not a change: the panel plans the visible list from `history` and
-      // `people`, so a new array identity rebuilds every row on screen — once a poll,
-      // under a pointer that then waits for the rows it was over to exist again.
-      // `StatusShape.adopt` keeps the fields the poll repeated and returns the status the
-      // panel already has when the whole answer is the same one.
-      var adopted = StatusShape.adopt(root.status, answer.data)
-      if (adopted !== root.status) root.status = adopted
-      root.reportedPosition = Number(answer.data.position || 0)
-      root.reportedAt = Date.now()
-      if (root.seekTarget >= 0 && Math.abs(root.reportedPosition - root.seekTarget) < 2) {
-        root.seekTarget = -1
-      }
+      // The status and the position are one snapshot; `applyStatus` keeps them one.
+      root.applyStatus(answer.data)
       if (root.volumeTarget >= 0 && Math.abs(Number(answer.data.volume || 0) - root.volumeTarget) < 1) {
         root.volumeTarget = -1
       }
@@ -2829,12 +2853,22 @@ Panel {
     api.request("pause", {}, function() { root.refresh() })
   }
 
+  // The answer to a skip is the player's status after the switch, so the bar restarts on
+  // the new track's zero in the same round trip the switch takes: waiting for the next
+  // poll left the old track's elapsed time under the new track's title, which read as a
+  // progress bar that never began again.
   function skipNext() {
-    api.request("next", {}, function() { root.watchForTrack() })
+    api.request("next", {}, function(answer) {
+      if (answer && answer.ok) root.applyStatus(answer.data)
+      root.watchForTrack()
+    })
   }
 
   function skipPrevious() {
-    api.request("previous", {}, function() { root.watchForTrack() })
+    api.request("previous", {}, function(answer) {
+      if (answer && answer.ok) root.applyStatus(answer.data)
+      root.watchForTrack()
+    })
   }
 
   // ---------------------------------------------------------- accounts ---
@@ -2915,7 +2949,7 @@ Panel {
     // The answer already carries the new session's status; using it here keeps
     // the panel from flashing the signed-out form (or the old account's track)
     // while the follow-up status call is on its way.
-    if (newStatus) root.status = newStatus
+    root.applyStatus(newStatus)
     root.refresh()
     root.loadQueue()
     root.loadAccounts()

@@ -8,8 +8,8 @@ cd "$ROOT"
 
 mkdir -p /tmp/vk-music-frame-tests
 python3 tools/check_widget_source.py
-QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}" \
-  scripts/qml-test -import tests/qml -input tests/qml -o -,txt
+# `scripts/qml-test` forces the offscreen platform for the suite; see the note there.
+scripts/qml-test -import tests/qml -input tests/qml -o -,txt
 if command -v ffmpeg >/dev/null 2>&1; then
   python3 tools/check_frame_render.py
   python3 tools/check_line_render.py
